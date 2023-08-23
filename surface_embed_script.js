@@ -11,11 +11,12 @@ function getUrlParams() {
     return params;
 }
 
+let buttonElementID = 'surface-form-button';
 let src = 'https://google.com/';
 
 function embedSurfaceForm() {
   // Reference John's existing button by its ID
-  var btn = document.getElementById('existingButtonID');
+  var btn = document.getElementById(buttonElementID);
   
   // Create the Popup HTML
   var popup = document.createElement('div');
