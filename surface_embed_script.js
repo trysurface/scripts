@@ -11,13 +11,21 @@ function getUrlParams() {
     return params;
 }
 
+let buttonElementClass = 'surface-form-button';
 let buttonElementID = 'surface-form-button';
 let src = 'https://google.com/';
 
 function embedSurfaceForm() {
   // Reference John's existing button by its ID
-  var btn = document.getElementById(buttonElementID);
-  
+  var buttonsByClass = document.querySelectorAll('.' + buttonElementClass);
+   console.log(buttonsByClass);
+
+  var buttonByID = document.getElementById(buttonElementID);
+
+  var allButtons = Array.from(buttonsByClass);
+  if (buttonByID) {
+    allButtons.push(buttonByID);
+  }
   // Create the Popup HTML
   var popup = document.createElement('div');
   popup.id = 'demoPopup';
@@ -101,6 +109,7 @@ function embedSurfaceForm() {
   document.head.appendChild(style);
   
   // Add Event Listeners
+  allButtons.forEach(function(btn) {
   btn.addEventListener('click', function() {
       popup.style.display = 'block';
       document.body.style.overflow = 'hidden'; // Prevent background scrolling
@@ -109,6 +118,7 @@ function embedSurfaceForm() {
       setTimeout(function() {
           popup.classList.add('active');
       }, 50);
+  });
   });
 
   popup.querySelector('.close-btn').addEventListener('click', function() {
