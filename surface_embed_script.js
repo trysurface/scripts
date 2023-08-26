@@ -66,10 +66,11 @@ function embedSurfaceForm() {
           left: 50%;
           transform: translate(-50%, -50%) scale(0.9);
           width: 90%;
-          height: 70%;
+          height: 80%;
           max-width: 600px;
           background-color: transparent;
           padding: 0;
+          border-radius: 15px;
           box-shadow: 0px 0px 15px rgba(0,0,0,0.2);
           opacity: 0;
           transition: transform 0.3s ease, opacity 0.3s ease;
