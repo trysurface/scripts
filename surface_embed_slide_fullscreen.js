@@ -132,23 +132,3 @@ function embedSurfaceForm() {
       }
   });
 }
-
-let iframe = document.getElementById("surface-iframe")
-let originalHeight = iframe.height;
-let currHeight = parseInt(iframe.height);
-
-window.addEventListener("message", function (e) {
-    if (e.data.event == "surface.form_resized") {
-        if (e.data.payload && e.data.payload.heightDiff) {
-            let payloadHeightDiff = e.data.payload.heightDiff;
-            if (payloadHeightDiff == 0) return;
-            
-            if (currHeight + payloadHeightDiff >= originalHeight) {
-              currHeight += payloadHeightDiff;
-            } else {
-              currHeight = originalHeight
-            }
-            iframe.height = currHeight;
-		   }
-    }
-});
