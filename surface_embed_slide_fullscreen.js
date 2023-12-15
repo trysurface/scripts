@@ -15,6 +15,23 @@ let buttonElementClass = 'surface-form-button';
 let buttonElementID = 'surface-form-button';
 let src = '';
 
+function closeSurfaceForm() {
+    var popup = document.getElementById('demoPopup');
+    if (popup) {
+      popup.classList.remove('active');
+      document.body.style.overflow = 'auto'; // Revert background scrolling behavior
+
+      // After the animation completes, set display to none
+      setTimeout(function() {
+          popup.style.display = 'none';
+      }, 300);
+    }
+    else {
+      console.log("closeSurfaceForm failed. Could not find element with id: 'demoPopup'")
+    }
+}
+
+
 function embedSurfaceForm() {
   // Reference John's existing button by its ID
   var buttonsByClass = document.querySelectorAll('.' + buttonElementClass);
