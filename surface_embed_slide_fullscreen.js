@@ -1,16 +1,3 @@
-function getUrlParams() {
-  let params = {};
-  let queryString = window.location.search.slice(1); // Remove the leading '?'
-  let pairs = queryString.split('&');
-
-  pairs.forEach(pair => {
-      let [key, value] = pair.split('=');
-      params[decodeURIComponent(key)] = decodeURIComponent(value || '');
-  });
-
-  return params;
-}
-
 let buttonElementClass = 'surface-form-button';
 let buttonElementID = 'surface-form-button';
 let src = '';
@@ -46,15 +33,12 @@ function embedSurfaceForm() {
   var popup = document.createElement('div');
   popup.id = 'demoPopup';
 
-  let urlParams = getUrlParams();
-
-  if (urlParams.profile) {
-    src += `?profile=${urlParams.profile}`;
-  }
+  var currentUrl = window.location.href;
+  var fullUrl = src + '?url=' + encodeURIComponent(currentUrl);
   popup.innerHTML = `
       <div class="popup-content">
           <span class="close-btn">&times;</span>
-          <iframe src="${src}" frameborder="0" allowfullscreen></iframe>
+          <iframe src="${fullUrl}" frameborder="0" allowfullscreen></iframe>
       </div>`;
 
   // Append to body
