@@ -16,10 +16,7 @@ let buttonElementID = 'surface-form-button';
 let src = '';
 
 function embedSurfaceForm() {
-  // Reference John's existing button by its ID
   var buttonsByClass = document.querySelectorAll('.' + buttonElementClass);
-   console.log(buttonsByClass);
-
   var buttonByID = document.getElementById(buttonElementID);
 
   var allButtons = Array.from(buttonsByClass);
