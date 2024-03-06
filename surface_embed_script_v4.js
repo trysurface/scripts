@@ -1,54 +1,56 @@
 // Helper function for extracting parameters from URL
 function getUrlParams() {
-    let params = {};
-    let queryString = window.location.search.slice(1); // Remove the leading '?'
-    let pairs = queryString.split('&');
+  let params = {};
+  let queryString = window.location.search.slice(1); // Remove the leading '?'
+  let pairs = queryString.split("&");
 
-    pairs.forEach(pair => {
-        let [key, value] = pair.split('=');
-        params[decodeURIComponent(key)] = decodeURIComponent(value || '');
-    });
+  pairs.forEach((pair) => {
+    let [key, value] = pair.split("=");
+    params[decodeURIComponent(key)] = decodeURIComponent(value || "");
+  });
 
-    return params;
+  return params;
 }
 
 // Helper function for constructing query string from parameters
 function createQueryStringFromParams(params) {
-  var queryString = Object.keys(params).map(function(key) {
-    return key + '=' + params[key]
-  }).join('&');
+  var queryString = Object.keys(params)
+    .map(function (key) {
+      return key + "=" + params[key];
+    })
+    .join("&");
 
   return queryString;
 }
 
 // These are used if the form should be opened on a button press
-let buttonElementClass = 'surface-form-button';
-let buttonElementID = 'surface-form-button';
+let buttonElementClass = "surface-form-button";
+let buttonElementID = "surface-form-button";
 
 // This is used if the form should be opened on a form submission
-let formID = 'surface-form-id'
-let formParams = {}
+let formID = "surface-form-id";
+let formParams = {};
 
 // Source URL for the Surface Form
-let src = '';
+let src = "";
 
-var surface_popup = document.createElement('div');
+var surface_popup = document.createElement("div");
 
 function embedSurfaceForm() {
-  var buttonsByClass = document.querySelectorAll('.' + buttonElementClass);
+  var buttonsByClass = document.querySelectorAll("." + buttonElementClass);
   var buttonByID = document.getElementById(buttonElementID);
   var formByID = document.getElementById(formID);
-    
+
   var allButtons = Array.from(buttonsByClass);
   if (buttonByID) {
     allButtons.push(buttonByID);
   }
-  
+
   // Create the Popup HTML
-  surface_popup.id = 'surface-popup';
-  
+  surface_popup.id = "surface-popup";
+
   let urlParams = getUrlParams();
-  
+
   if (urlParams.profile) {
     src += `?profile=${urlParams.profile}`;
   }
@@ -57,12 +59,12 @@ function embedSurfaceForm() {
           <span class="close-btn">&times;</span>
           <iframe id="surface-iframe" src="${src}" frameborder="0" allowfullscreen></iframe>
       </div>`;
-  
+
   // Append to body
   document.body.appendChild(surface_popup);
-  
+
   // Apply CSS
-  var style = document.createElement('style');
+  var style = document.createElement("style");
   style.innerHTML = `
       #surface-popup {
           display: none;
@@ -71,7 +73,7 @@ function embedSurfaceForm() {
           left: 0;
           width: 100%;
           height: 100%;
-          z-index: 1000;
+          z-index: 99999;
           background-color: rgba(0,0,0,0.5);
           opacity: 0;
           transition: opacity 0.3s ease;
@@ -125,43 +127,45 @@ function embedSurfaceForm() {
       }
   `;
   document.head.appendChild(style);
-  
+
   // Add Event Listeners
-  allButtons.forEach(function(btn) {
-  btn.addEventListener('click', function() {
+  allButtons.forEach(function (btn) {
+    btn.addEventListener("click", function () {
       showSurfaceForm();
-  });
+    });
   });
 
-  surface_popup.querySelector('.close-btn').addEventListener('click', function() {
+  surface_popup
+    .querySelector(".close-btn")
+    .addEventListener("click", function () {
       hideSurfaceForm();
-  });
+    });
 
-  window.addEventListener('click', function(event) {
-      if (event.target == surface_popup) {
-          hideSurfaceForm()
-      }
+  window.addEventListener("click", function (event) {
+    if (event.target == surface_popup) {
+      hideSurfaceForm();
+    }
   });
 }
 
 // Helper functions for showing and hiding the Surface Form
 
 function showSurfaceForm() {
-  surface_popup.style.display = 'block';
-  document.body.style.overflow = 'hidden'; // Prevent background scrolling
+  surface_popup.style.display = "block";
+  document.body.style.overflow = "hidden"; // Prevent background scrolling
 
   // Timeout to allow the 'display' change to take effect before adding the animation class
-  setTimeout(function() {
-      surface_popup.classList.add('active');
+  setTimeout(function () {
+    surface_popup.classList.add("active");
   }, 50);
 }
 
 function hideSurfaceForm() {
-  surface_popup.classList.remove('active');
-  document.body.style.overflow = 'auto'; // Revert background scrolling behavior
+  surface_popup.classList.remove("active");
+  document.body.style.overflow = "auto"; // Revert background scrolling behavior
 
   // After the animation completes, set display to none
-  setTimeout(function() {
-      surface_popup.style.display = 'none';
+  setTimeout(function () {
+    surface_popup.style.display = "none";
   }, 300);
 }

@@ -1,22 +1,22 @@
 function getUrlParams() {
-    let params = {};
-    let queryString = window.location.search.slice(1); // Remove the leading '?'
-    let pairs = queryString.split('&');
+  let params = {};
+  let queryString = window.location.search.slice(1); // Remove the leading '?'
+  let pairs = queryString.split("&");
 
-    pairs.forEach(pair => {
-        let [key, value] = pair.split('=');
-        params[decodeURIComponent(key)] = decodeURIComponent(value || '');
-    });
+  pairs.forEach((pair) => {
+    let [key, value] = pair.split("=");
+    params[decodeURIComponent(key)] = decodeURIComponent(value || "");
+  });
 
-    return params;
+  return params;
 }
 
-let buttonElementClass = 'surface-form-button';
-let buttonElementID = 'surface-form-button';
-let src = '';
+let buttonElementClass = "surface-form-button";
+let buttonElementID = "surface-form-button";
+let src = "";
 
 function embedSurfaceForm() {
-  var buttonsByClass = document.querySelectorAll('.' + buttonElementClass);
+  var buttonsByClass = document.querySelectorAll("." + buttonElementClass);
   var buttonByID = document.getElementById(buttonElementID);
 
   var allButtons = Array.from(buttonsByClass);
@@ -24,11 +24,11 @@ function embedSurfaceForm() {
     allButtons.push(buttonByID);
   }
   // Create the Popup HTML
-  var popup = document.createElement('div');
-  popup.id = 'demoPopup';
-  
+  var popup = document.createElement("div");
+  popup.id = "demoPopup";
+
   let urlParams = getUrlParams();
-  
+
   if (urlParams.profile) {
     src += `?profile=${urlParams.profile}`;
   }
@@ -37,12 +37,12 @@ function embedSurfaceForm() {
           <span class="close-btn">&times;</span>
           <iframe src="${src}" frameborder="0" allowfullscreen></iframe>
       </div>`;
-  
+
   // Append to body
   document.body.appendChild(popup);
-  
+
   // Apply CSS
-  var style = document.createElement('style');
+  var style = document.createElement("style");
   style.innerHTML = `
       #demoPopup {
           display: none;
@@ -51,7 +51,7 @@ function embedSurfaceForm() {
           left: 0;
           width: 100%;
           height: 100%;
-          z-index: 1000;
+          z-index: 99999;
           background-color: rgba(0,0,0,0.5);
           opacity: 0;
           transition: opacity 0.3s ease;
@@ -105,39 +105,39 @@ function embedSurfaceForm() {
       }
   `;
   document.head.appendChild(style);
-  
+
   // Add Event Listeners
-  allButtons.forEach(function(btn) {
-  btn.addEventListener('click', function() {
-      popup.style.display = 'block';
-      document.body.style.overflow = 'hidden'; // Prevent background scrolling
+  allButtons.forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      popup.style.display = "block";
+      document.body.style.overflow = "hidden"; // Prevent background scrolling
 
       // Timeout to allow the 'display' change to take effect before adding the animation class
-      setTimeout(function() {
-          popup.classList.add('active');
+      setTimeout(function () {
+        popup.classList.add("active");
       }, 50);
-  });
+    });
   });
 
-  popup.querySelector('.close-btn').addEventListener('click', function() {
-      popup.classList.remove('active');
-      document.body.style.overflow = 'auto'; // Revert background scrolling behavior
+  popup.querySelector(".close-btn").addEventListener("click", function () {
+    popup.classList.remove("active");
+    document.body.style.overflow = "auto"; // Revert background scrolling behavior
+
+    // After the animation completes, set display to none
+    setTimeout(function () {
+      popup.style.display = "none";
+    }, 300);
+  });
+
+  window.addEventListener("click", function (event) {
+    if (event.target == popup) {
+      popup.classList.remove("active");
+      document.body.style.overflow = "auto"; // Revert background scrolling behavior
 
       // After the animation completes, set display to none
-      setTimeout(function() {
-          popup.style.display = 'none';
+      setTimeout(function () {
+        popup.style.display = "none";
       }, 300);
-  });
-
-  window.addEventListener('click', function(event) {
-      if (event.target == popup) {
-          popup.classList.remove('active');
-          document.body.style.overflow = 'auto'; // Revert background scrolling behavior
-
-          // After the animation completes, set display to none
-          setTimeout(function() {
-              popup.style.display = 'none';
-          }, 300);
-      }
+    }
   });
 }

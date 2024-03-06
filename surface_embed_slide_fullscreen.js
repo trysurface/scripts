@@ -1,27 +1,26 @@
-let buttonElementClass = 'surface-form-button';
-let buttonElementID = 'surface-form-button';
-let src = '';
+let buttonElementClass = "surface-form-button";
+let buttonElementID = "surface-form-button";
+let src = "";
 
 function closeSurfaceForm() {
-    var popup = document.getElementById('demoPopup');
-    if (popup) {
-      popup.classList.remove('active');
-      document.body.style.overflow = 'auto'; // Revert background scrolling behavior
+  var popup = document.getElementById("demoPopup");
+  if (popup) {
+    popup.classList.remove("active");
+    document.body.style.overflow = "auto"; // Revert background scrolling behavior
 
-      // After the animation completes, set display to none
-      setTimeout(function() {
-          popup.style.display = 'none';
-      }, 300);
-    }
-    else {
-      console.log("closeSurfaceForm failed. Could not find element with id: 'demoPopup'")
-    }
+    // After the animation completes, set display to none
+    setTimeout(function () {
+      popup.style.display = "none";
+    }, 300);
+  } else {
+    console.log(
+      "closeSurfaceForm failed. Could not find element with id: 'demoPopup'"
+    );
+  }
 }
 
-
 function embedSurfaceForm() {
-  // Reference John's existing button by its ID
-  var buttonsByClass = document.querySelectorAll('.' + buttonElementClass);
+  var buttonsByClass = document.querySelectorAll("." + buttonElementClass);
 
   var buttonByID = document.getElementById(buttonElementID);
 
@@ -30,11 +29,11 @@ function embedSurfaceForm() {
     allButtons.push(buttonByID);
   }
   // Create the Popup HTML
-  var popup = document.createElement('div');
-  popup.id = 'demoPopup';
+  var popup = document.createElement("div");
+  popup.id = "demoPopup";
 
   var currentUrl = window.location.href;
-  var fullUrl = src + '?url=' + encodeURIComponent(currentUrl);
+  var fullUrl = src + "?url=" + encodeURIComponent(currentUrl);
   popup.innerHTML = `
       <div class="popup-content">
           <span class="close-btn">&times;</span>
@@ -45,7 +44,7 @@ function embedSurfaceForm() {
   document.body.appendChild(popup);
 
   // Apply CSS
-  var style = document.createElement('style');
+  var style = document.createElement("style");
   style.innerHTML = `
       #demoPopup {
           display: none;
@@ -99,37 +98,37 @@ function embedSurfaceForm() {
   document.head.appendChild(style);
 
   // Add Event Listeners
-  allButtons.forEach(function(btn) {
-  btn.addEventListener('click', function() {
-      popup.style.display = 'block';
-      document.body.style.overflow = 'hidden'; // Prevent background scrolling
+  allButtons.forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      popup.style.display = "block";
+      document.body.style.overflow = "hidden"; // Prevent background scrolling
 
       // Timeout to allow the 'display' change to take effect before adding the animation class
-      setTimeout(function() {
-          popup.classList.add('active');
+      setTimeout(function () {
+        popup.classList.add("active");
       }, 50);
-  });
+    });
   });
 
-  popup.querySelector('.close-btn').addEventListener('click', function() {
-      popup.classList.remove('active');
-      document.body.style.overflow = 'auto'; // Revert background scrolling behavior
+  popup.querySelector(".close-btn").addEventListener("click", function () {
+    popup.classList.remove("active");
+    document.body.style.overflow = "auto"; // Revert background scrolling behavior
+
+    // After the animation completes, set display to none
+    setTimeout(function () {
+      popup.style.display = "none";
+    }, 300);
+  });
+
+  window.addEventListener("click", function (event) {
+    if (event.target == popup) {
+      popup.classList.remove("active");
+      document.body.style.overflow = "auto"; // Revert background scrolling behavior
 
       // After the animation completes, set display to none
-      setTimeout(function() {
-          popup.style.display = 'none';
+      setTimeout(function () {
+        popup.style.display = "none";
       }, 300);
-  });
-
-  window.addEventListener('click', function(event) {
-      if (event.target == popup) {
-          popup.classList.remove('active');
-          document.body.style.overflow = 'auto'; // Revert background scrolling behavior
-
-          // After the animation completes, set display to none
-          setTimeout(function() {
-              popup.style.display = 'none';
-          }, 300);
-      }
+    }
   });
 }
