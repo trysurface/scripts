@@ -1,12 +1,32 @@
 class SurfaceEmbed {
   constructor(src, embed_type, target_element_class) {
+    if (!src) {
+      console.error(
+        `Surface :: Invalid src. Surface src url must not be null nor empty`
+      );
+    } else if (
+      embed_type != "inline" &&
+      embed_type != "slideover" &&
+      embed_type != "popup"
+    ) {
+      console.error(
+        `Surface :: Invalid embed type: ${embed_type}. Embed Type must be inline, slideover, or popup`
+      );
+    } else if (!target_element_class) {
+      console.error(
+        `Surface :: Invalid target element class. Target element class must not be null nor empty`
+      );
+    }
+
     this.embed_type = embed_type;
     this.target_element_class = target_element_class;
 
     this.src = new URL(src);
     this.src.searchParams.append("url", window.location.href);
-
     this.surface_popup_reference = null;
+    this.inline_embed_references = null;
+    this.iframeInlineStyle = null;
+
     if (embed_type == "popup") {
       this.surface_popup_reference = document.createElement("div");
       this.embedSurfaceForm = this.embedPopup;
@@ -19,6 +39,16 @@ class SurfaceEmbed {
       this.embedSurfaceForm = this.embedSlideover;
       this.showSurfaceForm = this.showSurfaceSlideover;
       this.hideSurfaceForm = this.hideSurfaceSlideover;
+    }
+
+    if (embed_type == "inline") {
+      this.inline_embed_references = document.querySelectorAll(
+        "." + this.target_element_class
+      );
+
+      this.embedSurfaceForm = this.embedInline;
+      this.showSurfaceForm = () => {};
+      this.hideSurfaceForm = () => {};
     }
   }
 
@@ -47,6 +77,58 @@ class SurfaceEmbed {
     });
 
     return params;
+  }
+
+  embedInline() {
+    if (
+      this.inline_embed_references == null ||
+      this.inline_embed_references.length <= 0
+    ) {
+      this.log(
+        "warn",
+        `Surface Form could not find target div with class ${this.target_element_class}`
+      );
+    }
+
+    const src = this.src.toString();
+    const target_client_divs = this.inline_embed_references;
+
+    target_client_divs.forEach((client_div) => {
+      const surface_inline_iframe_wrapper = document.createElement("div");
+
+      // Create the Popup HTML
+      surface_inline_iframe_wrapper.id = "surface-inline-div";
+
+      const inline_iframe = document.createElement("iframe");
+      inline_iframe.id = "surface-iframe";
+      inline_iframe.src = src;
+      inline_iframe.frameBorder = "0";
+      inline_iframe.allowFullscreen = true;
+
+      if (
+        this.iframeInlineStyle &&
+        typeof this.iframeInlineStyle === "object"
+      ) {
+        Object.assign(inline_iframe.style, this.iframeInlineStyle);
+      }
+
+      client_div.appendChild(surface_inline_iframe_wrapper);
+      surface_inline_iframe_wrapper.appendChild(inline_iframe);
+
+      var style = document.createElement("style");
+      style.innerHTML = `
+        #surface-inline-div {
+          width: 100%;
+          height: 100%;
+        }
+
+        #surface-inline-div iframe {
+            width: 100%;
+            height: 100%;
+        }
+      `;
+      document.head.appendChild(style);
+    });
   }
 
   showSurfacePopup() {
