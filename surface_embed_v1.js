@@ -26,6 +26,7 @@ class SurfaceEmbed {
     this.surface_popup_reference = null;
     this.inline_embed_references = null;
     this.iframeInlineStyle = null;
+    this.popupSize = null;
 
     if (embed_type == "popup") {
       this.surface_popup_reference = document.createElement("div");
@@ -196,6 +197,19 @@ class SurfaceEmbed {
     // Append to body
     document.body.appendChild(surface_popup);
 
+    const desktopPopupDimensions = {
+      width: "calc(100% - 80px)",
+      height: "calc(100% - 80px)",
+    };
+
+    if (this.popupSize != null && this.popupSize === "medium") {
+      desktopPopupDimensions.width = "80%";
+      desktopPopupDimensions.height = "80%";
+    } else if (this.popupSize != null && this.popupSize === "large") {
+      desktopPopupDimensions.width = "calc(100% - 80px)";
+      desktopPopupDimensions.height = "calc(100% - 80px)";
+    }
+
     // Apply CSS
     var style = document.createElement("style");
     style.innerHTML = `
@@ -237,8 +251,8 @@ class SurfaceEmbed {
       /* Adjust iframe dimensions for larger screens */
       @media (min-width: 481px) {
           .surface-popup-content {
-            width: calc(100% - 80px);
-            height: calc(100% - 80px);
+            width: ${desktopPopupDimensions.width};
+            height: ${desktopPopupDimensions.height};
           }
       }
 
