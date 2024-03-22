@@ -202,8 +202,8 @@ class SurfaceEmbed {
       height: "calc(100% - 80px)",
     };
 
-    if (this.popupSize != null && this.popupSize === "medium") {
-      desktopPopupDimensions.width = "80%";
+    if (this.popupSize == null || this.popupSize === "medium") {
+      desktopPopupDimensions.width = "70%";
       desktopPopupDimensions.height = "80%";
     } else if (this.popupSize != null && this.popupSize === "large") {
       desktopPopupDimensions.width = "calc(100% - 80px)";
@@ -223,7 +223,7 @@ class SurfaceEmbed {
           width: 100%;
           height: 100%;
           z-index: 99999;
-          background-color: rgba(0,0,0,0.8);
+          background-color: rgba(0,0,0,0.5);
           opacity: 0;
           transition: opacity 0.3s ease;
       }
