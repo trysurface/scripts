@@ -374,7 +374,8 @@ window.SurfaceTracking = (() => {
     // check if the element is an anchor tag disguised as a button, if its a normal anchor tag, then return
     if (
       clickedButton.nodeName === "A" &&
-      !clickedButton.className.includes("button")
+      !clickedButton.className.includes("button") &&
+      !clickedButton.className.includes("btn")
     ) {
       return;
     }
@@ -428,11 +429,14 @@ window.SurfaceTracking = (() => {
       const hasSubmissionClasses = !!clickedButton.className.match(
         /(cta |submit|submission|book\-demo)/g
       );
+      const hasSubmissionIds = !!clickedButton.id.match(
+        /(cta|submit|submission|book\-demo|button)/g
+      );
 
       if (
         isValid &&
         attributes.length > 0 &&
-        (clickedButton.type === "submit" || hasSubmissionClasses)
+        (clickedButton.type === "submit" || hasSubmissionClasses || hasSubmissionIds)
       ) {
         callCaptureApi({ attributes });
       }
