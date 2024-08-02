@@ -15,17 +15,14 @@ window.SurfaceTracking = (() => {
   }
 
   const surfaceScriptElement =
-    document.currentScript ||
-    document.querySelector('script[src*="surface_tracking.min.js"]');
+    document.currentScript || document.querySelector('script[src*="surface_tracking.min.js"]');
 
   const environmentId = surfaceScriptElement.getAttribute("environmentid");
   const debugMode = window.location.search.includes("surfaceDebug=true");
 
   const addEvent = (element, type, listener) => {
-    if (debugMode)
-      console.log("Adding event listener for", type, "on", element);
-    if (typeof element.addEventListener !== "undefined")
-      element.addEventListener(type, listener, false);
+    if (debugMode) console.log("Adding event listener for", type, "on", element);
+    if (typeof element.addEventListener !== "undefined") element.addEventListener(type, listener, false);
     else element.attachEvent("on" + type, listener);
   };
 
@@ -34,9 +31,7 @@ window.SurfaceTracking = (() => {
     const data = encoder.encode(input);
     const hashBuffer = await crypto.subtle.digest("SHA-256", data);
     const hashArray = Array.from(new Uint8Array(hashBuffer));
-    const hashHex = hashArray
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .join("");
+    const hashHex = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
     return hashHex;
   }
 
@@ -50,8 +45,7 @@ window.SurfaceTracking = (() => {
 
     const emailValueRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/; // Matches typical email formats
     const isEmailPlaceholder =
-      (inputElement.placeholder &&
-        emailValueRegex.test(inputElement.placeholder)) ||
+      (inputElement.placeholder && emailValueRegex.test(inputElement.placeholder)) ||
       emailRegex.test(inputElement.placeholder);
     const hasEmailLabel = emailRegex.test(
       document.querySelector(`label[for="${inputElement.id}"]`)?.textContent
@@ -72,16 +66,13 @@ window.SurfaceTracking = (() => {
       return false;
     }
 
-    const phoneRegex =
-      /^\+?(?:\s|-|\()?[0-9]{1,4}(?:\s|-|\))?[0-9]{1,4}\s?[0-9]{1,4}$/i;
-    const phoneTermRegex =
-      /phone|Tel|Telephone|telephone|cell|Cell|mobile|Mobile|call|Call/i;
+    const phoneRegex = /^\+?(?:\s|-|\()?[0-9]{1,4}(?:\s|-|\))?[0-9]{1,4}\s?[0-9]{1,4}$/i;
+    const phoneTermRegex = /phone|Tel|Telephone|telephone|cell|Cell|mobile|Mobile|call|Call/i;
 
     const hasNameAtribute = phoneTermRegex.test(inputElement.name); // Check if pattern attribute includes terms
     const hasClassNameAttribute = phoneTermRegex.test(inputElement.className);
     const isPhonePlaceholder =
-      phoneTermRegex.test(inputElement.placeholder) ||
-      phoneRegex.test(inputElement.placeholder); // Check if placeholder includes 'phone'
+      phoneTermRegex.test(inputElement.placeholder) || phoneRegex.test(inputElement.placeholder); // Check if placeholder includes 'phone'
     const hasPhoneLabel = phoneTermRegex.test(
       document.querySelector(`label[for="${inputElement.id}"]`)?.textContent
     );
@@ -106,8 +97,7 @@ window.SurfaceTracking = (() => {
       /first|Forename|given|Given|firstname|FirstName|name|Name|givenName|GivenName|forename|Forename/i;
 
     // Check if the input element is of type "text" or "search"
-    const isTextInput =
-      inputElement.type === "text" || inputElement.type === "search";
+    const isTextInput = inputElement.type === "text" || inputElement.type === "search";
 
     // Check for additional conditions that may indicate a first name input
     const hasNameAtribute = firstNameRegex.test(inputElement.name); // Check if pattern attribute includes 'name'
@@ -118,18 +108,10 @@ window.SurfaceTracking = (() => {
         .querySelector(`label[for="${inputElement.id}"]`)
         ?.textContent.toLowerCase()
         .includes("name") ||
-      firstNameRegex.test(
-        document.querySelector(`label[for="${inputElement.id}"]`)?.textContent
-      ); // Check if associated label includes 'first name'
+      firstNameRegex.test(document.querySelector(`label[for="${inputElement.id}"]`)?.textContent); // Check if associated label includes 'first name'
 
     // Combine conditions
-    return (
-      isTextInput &&
-      (hasNameAtribute ||
-        hasClassNameAttribute ||
-        hasNamePlaceholder ||
-        hasNameLabel)
-    );
+    return isTextInput && (hasNameAtribute || hasClassNameAttribute || hasNamePlaceholder || hasNameLabel);
   }
 
   function isLastNameInput(inputElement) {
@@ -143,8 +125,7 @@ window.SurfaceTracking = (() => {
       /last|Surname|family|Family|lastname|Lastname|lname|l-name|LName|familyName|FamilyName|surname|Surname|familyName|FamilyName/i;
 
     // Check if the input element is of type "text" or "search"
-    const isTextInput =
-      inputElement.type === "text" || inputElement.type === "search";
+    const isTextInput = inputElement.type === "text" || inputElement.type === "search";
 
     // Check for additional conditions that may indicate a last name input
     const hasNameAttribute = lastNameRegex.test(inputElement.name);
@@ -157,18 +138,10 @@ window.SurfaceTracking = (() => {
         .querySelector(`label[for="${inputElement.id}"]`)
         ?.textContent.toLowerCase()
         .includes("last name") ||
-      lastNameRegex.test(
-        document.querySelector(`label[for="${inputElement.id}"]`)?.textContent
-      ); // Check if associated label includes 'last name'
+      lastNameRegex.test(document.querySelector(`label[for="${inputElement.id}"]`)?.textContent); // Check if associated label includes 'last name'
 
     // Combine conditions
-    return (
-      isTextInput &&
-      (hasNameAttribute ||
-        hasClassNameAttribute ||
-        hasNamePlaceholder ||
-        hasNameLabel)
-    );
+    return isTextInput && (hasNameAttribute || hasClassNameAttribute || hasNamePlaceholder || hasNameLabel);
   }
 
   function isCompanyInput(inputElement) {
@@ -179,12 +152,10 @@ window.SurfaceTracking = (() => {
 
     const companyRegex = /company|organization|business|firm|enterprise/i; // Case-insensitive regex for common company terms
 
-    const companyValueRegex =
-      /(Pvt\s*Ltd|LLC|Inc|Corporation|Ltd|Limited|GmbH|Co|Partnership)$/i; // Matches typical company name formats
+    const companyValueRegex = /(Pvt\s*Ltd|LLC|Inc|Corporation|Ltd|Limited|GmbH|Co|Partnership)$/i; // Matches typical company name formats
     const isCompanyPlaceholder =
       inputElement.placeholder &&
-      (companyValueRegex.test(inputElement.placeholder) ||
-        companyRegex.test(inputElement.placeholder));
+      (companyValueRegex.test(inputElement.placeholder) || companyRegex.test(inputElement.placeholder));
     const hasCompanyLabel = companyRegex.test(
       document.querySelector(`label[for="${inputElement.id}"]`)?.textContent
     ); // Check if associated label includes 'company'
@@ -201,9 +172,7 @@ window.SurfaceTracking = (() => {
     let fingerprint = {};
 
     // Device Type
-    fingerprint.deviceType = /Mobi|Android/i.test(navigator.userAgent)
-      ? "Mobile"
-      : "Desktop";
+    fingerprint.deviceType = /Mobi|Android/i.test(navigator.userAgent) ? "Mobile" : "Desktop";
 
     // Screen Properties
     fingerprint.screen = {
@@ -224,9 +193,7 @@ window.SurfaceTracking = (() => {
 
     // Installed Plugins
     if (navigator.plugins != null) {
-      fingerprint.plugins = Array.from(navigator.plugins).map(
-        (plugin) => plugin.name
-      );
+      fingerprint.plugins = Array.from(navigator.plugins).map((plugin) => plugin.name);
     }
 
     // TODO: attach extensions data
@@ -323,9 +290,7 @@ window.SurfaceTracking = (() => {
         break;
       case "select-one":
       case "select-multiple":
-        value = Array.from(inputElement.selectedOptions).map(
-          (option) => option.value
-        );
+        value = Array.from(inputElement.selectedOptions).map((option) => option.value);
         if (inputType === "select-one") {
           value = value[0]; // For select-one, just take the first value
         }
@@ -393,7 +358,12 @@ window.SurfaceTracking = (() => {
       for (let i = 0; i < elements.length; i++) {
         const element = elements[i];
         if (!element || element.type === "hidden") continue;
-        const isInputInValid = element.validity && !element.validity.valid;
+        const isInputVisible = element.checkVisibility({
+          opacityProperty: true,
+          visibilityProperty: true,
+        });
+        const isInputInValid = isInputVisible && element.validity && !element.validity.valid;
+        const isInputValueExists = element.validity && !element.validity.valueMissing;
 
         // due to some reason nextiva tel input always returns invalid but site redirects to success page.
         if (isInputInValid && element.type !== "tel") {
@@ -426,12 +396,8 @@ window.SurfaceTracking = (() => {
       }
 
       // track submission if button is type submit or has submission classes
-      const hasSubmissionClasses = !!clickedButton.className.match(
-        /(cta |submit|submission|book\-demo)/g
-      );
-      const hasSubmissionIds = !!clickedButton.id.match(
-        /(cta|submit|submission|book\-demo|button)/g
-      );
+      const hasSubmissionClasses = !!clickedButton.className.match(/(cta |submit|submission|book\-demo)/g);
+      const hasSubmissionIds = !!clickedButton.id.match(/(cta|submit|submission|book\-demo|button)/g);
 
       if (
         isValid &&
