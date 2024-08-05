@@ -338,6 +338,35 @@ window.SurfaceTracking = (() => {
     return "other";
   }
 
+  function isElementVisible(element) {
+    if (!element) return false;
+
+    function isVisible(el) {
+      const style = window.getComputedStyle(el);
+      return style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
+    }
+
+    function isWithinViewport(el) {
+      const rect = el.getBoundingClientRect();
+      return (
+        rect.top >= 0 &&
+        rect.left >= 0 &&
+        rect.bottom <= (window.innerHeight || document.documentElement.clientHeight) &&
+        rect.right <= (window.innerWidth || document.documentElement.clientWidth)
+      );
+    }
+
+    let currentElement = element;
+    while (currentElement) {
+      if (!isVisible(currentElement)) {
+        return false;
+      }
+      currentElement = currentElement.parentElement; // Move to the parent element
+    }
+
+    return isWithinViewport(element);
+  }
+
   async function checkSubmitClickInForm(target) {
     const clickedButton = target.closest("button") || target.closest("a");
     if (!clickedButton) {
@@ -366,15 +395,11 @@ window.SurfaceTracking = (() => {
       for (let i = 0; i < elements.length; i++) {
         const element = elements[i];
         if (!element || element.type === "hidden") continue;
-        const isInputVisible = element.checkVisibility({
-          opacityProperty: true,
-          visibilityProperty: true,
-        });
-        const isInputInValid = isInputVisible && element.validity && !element.validity.valid;
-        const isInputValueExists = element.validity && !element.validity.valueMissing;
+        const isInputVisible = isElementVisible(element);
+        const isInputInvalid = isInputVisible && element.validity && !element.validity.valid;
 
         // due to some reason nextiva tel input always returns invalid but site redirects to success page.
-        if (isInputInValid && element.type !== "tel") {
+        if (isInputInvalid && element.type !== "tel") {
           isValid = false;
         }
 
@@ -394,7 +419,7 @@ window.SurfaceTracking = (() => {
           formData[inputData.name] = inputData.value;
         }
 
-        if (isInputInValid && debugMode) {
+        if (isInputInvalid && debugMode) {
           console.log("invalid input", inputData, element.validity);
         }
       }
