@@ -19,6 +19,7 @@ window.SurfaceTracking = (() => {
 
   const environmentId = surfaceScriptElement.getAttribute("environmentid");
   const debugMode = window.location.search.includes("surfaceDebug=true");
+  let userFingerprint = null;
 
   const addEvent = (element, type, listener) => {
     if (debugMode) console.log("Adding event listener for", type, "on", element);
@@ -169,6 +170,10 @@ window.SurfaceTracking = (() => {
   }
 
   async function getBrowserFingerprint() {
+    if (userFingerprint != null) {
+      return userFingerprint;
+    }
+
     let fingerprint = {};
 
     // Device Type
@@ -208,6 +213,9 @@ window.SurfaceTracking = (() => {
 
     // Generate a unique ID using a hash function
     fingerprint.id = await getHash(fingerprintString);
+
+    // Store the result to make future function calls faster
+    userFingerprint = fingerprint;
 
     return fingerprint;
   }
@@ -330,7 +338,7 @@ window.SurfaceTracking = (() => {
     return "other";
   }
 
-  function checkSubmitClickInForm(target) {
+  async function checkSubmitClickInForm(target) {
     const clickedButton = target.closest("button") || target.closest("a");
     if (!clickedButton) {
       return;
@@ -404,17 +412,17 @@ window.SurfaceTracking = (() => {
         attributes.length > 0 &&
         (clickedButton.type === "submit" || hasSubmissionClasses || hasSubmissionIds)
       ) {
-        callCaptureApi({ attributes });
+        await callCaptureApi({ attributes });
       }
     }
   }
 
-  function handleOnClick(e) {
-    checkSubmitClickInForm(e.target);
+  async function handleOnClick(e) {
+    await checkSubmitClickInForm(e.target);
   }
 
   SurfaceTracking.init = async function (apiKey) {
-    addEvent(windowAlias, "mousedown", (e) => handleOnClick(e));
+    addEvent(windowAlias, "mousedown", async (e) => await handleOnClick(e));
     callIdentifyApi();
   };
 
