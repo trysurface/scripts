@@ -235,22 +235,15 @@ window.SurfaceTracking = (() => {
       sourceUrlSearchParams: search,
     };
 
-    const blob = new Blob([JSON.stringify(payload)], {
-      type: "application/json",
+    const res = await fetch(url, {
+      method: "POST",
+      body: JSON.stringify(payload),
+      headers: {
+        "Content-Type": "application/json",
+      },
     });
-
-    if (navigator.sendBeacon) {
-      navigator.sendBeacon(url, blob);
-    } else {
-      // Fallback to fetch if sendBeacon is not supported
-      await fetch(url, {
-        method: "POST",
-        body: JSON.stringify(payload),
-        headers: {
-          "Content-Type": "application/json",
-        },
-      });
-    }
+    const result = await res?.json();
+    return result?.data?.data;
   }
 
   async function callCaptureApi({ attributes }) {
@@ -260,6 +253,7 @@ window.SurfaceTracking = (() => {
     const payload = {
       fingerprint: browserFingerprint.id,
       data: attributes,
+      sessionId: SurfaceTracking.sessionId,
     };
 
     const blob = new Blob([JSON.stringify(payload)], {
@@ -448,7 +442,8 @@ window.SurfaceTracking = (() => {
 
   SurfaceTracking.init = async function (apiKey) {
     addEvent(windowAlias, "mousedown", async (e) => await handleOnClick(e));
-    callIdentifyApi();
+    const { sessionId } = await callIdentifyApi();
+    SurfaceTracking.sessionId = sessionId;
   };
 
   if (!environmentId) {
