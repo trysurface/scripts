@@ -202,7 +202,7 @@ class SurfaceEmbed {
       height: "calc(100% - 80px)",
     };
 
-    if (this.popupSize != null || this.popupSize === "small") {
+    if (this.popupSize != null && this.popupSize === "small") {
       desktopPopupDimensions.width = "50%";
       desktopPopupDimensions.height = "60%";
     } else if (this.popupSize == null || this.popupSize === "medium") {
