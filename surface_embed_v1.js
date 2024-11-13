@@ -21,6 +21,7 @@ class SurfaceEmbed {
     this.embed_type = embed_type;
     this.target_element_class = target_element_class;
 
+    this.syncCookie(src);
     this.src = new URL(src);
     this.src.searchParams.append("url", window.location.href);
     this.surface_popup_reference = null;
@@ -65,6 +66,19 @@ class SurfaceEmbed {
     if (level == "error") {
       console.error(fullMessage);
     }
+  }
+
+  syncCookie(visitorId) {
+    const endpoint = new URL("https://a.usbrowserspeed.com/cs");
+
+    var pid =
+      "b3752b5f7f17d773b265c2847b23ffa444cac7db2af8a040c341973a6704a819";
+    endpoint.searchParams.append("pid", pid);
+    endpoint.searchParams.append("puid", visitorId);
+    fetch(endpoint.href, {
+      mode: "no-cors",
+      credentials: "include",
+    });
   }
 
   getUrlParams() {
