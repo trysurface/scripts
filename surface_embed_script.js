@@ -13,7 +13,10 @@ function getUrlParams() {
 
 let buttonElementClass = "surface-form-button";
 let buttonElementID = "surface-form-button";
-let src = "https://google.com/";
+let src =
+  window.location.hostname === "www.gosameday.com"
+    ? "https://app.withsurface.com/s/cm1bmcpdb0001le03etqt7bfo"
+    : "https://google.com";
 
 function embedSurfaceForm() {
   var buttonsByClass = document.querySelectorAll("." + buttonElementClass);
