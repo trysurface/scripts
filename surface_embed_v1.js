@@ -1,3 +1,20 @@
+let SurfaceSyncCookieHappenedOnce = false;
+function SurfaceSyncCookie (visitorId) {
+  const endpoint = new URL("https://a.usbrowserspeed.com/cs");
+  var pid =
+    "b3752b5f7f17d773b265c2847b23ffa444cac7db2af8a040c341973a6704a819";
+  endpoint.searchParams.append("pid", pid);
+  endpoint.searchParams.append("puid", visitorId);
+
+  if (SurfaceSyncCookieHappenedOnce == false) {
+    fetch(endpoint.href, {
+      mode: "no-cors",
+      credentials: "include",
+    });
+    SurfaceSyncCookieHappenedOnce = true;
+  }
+}
+
 class SurfaceEmbed {
   constructor(src, embed_type, target_element_class) {
     if (!src) {
@@ -21,7 +38,7 @@ class SurfaceEmbed {
     this.embed_type = embed_type;
     this.target_element_class = target_element_class;
 
-    this.syncCookie(src);
+    SurfaceSyncCookie(src);
     this.src = new URL(src);
     this.src.searchParams.append("url", window.location.href);
     this.surface_popup_reference = null;
@@ -66,19 +83,6 @@ class SurfaceEmbed {
     if (level == "error") {
       console.error(fullMessage);
     }
-  }
-
-  syncCookie(visitorId) {
-    const endpoint = new URL("https://a.usbrowserspeed.com/cs");
-
-    var pid =
-      "b3752b5f7f17d773b265c2847b23ffa444cac7db2af8a040c341973a6704a819";
-    endpoint.searchParams.append("pid", pid);
-    endpoint.searchParams.append("puid", visitorId);
-    fetch(endpoint.href, {
-      mode: "no-cors",
-      credentials: "include",
-    });
   }
 
   getUrlParams() {
@@ -263,7 +267,7 @@ class SurfaceEmbed {
           width: 100%;
           height: 100%;
           border-radius: 15px;
-      } 
+      }
 
       /* Adjust iframe dimensions for larger screens */
       @media (min-width: 481px) {
@@ -288,7 +292,7 @@ class SurfaceEmbed {
         justify-content: center;
         align-items: center;
         top: 6px;
-        right: 8px; 
+        right: 8px;
         background: #ffffff;
         border: none;
         border-radius: 50%;
@@ -301,7 +305,7 @@ class SurfaceEmbed {
       @media (min-width: 481px) {
           .close-btn-container {
             top: -34px;
-            right: 0; 
+            right: 0;
             background: none;
             border: none;
             border-radius: 0;
@@ -327,7 +331,7 @@ class SurfaceEmbed {
       /* Adjust iframe dimensions for larger screens */
       @media (min-width: 481px) {
           .close-btn {
-            color: #ffffff; 
+            color: #ffffff;
             font-size: 32px;
             margin-bottom: 0px;
             height: auto;
@@ -471,7 +475,7 @@ class SurfaceEmbed {
       #surface-popup.active .surface-popup-content {
           transform: translateX(0%);
           opacity: 1;
-      } 
+      }
     `;
     document.head.appendChild(style);
 
@@ -497,3 +501,16 @@ class SurfaceEmbed {
     });
   }
 }
+
+(function() {
+  const scriptTag = document.currentScript;
+  const environmentId = scriptTag ? scriptTag.getAttribute('siteId') : null;
+
+  if (environmentId != null) {
+    const syncCookiePayload = {
+      type: "LogAnonLeadEnvIdPayload",
+      environmentId: environmentId
+    };
+    SurfaceSyncCookie(JSON.stringify(syncCookiePayload));
+  }
+})();
