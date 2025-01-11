@@ -181,14 +181,16 @@ class SurfaceEmbed {
         }
 
         // Append the key-value pairs from the `options` object to `this.src.searchParams`
-        Object.keys(options).forEach(key => {
-            this.src.searchParams.set(key, options[key]);
-        });
-
-        // Update the iframe src if it exists in the DOM
-        const iframe = this.surface_popup_reference.querySelector("#surface-iframe");
-        if (iframe) {
-            iframe.src = this.src.toString();
+        if (Object.keys(options).length > 0) {
+            Object.keys(options).forEach(key => {
+                this.src.searchParams.set(key, options[key]);
+            });
+    
+            // Update the iframe src if it exists in the DOM
+            const iframe = this.surface_popup_reference.querySelector("#surface-iframe");
+            if (iframe) {
+                iframe.src = this.src.toString();
+            }
         }
 
         this.surface_popup_reference.style.display = "flex";
