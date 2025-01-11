@@ -189,7 +189,14 @@ class SurfaceEmbed {
             // Update the iframe src if it exists in the DOM
             const iframe = this.surface_popup_reference.querySelector("#surface-iframe");
             if (iframe) {
-                iframe.src = this.src.toString();
+                // Smoothly hide the iframe
+                iframe.style.opacity = "0"; // Hide the iframe
+                setTimeout(() => {
+                    iframe.src = this.src.toString(); // Update src
+                    iframe.onload = () => {
+                        iframe.style.opacity = "1"; // Show iframe after it loads
+                    };
+                }, 100); // Delay the src update slightly for smooth hiding
             }
         }
 
@@ -310,6 +317,10 @@ class SurfaceEmbed {
             width: ${desktopPopupDimensions.width};
             height: ${desktopPopupDimensions.height};
           }
+      }
+      
+      #surface-iframe {
+          transition: opacity 0.3s ease-in-out;
       }
 
       #surface-popup.active {
