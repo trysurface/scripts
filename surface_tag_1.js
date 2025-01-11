@@ -171,7 +171,7 @@ class SurfaceEmbed {
         });
     }
 
-    showSurfaceForm(options = {}) {
+    showSurfacePopup(options = {}) {
         if (this.surface_popup_reference == null) {
             this.log(
                 "warn",
