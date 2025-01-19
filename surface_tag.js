@@ -63,17 +63,21 @@ class SurfaceEmbed {
         this.iframeInlineStyle = null;
         this.popupSize = null;
 
+        // For popup or widget, we create a DIV (for the iframe)
         if (embed_type == "popup" || embed_type == "widget") {
             this.surface_popup_reference = document.createElement("div");
-            this.embedSurfaceForm = embed_type == "widget" ? this.embedWidget : this.embedPopup;
+            this.embedSurfaceForm =
+                embed_type == "widget" ? this.embedWidget : this.embedPopup;
             this.showSurfaceForm = this.showSurfacePopup;
             this.hideSurfaceForm = this.hideSurfacePopup;
 
+            // If widget, add the floating button
             if (embed_type == "widget") {
                 this.addWidgetButton();
             }
         }
 
+        // For slideover, we also create the DIV
         if (embed_type == "slideover") {
             this.surface_popup_reference = document.createElement("div");
             this.embedSurfaceForm = this.embedSlideover;
@@ -81,14 +85,34 @@ class SurfaceEmbed {
             this.hideSurfaceForm = this.hideSurfaceSlideover;
         }
 
+        // For inline, we select the target inline elements
         if (embed_type == "inline") {
             this.inline_embed_references = document.querySelectorAll(
                 "." + this.target_element_class
             );
-
             this.embedSurfaceForm = this.embedInline;
-            this.showSurfaceForm = () => { };
-            this.hideSurfaceForm = () => { };
+            this.showSurfaceForm = () => {};
+            this.hideSurfaceForm = () => {};
+        }
+
+        // If the user clicks an element with
+        // the target_element_class, we open the popup/slideover.
+
+        if (
+            (embed_type === "popup" || embed_type === "slideover") &&
+            target_element_class
+        ) {
+            document.addEventListener("click", (event) => {
+                // Check if the click was on an element with our target class
+                const clickedButton = event.target.closest("." + target_element_class);
+                if (clickedButton) {
+                    if (embed_type === "popup") {
+                        this.showSurfacePopup();
+                    } else if (embed_type === "slideover") {
+                        this.showSurfaceSlideover();
+                    }
+                }
+            });
         }
     }
 
@@ -119,6 +143,7 @@ class SurfaceEmbed {
         return params;
     }
 
+    // --- Inline embedding ---
     embedInline() {
         if (
             this.inline_embed_references == null ||
@@ -135,8 +160,6 @@ class SurfaceEmbed {
 
         target_client_divs.forEach((client_div) => {
             const surface_inline_iframe_wrapper = document.createElement("div");
-
-            // Create the Popup HTML
             surface_inline_iframe_wrapper.id = "surface-inline-div";
 
             const inline_iframe = document.createElement("iframe");
@@ -145,6 +168,7 @@ class SurfaceEmbed {
             inline_iframe.frameBorder = "0";
             inline_iframe.allowFullscreen = true;
 
+            // Optional inline style
             if (
                 this.iframeInlineStyle &&
                 typeof this.iframeInlineStyle === "object"
@@ -157,20 +181,20 @@ class SurfaceEmbed {
 
             var style = document.createElement("style");
             style.innerHTML = `
-        #surface-inline-div {
-          width: 100%;
-          height: 100%;
-        }
-
-        #surface-inline-div iframe {
-            width: 100%;
-            height: 100%;
-        }
-      `;
+                #surface-inline-div {
+                    width: 100%;
+                    height: 100%;
+                }
+                #surface-inline-div iframe {
+                    width: 100%;
+                    height: 100%;
+                }
+            `;
             document.head.appendChild(style);
         });
     }
 
+    // --- Common popup logic ---
     showSurfacePopup(options = {}) {
         if (this.surface_popup_reference == null) {
             this.log(
@@ -180,23 +204,22 @@ class SurfaceEmbed {
             return;
         }
 
-        // Append the key-value pairs from the `options` object to `this.src.searchParams`
+        // If the user passed in form data or parameters, apply them to the iframe URL
         if (Object.keys(options).length > 0) {
             Object.keys(options).forEach(key => {
                 this.src.searchParams.set(key, options[key]);
             });
-    
-            // Update the iframe src if it exists in the DOM
+
             const iframe = this.surface_popup_reference.querySelector("#surface-iframe");
             if (iframe) {
                 // Smoothly hide the iframe
-                iframe.style.opacity = "0"; // Hide the iframe
+                iframe.style.opacity = "0";
                 setTimeout(() => {
                     iframe.src = this.src.toString(); // Update src
                     iframe.onload = () => {
-                        iframe.style.opacity = "1"; // Show iframe after it loads
+                        iframe.style.opacity = "1";
                     };
-                }, 100); // Delay the src update slightly for smooth hiding
+                }, 100);
             }
         }
 
@@ -204,7 +227,6 @@ class SurfaceEmbed {
         document.body.style.overflow = "hidden"; // Prevent background scrolling
 
         const embedClient = this;
-        // Timeout to allow the 'display' change to take effect before adding the animation class
         setTimeout(function () {
             embedClient.surface_popup_reference.classList.add("active");
         }, 50);
@@ -219,15 +241,15 @@ class SurfaceEmbed {
             return;
         }
         this.surface_popup_reference.classList.remove("active");
-        document.body.style.overflow = "auto"; // Revert background scrolling behavior
+        document.body.style.overflow = "auto";
 
         const embedClient = this;
-        // After the animation completes, set display to none
         setTimeout(function () {
             embedClient.surface_popup_reference.style.display = "none";
         }, 300);
     }
 
+    // --- The popup embed method ---
     embedPopup() {
         if (this.surface_popup_reference == null) {
             this.log(
@@ -238,21 +260,17 @@ class SurfaceEmbed {
 
         const surface_popup = this.surface_popup_reference;
         const src = this.src.toString();
-        const buttonElementClass = this.target_element_class;
-
-        var buttonsByClass = document.querySelectorAll("." + buttonElementClass);
-        var allButtons = Array.from(buttonsByClass);
 
         // Create the Popup HTML
         surface_popup.id = "surface-popup";
-
         surface_popup.innerHTML = `
-    <div class="surface-popup-content">
-        <iframe id="surface-iframe" src="${src}" frameborder="0" allowfullscreen></iframe>
-        <div class="close-btn-container">
-            <span class="close-btn">&times;</span>
-        </div>
-    </div>`;
+            <div class="surface-popup-content">
+                <iframe id="surface-iframe" src="${src}" frameborder="0" allowfullscreen></iframe>
+                <div class="close-btn-container">
+                    <span class="close-btn">&times;</span>
+                </div>
+            </div>
+        `;
 
         // Append to body
         document.body.appendChild(surface_popup);
@@ -276,138 +294,130 @@ class SurfaceEmbed {
         // Apply CSS
         var style = document.createElement("style");
         style.innerHTML = `
-      #surface-popup {
-          display: none;
-          justify-content: center;
-          align-items: center;
-          position: fixed;
-          top: 0;
-          left: 0;
-          width: 100%;
-          height: 100%;
-          z-index: 99999;
-          background-color: rgba(0,0,0,0.5);
-          opacity: 0;
-          transition: opacity 0.3s ease;
-      }
+          #surface-popup {
+              display: none;
+              justify-content: center;
+              align-items: center;
+              position: fixed;
+              top: 0;
+              left: 0;
+              width: 100%;
+              height: 100%;
+              z-index: 99999;
+              background-color: rgba(0,0,0,0.5);
+              opacity: 0;
+              transition: opacity 0.3s ease;
+          }
 
-      .surface-popup-content {
-          position: relative;
-          top: 0;
-          left: 0;
-          transform: scale(0.9);
-          width: calc(100% - 20px);
-          height: calc(100% - 20px);
-          background-color: transparent;
-          border-radius: 15px;
-          box-shadow: 0px 0px 15px rgba(0,0,0,0.2);
-          opacity: 0;
-          transition: transform 0.3s ease, opacity 0.3s ease;
-      }
-
-      .surface-popup-content iframe {
-          width: 100%;
-          height: 100%;
-          border-radius: 15px;
-      }
-
-      /* Adjust iframe dimensions for larger screens */
-      @media (min-width: 481px) {
           .surface-popup-content {
-            width: ${desktopPopupDimensions.width};
-            height: ${desktopPopupDimensions.height};
+              position: relative;
+              top: 0;
+              left: 0;
+              transform: scale(0.9);
+              width: calc(100% - 20px);
+              height: calc(100% - 20px);
+              background-color: transparent;
+              border-radius: 15px;
+              box-shadow: 0px 0px 15px rgba(0,0,0,0.2);
+              opacity: 0;
+              transition: transform 0.3s ease, opacity 0.3s ease;
           }
-      }
-      
-      #surface-iframe {
-          transition: opacity 0.3s ease-in-out;
-      }
 
-      #surface-popup.active {
-          opacity: 1;
-      }
+          .surface-popup-content iframe {
+              width: 100%;
+              height: 100%;
+              border-radius: 15px;
+          }
 
-      #surface-popup.active .surface-popup-content {
-          transform: scale(1);
-          opacity: 1;
-      }
+          @media (min-width: 481px) {
+              .surface-popup-content {
+                  width: ${desktopPopupDimensions.width};
+                  height: ${desktopPopupDimensions.height};
+              }
+          }
 
-      .close-btn-container {
-        position: absolute;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        top: 6px;
-        right: 8px;
-        background: #ffffff;
-        border: none;
-        border-radius: 50%;
-        width: 24px;
-        height: 24px;
-        opacity: .75;
-      }
+          #surface-iframe {
+              transition: opacity 0.3s ease-in-out;
+          }
 
-      /* Adjust iframe dimensions for larger screens */
-      @media (min-width: 481px) {
+          #surface-popup.active {
+              opacity: 1;
+          }
+
+          #surface-popup.active .surface-popup-content {
+              transform: scale(1);
+              opacity: 1;
+          }
+
           .close-btn-container {
-            top: -34px;
-            right: 0;
-            background: none;
+            position: absolute;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            top: 6px;
+            right: 8px;
+            background: #ffffff;
             border: none;
-            border-radius: 0;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            opacity: .75;
           }
-      }
-      .close-btn {
-          display: block;
-          padding: 0;
-          margin: 0;
-          margin-bottom: 6px;
-          font-size: 20px;
-          font-weight: normal;
-          line-height: 24px;
-          text-align: center;
-          text-transform: none;
-          cursor: pointer;
-          transition: opacity .25s ease-in-out;
-          text-decoration: none;
-          color: #000;
-          height: 20px;
-      }
 
-      /* Adjust iframe dimensions for larger screens */
-      @media (min-width: 481px) {
-          .close-btn {
-            color: #ffffff;
-            font-size: 32px;
-            margin-bottom: 0px;
-            height: auto;
+          @media (min-width: 481px) {
+              .close-btn-container {
+                top: -34px;
+                right: 0;
+                background: none;
+                border: none;
+                border-radius: 0;
+              }
           }
-      }
-    `;
+
+          .close-btn {
+              display: block;
+              padding: 0;
+              margin: 0;
+              margin-bottom: 6px;
+              font-size: 20px;
+              font-weight: normal;
+              line-height: 24px;
+              text-align: center;
+              text-transform: none;
+              cursor: pointer;
+              transition: opacity .25s ease-in-out;
+              text-decoration: none;
+              color: #000;
+              height: 20px;
+          }
+
+          @media (min-width: 481px) {
+              .close-btn {
+                color: #ffffff;
+                font-size: 32px;
+                margin-bottom: 0px;
+                height: auto;
+              }
+          }
+        `;
         document.head.appendChild(style);
 
-        const embedClient = this;
-
-        // Add Event Listeners
-        allButtons.forEach(function (btn) {
-            btn.addEventListener("click", function () {
-                embedClient.showSurfacePopup();
-            });
-        });
-
+        // Close button
         surface_popup
             .querySelector(".close-btn-container")
-            .addEventListener("click", function () {
-                embedClient.hideSurfacePopup();
+            .addEventListener("click", () => {
+                this.hideSurfacePopup();
             });
 
-        window.addEventListener("click", function (event) {
+        // Close popup if user clicks outside the content
+        window.addEventListener("click", (event) => {
             if (event.target == surface_popup) {
-                embedClient.hideSurfacePopup();
+                this.hideSurfacePopup();
             }
         });
     }
 
+    // --- Slideover logic ---
     showSurfaceSlideover() {
         if (this.surface_popup_reference == null) {
             this.log(
@@ -417,10 +427,9 @@ class SurfaceEmbed {
             return;
         }
         this.surface_popup_reference.style.display = "block";
-        document.body.style.overflow = "hidden"; // Prevent background scrolling
+        document.body.style.overflow = "hidden";
 
         const embedClient = this;
-        // Timeout to allow the 'display' change to take effect before adding the animation class
         setTimeout(function () {
             embedClient.surface_popup_reference.classList.add("active");
         }, 50);
@@ -435,10 +444,9 @@ class SurfaceEmbed {
             return;
         }
         this.surface_popup_reference.classList.remove("active");
-        document.body.style.overflow = "auto"; // Revert background scrolling behavior
+        document.body.style.overflow = "auto";
 
         const embedClient = this;
-        // After the animation completes, set display to none
         setTimeout(function () {
             embedClient.surface_popup_reference.style.display = "none";
         }, 300);
@@ -448,105 +456,91 @@ class SurfaceEmbed {
         if (this.surface_popup_reference == null) {
             this.log(
                 "error",
-                `Cannot embed popup because Surface embed type is ${this.embed_type}`
+                `Cannot embed slideover because Surface embed type is ${this.embed_type}`
             );
         }
 
         const surface_slideover = this.surface_popup_reference;
         const src = this.src.toString();
-        const buttonElementClass = this.target_element_class;
 
-        var buttonsByClass = document.querySelectorAll("." + buttonElementClass);
-        var allButtons = Array.from(buttonsByClass);
-
-        // Create the Popup HTML
         surface_slideover.id = "surface-popup";
-
         surface_slideover.innerHTML = `
-    <div class="surface-popup-content">
-        <span class="close-btn">&times;</span>
-        <iframe id="surface-iframe" src="${src}" frameborder="0" allowfullscreen></iframe>
-    </div>`;
+            <div class="surface-popup-content">
+                <span class="close-btn">&times;</span>
+                <iframe id="surface-iframe" src="${src}" frameborder="0" allowfullscreen></iframe>
+            </div>
+        `;
 
-        // Append to body
         document.body.appendChild(surface_slideover);
 
-        // Apply CSS
         var style = document.createElement("style");
         style.innerHTML = `
-      #surface-popup {
-          display: none;
-          position: fixed;
-          top: 0;
-          left: 0;
-          width: 100%;
-          height: 100%;
-          z-index: 99999;
-          background-color: rgba(0,0,0,0.5);
-          opacity: 0;
-          transition: opacity 0.3s ease;
-      }
+          #surface-popup {
+              display: none;
+              position: fixed;
+              top: 0;
+              left: 0;
+              width: 100%;
+              height: 100%;
+              z-index: 99999;
+              background-color: rgba(0,0,0,0.5);
+              opacity: 0;
+              transition: opacity 0.3s ease;
+          }
 
-      .surface-popup-content {
-          position: absolute;
-          top: 0;
-          left: 0;
-          transform: translateX(80%);
-          width: 100%;
-          height: 100%;
-          background-color: transparent;
-          padding: 0;
-          box-shadow: 0px 0px 15px rgba(0,0,0,0.2);
-          opacity: 0;
-          transition: transform 0.5s ease, opacity 0.5s ease;
-      }
+          .surface-popup-content {
+              position: absolute;
+              top: 0;
+              left: 0;
+              transform: translateX(80%);
+              width: 100%;
+              height: 100%;
+              background-color: transparent;
+              padding: 0;
+              box-shadow: 0px 0px 15px rgba(0,0,0,0.2);
+              opacity: 0;
+              transition: transform 0.5s ease, opacity 0.5s ease;
+          }
 
-      .surface-popup-content iframe {
-          width: 100%;
-          height: 100%;
-      }
+          .surface-popup-content iframe {
+              width: 100%;
+              height: 100%;
+          }
 
-      .close-btn {
-          position: absolute;
-          right: 20px;
-          top: 10px;
-          font-size: 24px;
-          cursor: pointer;
-      }
+          .close-btn {
+              position: absolute;
+              right: 20px;
+              top: 10px;
+              font-size: 24px;
+              cursor: pointer;
+          }
 
-      #surface-popup.active {
-          opacity: 1;
-      }
+          #surface-popup.active {
+              opacity: 1;
+          }
 
-      #surface-popup.active .surface-popup-content {
-          transform: translateX(0%);
-          opacity: 1;
-      }
-    `;
+          #surface-popup.active .surface-popup-content {
+              transform: translateX(0%);
+              opacity: 1;
+          }
+        `;
         document.head.appendChild(style);
-
-        const embedClient = this;
-
-        // Add Event Listeners
-        allButtons.forEach(function (btn) {
-            btn.addEventListener("click", function () {
-                embedClient.showSurfaceSlideover();
-            });
-        });
 
         surface_slideover
             .querySelector(".close-btn")
-            .addEventListener("click", function () {
-                embedClient.hideSurfaceSlideover();
+            .addEventListener("click", () => {
+                this.hideSurfaceSlideover();
             });
 
-        window.addEventListener("click", function (event) {
+        // Close slideover if user clicks outside the content
+        window.addEventListener("click", (event) => {
             if (event.target == surface_slideover) {
-                embedClient.hideSurfaceSlideover();
+                this.hideSurfaceSlideover();
             }
         });
     }
 
+    // --- Widget logic ---
     addWidgetButton() {
         const widgetButton = document.createElement('div');
         widgetButton.id = 'surface-widget-button';
@@ -589,18 +583,19 @@ class SurfaceEmbed {
         `;
         document.head.appendChild(style);
 
-        const embedClient = this;
-        widgetButton.addEventListener('click', function () {
-            embedClient.showSurfaceForm();
+        // Clicking the widget button opens the popup
+        widgetButton.addEventListener('click', () => {
+            this.showSurfaceForm();
         });
     }
 
     embedWidget() {
-        // Reuse popup embed logic since widget opens as popup
+        // Reuse popup embed logic since widget also opens as a popup
         this.embedPopup();
     }
 }
 
+// Optional: sync environment ID cookie
 (function () {
     const scriptTag = document.currentScript;
     const environmentId = scriptTag ? scriptTag.getAttribute('siteId') : null;
