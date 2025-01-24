@@ -18,6 +18,7 @@ function SurfaceSyncCookie(visitorId) {
 class SurfaceEmbed {
     constructor(src, embed_type, target_element_class, options = {}) {
         this.enableWidget = options.enableWidget || false;
+        this.emailKey = options.emailKey || 'email';
         const defaultWidgetStyles = {
             position: 'right',
             bottomMargin: '40px',
@@ -41,10 +42,11 @@ class SurfaceEmbed {
             embed_type != "inline" &&
             embed_type != "slideover" &&
             embed_type != "popup" &&
-            embed_type != "widget"
+            embed_type != "widget" &&
+            embed_type != "input-trigger"
         ) {
             console.error(
-                `Surface :: Invalid embed type: ${embed_type}. Embed Type must be inline, slideover, popup, or widget`
+                `Surface :: Invalid embed type: ${embed_type}. Embed Type must be inline, slideover, popup, widget, or input-trigger`
             );
         } else if (!target_element_class && embed_type !== "widget") {
             console.error(
@@ -63,11 +65,16 @@ class SurfaceEmbed {
         this.iframeInlineStyle = null;
         this.popupSize = null;
 
-        // For popup or widget, we create a DIV (for the iframe)
-        if (embed_type == "popup" || embed_type == "widget") {
+        // For popup, widget, or input-trigger, we create a DIV (for the iframe)
+        if (embed_type == "popup" || embed_type == "widget" || embed_type == "input-trigger") {
             this.surface_popup_reference = document.createElement("div");
-            this.embedSurfaceForm =
-                embed_type == "widget" ? this.embedWidget : this.embedPopup;
+            if (embed_type == "widget") {
+                this.embedSurfaceForm = this.embedWidget;
+            } else if (embed_type == "input-trigger") {
+                this.embedSurfaceForm = this.embedInputTrigger;
+            } else {
+                this.embedSurfaceForm = this.embedPopup;
+            }
             this.showSurfaceForm = this.showSurfacePopup;
             this.hideSurfaceForm = this.hideSurfacePopup;
 
@@ -97,16 +104,17 @@ class SurfaceEmbed {
 
         // If the user clicks an element with
         // the target_element_class, we open the popup/slideover.
-
         if (
-            (embed_type === "popup" || embed_type === "slideover") &&
+            (embed_type === "popup" || 
+             embed_type === "slideover" || 
+             embed_type === "input-trigger") &&
             target_element_class
         ) {
             document.addEventListener("click", (event) => {
                 // Check if the click was on an element with our target class
                 const clickedButton = event.target.closest("." + target_element_class);
                 if (clickedButton) {
-                    if (embed_type === "popup") {
+                    if (embed_type === "popup" || embed_type === "input-trigger") {
                         this.showSurfacePopup();
                     } else if (embed_type === "slideover") {
                         this.showSurfaceSlideover();
@@ -592,6 +600,73 @@ class SurfaceEmbed {
     embedWidget() {
         // Reuse popup embed logic since widget also opens as a popup
         this.embedPopup();
+    }
+
+    embedInputTrigger() {
+        // First embed the popup UI
+        this.embedPopup();
+
+        // Then set up the input trigger functionality
+        const attachFormHandlers = () => {
+            const forms = document.querySelectorAll("form.surface-form-handler");
+            forms.forEach((form) => {
+                if (!form.dataset.listenerAttached) {
+                    form.dataset.listenerAttached = "true";
+
+                    // Submit handler
+                    form.addEventListener("submit", (event) => {
+                        event.preventDefault();
+
+                        const emailInput = form.querySelector('input[type="email"]');
+                        const emailValue = emailInput?.value.trim();
+                        const emailRegex = /^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/;
+
+                        if (emailInput && emailValue && emailRegex.test(emailValue)) {
+                            const params = {
+                                [this.emailKey]: emailValue,
+                            };
+
+                            this.showSurfacePopup(params);
+                        } else {
+                            console.log("Invalid email address.");
+                            emailInput?.reportValidity();
+                        }
+                    });
+
+                    // Keydown handler for Enter key
+                    form.addEventListener("keydown", (event) => {
+                        if (event.key === "Enter") {
+                            const activeElement = document.activeElement;
+                            if (activeElement.tagName === "INPUT" && activeElement.type === "email") {
+                                event.preventDefault();
+                                form.dispatchEvent(new Event("submit", { cancelable: true }));
+                            }
+                        }
+                    });
+                }
+            });
+        };
+
+        // Attach handlers initially
+        attachFormHandlers();
+
+        // Observe DOM changes to reattach handlers
+        const observer = new MutationObserver(attachFormHandlers);
+        observer.observe(document.body, { childList: true, subtree: true });
+
+        // Ensure Enter key submits the form globally
+        document.body.addEventListener("keydown", (event) => {
+            const form = event.target.closest("form.surface-form-handler");
+            if (!form) return;
+
+            if (event.key === "Enter") {
+                const activeElement = document.activeElement;
+                if (activeElement.tagName === "INPUT") {
+                    event.preventDefault();
+                    form.dispatchEvent(new Event("submit", { cancelable: true }));
+                }
+            }
+        });
     }
 }
 
