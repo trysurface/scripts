@@ -20,48 +20,88 @@ class SurfaceEmbed {
       popup: null,
       widget: null
     };
-    
+
     this.initialized = false;
-    
+
     // Add default widget styles
     const defaultWidgetStyles = {
-      position: 'right',
-      bottomMargin: '40px',
-      sideMargin: '30px',
-      size: '64px',
-      backgroundColor: '#1a56db',
-      hoverScale: '1.05',
-      boxShadow: '0 6px 12px rgba(0,0,0,0.2)'
+      position: "right",
+      bottomMargin: "40px",
+      sideMargin: "30px",
+      size: "64px",
+      backgroundColor: "#1a56db",
+      hoverScale: "1.05",
+      boxShadow: "0 6px 12px rgba(0,0,0,0.2)",
     };
 
     // Merge default styles with any custom styles from options
     this.widgetStyle = {
       ...defaultWidgetStyles,
-      ...(options.widgetStyles || {})
+      ...(options.widgetStyles || {}),
     };
-    
-    this.src = src;
+
+    SurfaceSyncCookie(src);
+    this.src = new URL(src);
+    this.src.searchParams.append("url", window.location.href);
     this.embed_type = embed_type;
     this.target_element_class = target_element_class;
     this.options = options;
-    
-    if ((embed_type === "popup" || embed_type === "slideover" || embed_type === "widget") && target_element_class) {
+
+    if (
+      (embed_type === "popup" ||
+        embed_type === "slideover" ||
+        embed_type === "widget" ||
+        embed_type === "inline") &&
+      target_element_class
+    ) {
       this.setupClickHandlers();
     }
-    
+
     if (embed_type === "widget") {
       this.addWidgetButton();
     }
   }
 
+  log(level, message) {
+    const prefix = "Surface Embed :: ";
+    const fullMessage = prefix + message;
+    if (level == "info") {
+      console.log(fullMessage);
+    }
+    if (level == "warn") {
+      console.warn(fullMessage);
+    }
+    if (level == "error") {
+      console.error(fullMessage);
+    }
+  }
+
+  getUrlParams() {
+    let params = {};
+    let queryString = window.location.search.slice(1); // Remove the leading '?'
+    let pairs = queryString.split("&");
+
+    pairs.forEach((pair) => {
+      let [key, value] = pair.split("=");
+      params[decodeURIComponent(key)] = decodeURIComponent(value || "");
+    });
+
+    return params;
+  }
+
   setupClickHandlers() {
+    if (this.embed_type === "inline") {
+      this.surface_inline_reference = document.createElement("div");
+    }
     document.addEventListener("click", (event) => {
-      const clickedButton = event.target.closest("." + this.target_element_class);
+      const clickedButton = event.target.closest(
+        "." + this.target_element_class
+      );
       if (clickedButton) {
         if (!this.initialized) {
           this.initialize();
         }
-        
+
         if (this.embed_type === "popup" || this.embed_type === "widget") {
           this.showSurfacePopup();
         } else if (this.embed_type === "slideover") {
@@ -73,9 +113,9 @@ class SurfaceEmbed {
 
   initialize() {
     if (this.initialized) return;
-    
+
     this.surface_popup_reference = document.createElement("div");
-    
+
     if (this.embed_type === "popup" || this.embed_type === "widget") {
       this.embedSurfaceForm = this.embedPopup;
       this.showSurfaceForm = this.showSurfacePopup;
@@ -84,10 +124,65 @@ class SurfaceEmbed {
       this.embedSurfaceForm = this.embedSlideover;
       this.showSurfaceForm = this.showSurfaceSlideover;
       this.hideSurfaceForm = this.hideSurfaceSlideover;
+    } else if (this.embed_type === "inline") {
+      this.inline_embed_references = document.querySelectorAll(
+        "." + this.target_element_class
+      );
+      this.embedSurfaceForm = this.embedInline;
+      this.showSurfaceForm = () => {};
+      this.hideSurfaceForm = () => {};
     }
-    
+
     this.embedSurfaceForm();
     this.initialized = true;
+  }
+
+  // --- Inline embedding ---
+  embedInline() {
+    if (this.surface_inline_reference == null) {
+      this.log(
+        "warn",
+        `Surface Form could not find target div with class ${this.target_element_class}`
+      );
+    }
+
+    const src = this.src.toString();
+    const target_client_divs = this.inline_embed_references;
+
+    target_client_divs.forEach((client_div) => {
+      const surface_inline_iframe_wrapper = document.createElement("div");
+      surface_inline_iframe_wrapper.id = "surface-inline-div";
+
+      const inline_iframe = document.createElement("iframe");
+      inline_iframe.id = "surface-iframe";
+      inline_iframe.src = src;
+      inline_iframe.frameBorder = "0";
+      inline_iframe.allowFullscreen = true;
+
+      // Optional inline style
+      if (
+        this.iframeInlineStyle &&
+        typeof this.iframeInlineStyle === "object"
+      ) {
+        Object.assign(inline_iframe.style, this.iframeInlineStyle);
+      }
+
+      client_div.appendChild(surface_inline_iframe_wrapper);
+      surface_inline_iframe_wrapper.appendChild(inline_iframe);
+
+      var style = document.createElement("style");
+      style.innerHTML = `
+          #surface-inline-div {
+              width: 100%;
+              height: 100%;
+          }
+          #surface-inline-div iframe {
+              width: 100%;
+              height: 100%;
+          }
+      `;
+      document.head.appendChild(style);
+    });
   }
 
   showSurfacePopup(options = {}) {
@@ -178,10 +273,16 @@ class SurfaceEmbed {
     if (this.options.popupSize != null && this.options.popupSize === "small") {
       desktopPopupDimensions.width = "50%";
       desktopPopupDimensions.height = "60%";
-    } else if (this.options.popupSize == null || this.options.popupSize === "medium") {
+    } else if (
+      this.options.popupSize == null ||
+      this.options.popupSize === "medium"
+    ) {
       desktopPopupDimensions.width = "70%";
       desktopPopupDimensions.height = "80%";
-    } else if (this.options.popupSize != null && this.options.popupSize === "large") {
+    } else if (
+      this.options.popupSize != null &&
+      this.options.popupSize === "large"
+    ) {
       desktopPopupDimensions.width = "calc(100% - 80px)";
       desktopPopupDimensions.height = "calc(100% - 80px)";
     }
@@ -508,10 +609,10 @@ class SurfaceEmbed {
 
     // Clicking the widget button opens the popup
     widgetButton.addEventListener("click", () => {
-        if (!this.initialized) {
-            this.initialize();
-        }
-        this.showSurfacePopup();
+      if (!this.initialized) {
+        this.initialize();
+      }
+      this.showSurfacePopup();
     });
   }
 
