@@ -1,4 +1,41 @@
 let SurfaceSyncCookieHappenedOnce = false;
+
+let Store = {
+  windowUrl: new URL(window.location.href).toString(),
+  origin: new URL(window.location.href).origin.toString(),
+  referrer: document.referrer || "",
+  cookies: {},
+  metadata: {},
+  partialFilledData: {},
+  // Add method to update store and notify iframe
+  update(newData) {
+    Object.assign(this, newData);
+    this.notifyIframe();
+  },
+
+  // Method to send postMessage to iframe
+  notifyIframe() {
+    const iframe = document.querySelector("#surface-iframe");
+    if (iframe) {
+      console.log(Store);
+      iframe.contentWindow.postMessage(
+        {
+          type: "STORE_UPDATE",
+          payload: {
+            windowUrl: Store.windowUrl,
+            referrer: Store.referrer,
+            cookies: Store.cookies,
+            metadata: Store.metadata,
+            partialFilledData: Store.partialFilledData,
+            origin: Store.origin,
+          },
+        },
+        "*"
+      );
+    }
+  },
+};
+
 function SurfaceSyncCookie(visitorId) {
   const endpoint = new URL("https://a.usbrowserspeed.com/cs");
   var pid = "b3752b5f7f17d773b265c2847b23ffa444cac7db2af8a040c341973a6704a819";
@@ -16,9 +53,26 @@ function SurfaceSyncCookie(visitorId) {
 
 class SurfaceEmbed {
   constructor(src, embed_type, target_element_class, options = {}) {
+    // Initialize store first
+    const initialStore = {
+      windowUrl: new URL(window.location.href).toString(),
+      origin: new URL(window.location.href).origin.toString(),
+      referrer: document.referrer,
+      cookies: this.parseCookies(),
+      metadata: {
+        userAgent: navigator.userAgent,
+        language: navigator.language,
+        screenResolution: `${window.screen.width}x${window.screen.height}`,
+        timestamp: new Date().toISOString(),
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      },
+    };
+
+    Store.update(initialStore);
+
     this.styles = {
       popup: null,
-      widget: null
+      widget: null,
     };
 
     this.initialized = false;
@@ -43,6 +97,7 @@ class SurfaceEmbed {
     SurfaceSyncCookie(src);
     this.src = new URL(src);
     this.src.searchParams.append("url", window.location.href);
+
     this.embed_type = embed_type;
     this.target_element_class = target_element_class;
     this.options = options;
@@ -183,6 +238,12 @@ class SurfaceEmbed {
       `;
       document.head.appendChild(style);
     });
+    Store.update({
+      windowUrl: Store.windowUrl,
+      referrer: Store.referrer,
+      cookies: Store.cookies,
+      metadata: Store.metadata,
+    });
   }
 
   showSurfacePopup(options = {}) {
@@ -222,6 +283,12 @@ class SurfaceEmbed {
     setTimeout(function () {
       embedClient.surface_popup_reference.classList.add("active");
     }, 50);
+    Store.update({
+      windowUrl: Store.windowUrl,
+      referrer: Store.referrer,
+      cookies: Store.cookies,
+      metadata: Store.metadata,
+    });
   }
 
   hideSurfacePopup() {
@@ -457,6 +524,12 @@ class SurfaceEmbed {
     setTimeout(function () {
       embedClient.surface_popup_reference.classList.add("active");
     }, 50);
+    Store.update({
+      windowUrl: Store.windowUrl,
+      referrer: Store.referrer,
+      cookies: Store.cookies,
+      metadata: Store.metadata,
+    });
   }
 
   hideSurfaceSlideover() {
@@ -619,6 +692,16 @@ class SurfaceEmbed {
   embedWidget() {
     // Reuse popup embed logic since widget also opens as a popup
     this.embedPopup();
+  }
+
+  // Add new helper method to parse cookies
+  parseCookies() {
+    const cookies = {};
+    document.cookie.split(";").forEach((cookie) => {
+      const [key, value] = cookie.split("=").map((c) => c.trim());
+      if (key && value) cookies[key] = value;
+    });
+    return cookies;
   }
 }
 
