@@ -16,185 +16,84 @@ function SurfaceSyncCookie(visitorId) {
 
 class SurfaceEmbed {
   constructor(src, embed_type, target_element_class, options = {}) {
-    this.enableWidget = options.enableWidget || false;
+    this.styles = {
+      popup: null,
+      widget: null
+    };
+    
+    this.initialized = false;
+    
+    // Add default widget styles
     const defaultWidgetStyles = {
-      position: "right",
-      bottomMargin: "40px",
-      sideMargin: "30px",
-      size: "64px",
-      backgroundColor: "#1a56db",
-      hoverScale: "1.05",
-      boxShadow: "0 6px 12px rgba(0,0,0,0.2)",
+      position: 'right',
+      bottomMargin: '40px',
+      sideMargin: '30px',
+      size: '64px',
+      backgroundColor: '#1a56db',
+      hoverScale: '1.05',
+      boxShadow: '0 6px 12px rgba(0,0,0,0.2)'
     };
 
+    // Merge default styles with any custom styles from options
     this.widgetStyle = {
       ...defaultWidgetStyles,
-      ...(options.widgetStyles || {}),
+      ...(options.widgetStyles || {})
     };
-
-    if (!src) {
-      console.error(
-        `Surface :: Invalid src. Surface src url must not be null nor empty`
-      );
-    } else if (
-      embed_type != "inline" &&
-      embed_type != "slideover" &&
-      embed_type != "popup" &&
-      embed_type != "widget"
-    ) {
-      console.error(
-        `Surface :: Invalid embed type: ${embed_type}. Embed Type must be inline, slideover, popup, or widget`
-      );
-    } else if (!target_element_class && embed_type !== "widget") {
-      console.error(
-        `Surface :: Invalid target element class. Target element class must not be null nor empty`
-      );
-    }
-
+    
+    this.src = src;
     this.embed_type = embed_type;
     this.target_element_class = target_element_class;
+    this.options = options;
+    
+    if ((embed_type === "popup" || embed_type === "slideover") && target_element_class) {
+      this.setupClickHandlers();
+    }
+    
+    if (embed_type === "widget") {
+      this.addWidgetButton();
+    }
+  }
 
-    SurfaceSyncCookie(src);
-    this.src = new URL(src);
-    this.src.searchParams.append("url", window.location.href);
-    this.surface_popup_reference = null;
-    this.inline_embed_references = null;
-    this.iframeInlineStyle = null;
-    this.popupSize = null;
+  setupClickHandlers() {
+    document.addEventListener("click", (event) => {
+      const clickedButton = event.target.closest("." + this.target_element_class);
+      if (clickedButton) {
+        if (!this.initialized) {
+          this.initialize();
+        }
+        
+        if (this.embed_type === "popup") {
+          this.showSurfacePopup();
+        } else if (this.embed_type === "slideover") {
+          this.showSurfaceSlideover();
+        }
+      }
+    });
+  }
 
-    // For popup or widget, we create a DIV (for the iframe)
-    if (embed_type == "popup" || embed_type == "widget") {
-      this.surface_popup_reference = document.createElement("div");
-      this.embedSurfaceForm =
-        embed_type == "widget" ? this.embedWidget : this.embedPopup;
+  initialize() {
+    if (this.initialized) return;
+    
+    this.surface_popup_reference = document.createElement("div");
+    
+    if (this.embed_type === "popup" || this.embed_type === "widget") {
+      this.embedSurfaceForm = this.embedPopup;
       this.showSurfaceForm = this.showSurfacePopup;
       this.hideSurfaceForm = this.hideSurfacePopup;
-
-      // If widget, add the floating button
-      if (embed_type == "widget") {
-        this.addWidgetButton();
-      }
-    }
-
-    // For slideover, we also create the DIV
-    if (embed_type == "slideover") {
-      this.surface_popup_reference = document.createElement("div");
+    } else if (this.embed_type === "slideover") {
       this.embedSurfaceForm = this.embedSlideover;
       this.showSurfaceForm = this.showSurfaceSlideover;
       this.hideSurfaceForm = this.hideSurfaceSlideover;
     }
-
-    // For inline, we select the target inline elements
-    if (embed_type == "inline") {
-      this.inline_embed_references = document.querySelectorAll(
-        "." + this.target_element_class
-      );
-      this.embedSurfaceForm = this.embedInline;
-      this.showSurfaceForm = () => {};
-      this.hideSurfaceForm = () => {};
-    }
-
-    // If the user clicks an element with
-    // the target_element_class, we open the popup/slideover.
-
-    if (
-      (embed_type === "popup" || embed_type === "slideover") &&
-      target_element_class
-    ) {
-      document.addEventListener("click", (event) => {
-        // Check if the click was on an element with our target class
-        const clickedButton = event.target.closest("." + target_element_class);
-        if (clickedButton) {
-          if (embed_type === "popup") {
-            this.showSurfacePopup();
-          } else if (embed_type === "slideover") {
-            this.showSurfaceSlideover();
-          }
-        }
-      });
-    }
+    
+    this.embedSurfaceForm();
+    this.initialized = true;
   }
 
-  log(level, message) {
-    const prefix = "Surface Embed :: ";
-    const fullMessage = prefix + message;
-    if (level == "info") {
-      console.log(fullMessage);
-    }
-    if (level == "warn") {
-      console.warn(fullMessage);
-    }
-    if (level == "error") {
-      console.error(fullMessage);
-    }
-  }
-
-  getUrlParams() {
-    let params = {};
-    let queryString = window.location.search.slice(1); // Remove the leading '?'
-    let pairs = queryString.split("&");
-
-    pairs.forEach((pair) => {
-      let [key, value] = pair.split("=");
-      params[decodeURIComponent(key)] = decodeURIComponent(value || "");
-    });
-
-    return params;
-  }
-
-  // --- Inline embedding ---
-  embedInline() {
-    if (
-      this.inline_embed_references == null ||
-      this.inline_embed_references.length <= 0
-    ) {
-      this.log(
-        "warn",
-        `Surface Form could not find target div with class ${this.target_element_class}`
-      );
-    }
-
-    const src = this.src.toString();
-    const target_client_divs = this.inline_embed_references;
-
-    target_client_divs.forEach((client_div) => {
-      const surface_inline_iframe_wrapper = document.createElement("div");
-      surface_inline_iframe_wrapper.id = "surface-inline-div";
-
-      const inline_iframe = document.createElement("iframe");
-      inline_iframe.id = "surface-iframe";
-      inline_iframe.src = src;
-      inline_iframe.frameBorder = "0";
-      inline_iframe.allowFullscreen = true;
-
-      // Optional inline style
-      if (
-        this.iframeInlineStyle &&
-        typeof this.iframeInlineStyle === "object"
-      ) {
-        Object.assign(inline_iframe.style, this.iframeInlineStyle);
-      }
-
-      client_div.appendChild(surface_inline_iframe_wrapper);
-      surface_inline_iframe_wrapper.appendChild(inline_iframe);
-
-      var style = document.createElement("style");
-      style.innerHTML = `
-                #surface-inline-div {
-                    width: 100%;
-                    height: 100%;
-                }
-                #surface-inline-div iframe {
-                    width: 100%;
-                    height: 100%;
-                }
-            `;
-      document.head.appendChild(style);
-    });
-  }
-
-  // --- Common popup logic ---
   showSurfacePopup(options = {}) {
+    if (!this.initialized) {
+      this.initialize();
+    }
     if (this.surface_popup_reference == null) {
       this.log(
         "warn",
@@ -203,7 +102,6 @@ class SurfaceEmbed {
       return;
     }
 
-    // If the user passed in form data or parameters, apply them to the iframe URL
     if (Object.keys(options).length > 0) {
       Object.keys(options).forEach((key) => {
         this.src.searchParams.set(key, options[key]);
@@ -212,10 +110,9 @@ class SurfaceEmbed {
       const iframe =
         this.surface_popup_reference.querySelector("#surface-iframe");
       if (iframe) {
-        // Smoothly hide the iframe
         iframe.style.opacity = "0";
         setTimeout(() => {
-          iframe.src = this.src.toString(); // Update src
+          iframe.src = this.src.toString();
           iframe.onload = () => {
             iframe.style.opacity = "1";
           };
@@ -224,7 +121,7 @@ class SurfaceEmbed {
     }
 
     this.surface_popup_reference.style.display = "flex";
-    document.body.style.overflow = "hidden"; // Prevent background scrolling
+    document.body.style.overflow = "hidden";
 
     const embedClient = this;
     setTimeout(function () {
@@ -249,7 +146,6 @@ class SurfaceEmbed {
     }, 300);
   }
 
-  // --- The popup embed method ---
   embedPopup() {
     if (this.surface_popup_reference == null) {
       this.log(
@@ -261,7 +157,6 @@ class SurfaceEmbed {
     const surface_popup = this.surface_popup_reference;
     const src = this.src.toString();
 
-    // Create the Popup HTML with loading spinner
     surface_popup.id = "surface-popup";
     surface_popup.innerHTML = `
             <div class="surface-popup-content">
@@ -273,7 +168,6 @@ class SurfaceEmbed {
             </div>
         `;
 
-    // Append to body
     document.body.appendChild(surface_popup);
 
     const desktopPopupDimensions = {
@@ -281,20 +175,20 @@ class SurfaceEmbed {
       height: "calc(100% - 80px)",
     };
 
-    if (this.popupSize != null && this.popupSize === "small") {
+    if (this.options.popupSize != null && this.options.popupSize === "small") {
       desktopPopupDimensions.width = "50%";
       desktopPopupDimensions.height = "60%";
-    } else if (this.popupSize == null || this.popupSize === "medium") {
+    } else if (this.options.popupSize == null || this.options.popupSize === "medium") {
       desktopPopupDimensions.width = "70%";
       desktopPopupDimensions.height = "80%";
-    } else if (this.popupSize != null && this.popupSize === "large") {
+    } else if (this.options.popupSize != null && this.options.popupSize === "large") {
       desktopPopupDimensions.width = "calc(100% - 80px)";
       desktopPopupDimensions.height = "calc(100% - 80px)";
     }
 
-    // Apply CSS
-    var style = document.createElement("style");
-    style.innerHTML = `
+    if (!this.styles.popup) {
+      const style = document.createElement("style");
+      style.innerHTML = `
           #surface-popup {
               display: none;
               justify-content: center;
@@ -420,23 +314,22 @@ class SurfaceEmbed {
               100% { transform: translate(-50%, -50%) rotate(360deg); }
           }
         `;
-    document.head.appendChild(style);
+      document.head.appendChild(style);
+      this.styles.popup = style;
+    }
 
-    // Close button
     surface_popup
       .querySelector(".close-btn-container")
       .addEventListener("click", () => {
         this.hideSurfacePopup();
       });
 
-    // Close popup if user clicks outside the content
     window.addEventListener("click", (event) => {
       if (event.target == surface_popup) {
         this.hideSurfacePopup();
       }
     });
 
-    // Add iframe load handler
     const iframe = surface_popup.querySelector("#surface-iframe");
     iframe.onload = () => {
       setTimeout(() => {
@@ -615,7 +508,10 @@ class SurfaceEmbed {
 
     // Clicking the widget button opens the popup
     widgetButton.addEventListener("click", () => {
-      this.showSurfaceForm();
+        if (!this.initialized) {
+            this.initialize();
+        }
+        this.showSurfacePopup();
     });
   }
 
