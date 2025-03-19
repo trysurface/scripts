@@ -45,7 +45,7 @@ class SurfaceEmbed {
     this.target_element_class = target_element_class;
     this.options = options;
     
-    if ((embed_type === "popup" || embed_type === "slideover") && target_element_class) {
+    if ((embed_type === "popup" || embed_type === "slideover" || embed_type === "widget") && target_element_class) {
       this.setupClickHandlers();
     }
     
@@ -62,7 +62,7 @@ class SurfaceEmbed {
           this.initialize();
         }
         
-        if (this.embed_type === "popup") {
+        if (this.embed_type === "popup" || this.embed_type === "widget") {
           this.showSurfacePopup();
         } else if (this.embed_type === "slideover") {
           this.showSurfaceSlideover();
