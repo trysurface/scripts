@@ -9,15 +9,13 @@ let Store = {
   partialFilledData: {},
   // Add method to update store and notify iframe
   update(newData) {
-    Object.assign(this, newData);
-    this.notifyIframe();
+    Object.assign(this, newData)
   },
 
   // Method to send postMessage to iframe
   notifyIframe() {
     const iframe = document.querySelector("#surface-iframe");
     if (iframe) {
-      console.log(Store);
       iframe.contentWindow.postMessage(
         {
           type: "STORE_UPDATE",
