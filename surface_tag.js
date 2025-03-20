@@ -7,12 +7,9 @@ let Store = {
   cookies: {},
   metadata: {},
   partialFilledData: {},
-  // Add method to update store and notify iframe
   update(newData) {
     Object.assign(this, newData);
   },
-
-  // Method to send postMessage to iframe
   notifyIframe() {
     const iframe = document.querySelector("#surface-iframe");
     if (iframe) {
@@ -22,10 +19,12 @@ let Store = {
           payload: {
             windowUrl: Store.windowUrl,
             referrer: Store.referrer,
-            cookies: Store.cookies,
-            metadata: Store.metadata,
-            partialFilledData: Store.partialFilledData,
+            cookies:
+              Object.keys(Store.cookies).length === 0
+                ? parseCookies()
+                : Store.cookies,
             origin: Store.origin,
+            questionIds: Store.partialFilledData,
           },
         },
         "*"
@@ -51,23 +50,6 @@ function SurfaceSyncCookie(visitorId) {
 
 class SurfaceEmbed {
   constructor(src, embed_type, target_element_class, options = {}) {
-    // Initialize store first
-    const initialStore = {
-      windowUrl: new URL(window.location.href).toString(),
-      origin: new URL(window.location.href).origin.toString(),
-      referrer: document.referrer,
-      cookies: this.parseCookies(),
-      metadata: {
-        userAgent: navigator.userAgent,
-        language: navigator.language,
-        screenResolution: `${window.screen.width}x${window.screen.height}`,
-        timestamp: new Date().toISOString(),
-        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-      },
-    };
-
-    Store.update(initialStore);
-
     this.styles = {
       popup: null,
       widget: null,
@@ -92,6 +74,11 @@ class SurfaceEmbed {
       ...(options.widgetStyles || {}),
     };
 
+    if (options.prefillData) {
+      Store.partialFilledData = Object.entries(options.prefillData).map(
+        ([key, value]) => ({ [key]: value })
+      );
+    }
     SurfaceSyncCookie(src);
     this.src = new URL(src);
     this.src.searchParams.append("url", window.location.href);
@@ -166,6 +153,11 @@ class SurfaceEmbed {
 
   initialize() {
     if (this.initialized) return;
+    window.addEventListener("message", (event) => {
+      if (event.data.type === "SEND_DATA") {
+        Store.notifyIframe();
+      }
+    });
 
     this.surface_popup_reference = document.createElement("div");
 
@@ -236,12 +228,6 @@ class SurfaceEmbed {
       `;
       document.head.appendChild(style);
     });
-    Store.update({
-      windowUrl: Store.windowUrl,
-      referrer: Store.referrer,
-      cookies: Store.cookies,
-      metadata: Store.metadata,
-    });
   }
 
   showSurfacePopup(options = {}) {
@@ -281,12 +267,6 @@ class SurfaceEmbed {
     setTimeout(function () {
       embedClient.surface_popup_reference.classList.add("active");
     }, 50);
-    Store.update({
-      windowUrl: Store.windowUrl,
-      referrer: Store.referrer,
-      cookies: Store.cookies,
-      metadata: Store.metadata,
-    });
   }
 
   hideSurfacePopup() {
@@ -604,12 +584,6 @@ class SurfaceEmbed {
     setTimeout(function () {
       embedClient.surface_popup_reference.classList.add("active");
     }, 50);
-    Store.update({
-      windowUrl: Store.windowUrl,
-      referrer: Store.referrer,
-      cookies: Store.cookies,
-      metadata: Store.metadata,
-    });
   }
 
   hideSurfaceSlideover() {
@@ -773,16 +747,15 @@ class SurfaceEmbed {
     // Reuse popup embed logic since widget also opens as a popup
     this.embedPopup();
   }
+}
 
-  // Add new helper method to parse cookies
-  parseCookies() {
-    const cookies = {};
-    document.cookie.split(";").forEach((cookie) => {
-      const [key, value] = cookie.split("=").map((c) => c.trim());
-      if (key && value) cookies[key] = value;
-    });
-    return cookies;
-  }
+function parseCookies() {
+  const cookies = {};
+  document.cookie.split(";").forEach((cookie) => {
+    const [key, value] = cookie.split("=").map((c) => c.trim());
+    if (key && value) cookies[key] = value;
+  });
+  return cookies;
 }
 
 // Optional: sync environment ID cookie
