@@ -322,7 +322,7 @@ class SurfaceEmbed {
             <div class="surface-popup-content">
                 <div class="surface-loading-spinner"></div>
                 <iframe id="surface-iframe" src="${src}" frameborder="0" allowfullscreen style="opacity: 0;"></iframe>
-                <div class="close-btn-container">
+                <div class="close-btn-container" style="display: none;">
                     <span class="close-btn">&times;</span>
                 </div>
             </div>
@@ -412,7 +412,7 @@ class SurfaceEmbed {
 
           .close-btn-container {
             position: absolute;
-            display: flex;
+            display: hidden;
             justify-content: center;
             align-items: center;
             top: 6px;
@@ -501,6 +501,8 @@ class SurfaceEmbed {
       setTimeout(() => {
         const spinner = surface_popup.querySelector(".surface-loading-spinner");
         if (spinner) spinner.style.display = "none";
+        const closeBtn = surface_popup.querySelector(".close-btn-container");
+        if (closeBtn) closeBtn.style.display = "flex";
         iframe.style.opacity = "1";
       }, 0);
     };
