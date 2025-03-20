@@ -65,7 +65,7 @@ class SurfaceEmbed {
       size: "64px",
       backgroundColor: "#1a56db",
       hoverScale: "1.05",
-      boxShadow: "0 6px 12px rgba(0,0,0,0.2)",
+      boxShadow: "0 6px 12px rgba(0,0,0,0.25)",
     };
 
     // Merge default styles with any custom styles from options
@@ -300,7 +300,7 @@ class SurfaceEmbed {
     surface_popup.id = "surface-popup";
     surface_popup.innerHTML = `
             <div class="surface-popup-content">
-                <div style="display: flex; justify-content: center; align-items: center; height: 100%; position: absolute; top: 0; left: 0; width: 100%;">
+                <div style="display: flex; justify-content: center; align-items: center; height: 100%; position: absolute; top: 0; left: 0; width: 100%; pointer-events: none;">
                     <div class="surface-loading-spinner"></div>
                 </div>
                 <iframe id="surface-iframe" src="${src}" frameborder="0" allowfullscreen style="opacity: 0;"></iframe>
@@ -347,7 +347,7 @@ class SurfaceEmbed {
               width: 100%;
               height: 100%;
               z-index: 99999;
-              background-color: rgba(0,0,0,0.5);
+              background-color: rgba(0,0,0,0.2);
               opacity: 0;
               transition: opacity 0.3s ease;
           }
@@ -361,7 +361,6 @@ class SurfaceEmbed {
               height: calc(100% - 20px);
               background-color: transparent;
               border-radius: 15px;
-              box-shadow: 0px 0px 15px rgba(0,0,0,0.2);
               opacity: 0;
               transition: transform 0.3s ease, opacity 0.3s ease;
           }
