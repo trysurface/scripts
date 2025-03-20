@@ -9,7 +9,7 @@ let Store = {
   partialFilledData: {},
   // Add method to update store and notify iframe
   update(newData) {
-    Object.assign(this, newData)
+    Object.assign(this, newData);
   },
 
   // Method to send postMessage to iframe
@@ -320,7 +320,9 @@ class SurfaceEmbed {
     surface_popup.id = "surface-popup";
     surface_popup.innerHTML = `
             <div class="surface-popup-content">
-                <div class="surface-loading-spinner"></div>
+                <div style="display: flex; justify-content: center; align-items: center; height: 100%; position: absolute; top: 0; left: 0; width: 100%;">
+                    <div class="surface-loading-spinner"></div>
+                </div>
                 <iframe id="surface-iframe" src="${src}" frameborder="0" allowfullscreen style="opacity: 0;"></iframe>
                 <div class="close-btn-container" style="display: none;">
                     <span class="close-btn">&times;</span>
@@ -462,17 +464,95 @@ class SurfaceEmbed {
           }
 
           .surface-loading-spinner {
-              position: absolute;
-              top: 50%;
-              left: 50%;
-              transform: translate(-50%, -50%);
-              width: 50px;
-              height: 50px;
-              border: 3px solid #f3f3f3;
-              border-top: 3px solid #3498db;
-              border-radius: 50%;
-              animation: spin 1s linear infinite;
-              z-index: 1;
+            height: 5px;
+            width: 5px;
+            color: #fff;
+            box-shadow: -10px -10px 0 5px,
+                        -10px -10px 0 5px,
+                        -10px -10px 0 5px,
+                        -10px -10px 0 5px;
+            animation: loader-38 6s infinite;
+          }
+
+          @keyframes loader-38 {
+            0% {
+              box-shadow: -10px -10px 0 5px,
+                          -10px -10px 0 5px,
+                          -10px -10px 0 5px,
+                          -10px -10px 0 5px;
+            }
+            8.33% {
+              box-shadow: -10px -10px 0 5px,
+                          10px -10px 0 5px,
+                          10px -10px 0 5px,
+                          10px -10px 0 5px;
+            }
+            16.66% {
+              box-shadow: -10px -10px 0 5px,
+                          10px -10px 0 5px,
+                          10px 10px 0 5px,
+                          10px 10px 0 5px;
+            }
+            24.99% {
+              box-shadow: -10px -10px 0 5px,
+                          10px -10px 0 5px,
+                          10px 10px 0 5px,
+                          -10px 10px 0 5px;
+            }
+            33.32% {
+              box-shadow: -10px -10px 0 5px,
+                          10px -10px 0 5px,
+                          10px 10px 0 5px,
+                          -10px -10px 0 5px;
+            }
+            41.65% {
+              box-shadow: 10px -10px 0 5px,
+                          10px -10px 0 5px,
+                          10px 10px 0 5px,
+                          10px -10px 0 5px;
+            }
+            49.98% {
+              box-shadow: 10px 10px 0 5px,
+                        10px 10px 0 5px,
+                        10px 10px 0 5px,
+                        10px 10px 0 5px;
+            }
+            58.31% {
+              box-shadow: -10px 10px 0 5px,
+                          -10px 10px 0 5px,
+                          10px 10px 0 5px,
+                          -10px 10px 0 5px;
+            }
+            66.64% {
+              box-shadow: -10px -10px 0 5px,
+                          -10px -10px 0 5px,
+                          10px 10px 0 5px,
+                          -10px 10px 0 5px;
+            }
+            74.97% {
+              box-shadow: -10px -10px 0 5px,
+                          10px -10px 0 5px,
+                          10px 10px 0 5px,
+                          -10px 10px 0 5px;
+            }
+            83.3% {
+              box-shadow: -10px -10px 0 5px,
+                          10px 10px 0 5px,
+                          10px 10px 0 5px,
+                          -10px 10px 0 5px;
+            }
+            91.63% {
+              box-shadow: -10px -10px 0 5px,
+                          -10px 10px 0 5px,
+                          -10px 10px 0 5px,
+                          -10px 10px 0 5px;
+            }
+            100% {
+              box-shadow: -10px -10px 0 5px,
+                          -10px -10px 0 5px,
+                          -10px -10px 0 5px,
+                          -10px -10px 0 5px;
+            }
           }
 
           @keyframes spin {
