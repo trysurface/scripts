@@ -58,6 +58,8 @@ function SurfaceSyncCookie(visitorId) {
 
 class SurfaceEmbed {
   constructor(src, embed_type, target_element_class, options = {}) {
+    this._popupSize = options.popupSize || "medium";
+    
     this.styles = {
       popup: null,
       widget: null,
@@ -95,6 +97,7 @@ class SurfaceEmbed {
     this.embed_type = embed_type;
     this.target_element_class = target_element_class;
     this.options = options;
+    this.options.popupSize = this._popupSize;
 
     if (
       (embed_type === "popup" ||
@@ -334,19 +337,13 @@ class SurfaceEmbed {
       height: "calc(100% - 80px)",
     };
 
-    if (this.options.popupSize != null && this.options.popupSize === "small") {
+    if (this._popupSize === "small") {
       desktopPopupDimensions.width = "50%";
       desktopPopupDimensions.height = "60%";
-    } else if (
-      this.options.popupSize == null ||
-      this.options.popupSize === "medium"
-    ) {
+    } else if (this._popupSize === "medium") {
       desktopPopupDimensions.width = "70%";
       desktopPopupDimensions.height = "80%";
-    } else if (
-      this.options.popupSize != null &&
-      this.options.popupSize === "large"
-    ) {
+    } else if (this._popupSize === "large") {
       desktopPopupDimensions.width = "calc(100% - 80px)";
       desktopPopupDimensions.height = "calc(100% - 80px)";
     }
@@ -810,6 +807,20 @@ class SurfaceEmbed {
     if (spinner) spinner.style.display = "none";
     if (closeBtn) closeBtn.style.display = "flex";
     iframe.style.opacity = "1";
+  }
+
+  // Add getter/setter for popupSize
+  get popupSize() {
+    return this._popupSize;
+  }
+
+  set popupSize(size) {
+    if (!["small", "medium", "large"].includes(size)) {
+      this.log("warn", "Invalid popup size. Using 'medium' instead.");
+      this._popupSize = "medium";
+    } else {
+      this._popupSize = size;
+    }
   }
 }
 
