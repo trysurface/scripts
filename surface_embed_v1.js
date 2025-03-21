@@ -1,6 +1,6 @@
 let SurfaceSyncCookieHappenedOnce = false;
 
-class Store {
+class SurfaceStore {
   constructor() {
     this.windowUrl = new URL(window.location.href).toString();
     this.origin = new URL(window.location.href).origin.toString();
@@ -39,7 +39,7 @@ class Store {
   }
 }
 
-const store = new Store();
+const surfaceTagStore = new SurfaceStore();
 
 function SurfaceSyncCookie(visitorId) {
   const endpoint = new URL("https://a.usbrowserspeed.com/cs");
@@ -84,9 +84,9 @@ class SurfaceEmbed {
       ...(options.widgetStyles || {}),
     };
 
-    // Use the singleton store instance
+    // Use the singleton surfaceTagStore instance
     if (options.prefillData) {
-      store.partialFilledData = Object.entries(options.prefillData).map(
+      surfaceTagStore.partialFilledData = Object.entries(options.prefillData).map(
         ([key, value]) => ({ [key]: value })
       );
     }
@@ -130,7 +130,7 @@ class SurfaceEmbed {
 
   getUrlParams() {
     let params = {};
-    let queryString = window.location.search.slice(1); // Remove the leading '?'
+    let queryString = window.location.search.slice(1);
     let pairs = queryString.split("&");
 
     pairs.forEach((pair) => {
@@ -167,7 +167,7 @@ class SurfaceEmbed {
     if (this.initialized) return;
     window.addEventListener("message", (event) => {
       if (event.data.type === "SEND_DATA") {
-        store.notifyIframe();
+        surfaceTagStore.notifyIframe();
       }
     });
 
@@ -543,13 +543,13 @@ class SurfaceEmbed {
       }));
 
       // Combine existing entries with new ones
-      store.partialFilledData = [
-        ...(Array.isArray(store.partialFilledData)
-          ? store.partialFilledData
+      surfaceTagStore.partialFilledData = [
+        ...(Array.isArray(surfaceTagStore.partialFilledData)
+          ? surfaceTagStore.partialFilledData
           : []),
         ...newEntries,
       ];
-      store.notifyIframe();
+      surfaceTagStore.notifyIframe();
     }
 
     this.showSurfacePopup(options, fromInputTrigger);
