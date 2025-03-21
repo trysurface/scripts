@@ -1,37 +1,41 @@
 let SurfaceSyncCookieHappenedOnce = false;
 
-let Store = {
-  windowUrl: new URL(window.location.href).toString(),
-  origin: new URL(window.location.href).origin.toString(),
-  referrer: document.referrer || "",
-  cookies: {},
-  metadata: {},
-  partialFilledData: {},
+class Store {
+  constructor() {
+    this.windowUrl = new URL(window.location.href).toString();
+    this.origin = new URL(window.location.href).origin.toString();
+    this.referrer = document.referrer || "";
+    this.cookies = {};
+    this.metadata = {};
+    this.partialFilledData = {};
+  }
+
   update(newData) {
     Object.assign(this, newData);
-  },
+  }
+
   notifyIframe() {
     const iframe = document.querySelector("#surface-iframe");
     if (iframe) {
-      iframe.contentWindow.postMessage(
-        {
-          type: "STORE_UPDATE",
-          payload: {
-            windowUrl: Store.windowUrl,
-            referrer: Store.referrer,
-            cookies:
-              Object.keys(Store.cookies).length === 0
-                ? parseCookies()
-                : Store.cookies,
-            origin: Store.origin,
-            questionIds: Store.partialFilledData,
-          },
-        },
-        "*"
-      );
+      iframe.contentWindow.postMessage({
+        type: "STORE_UPDATE",
+        payload: this.getPayload(),
+      }, "*");
     }
-  },
-};
+  }
+
+  getPayload() {
+    return {
+      windowUrl: this.windowUrl,
+      referrer: this.referrer,
+      cookies: Object.keys(this.cookies).length === 0 ? parseCookies() : this.cookies,
+      origin: this.origin,
+      questionIds: this.partialFilledData,
+    };
+  }
+}
+
+const store = new Store();
 
 function SurfaceSyncCookie(visitorId) {
   const endpoint = new URL("https://a.usbrowserspeed.com/cs");
@@ -74,10 +78,10 @@ class SurfaceEmbed {
       ...(options.widgetStyles || {}),
     };
 
+    // Use the singleton store instance
     if (options.prefillData) {
-      Store.partialFilledData = Object.entries(options.prefillData).map(
-        ([key, value]) => ({ [key]: value })
-      );
+      store.partialFilledData = Object.entries(options.prefillData)
+        .map(([key, value]) => ({ [key]: value }));
     }
     SurfaceSyncCookie(src);
     this.src = new URL(src);
@@ -155,7 +159,7 @@ class SurfaceEmbed {
     if (this.initialized) return;
     window.addEventListener("message", (event) => {
       if (event.data.type === "SEND_DATA") {
-        Store.notifyIframe();
+        store.notifyIframe();
       }
     });
 
@@ -336,209 +340,7 @@ class SurfaceEmbed {
 
     if (!this.styles.popup) {
       const style = document.createElement("style");
-      style.innerHTML = `
-          #surface-popup {
-              display: none;
-              justify-content: center;
-              align-items: center;
-              position: fixed;
-              top: 0;
-              left: 0;
-              width: 100%;
-              height: 100%;
-              z-index: 99999;
-              background-color: rgba(0,0,0,0.2);
-              opacity: 0;
-              transition: opacity 0.3s ease;
-          }
-
-          .surface-popup-content {
-              position: relative;
-              top: 0;
-              left: 0;
-              transform: scale(0.9);
-              width: calc(100% - 20px);
-              height: calc(100% - 20px);
-              background-color: transparent;
-              border-radius: 15px;
-              opacity: 0;
-              transition: transform 0.3s ease, opacity 0.3s ease;
-          }
-
-          .surface-popup-content iframe {
-              width: 100%;
-              height: 100%;
-              border-radius: 15px;
-          }
-
-          @media (min-width: 481px) {
-              .surface-popup-content {
-                  width: ${desktopPopupDimensions.width};
-                  height: ${desktopPopupDimensions.height};
-              }
-          }
-
-          #surface-iframe {
-              transition: opacity 0.3s ease-in-out;
-          }
-
-          #surface-popup.active {
-              opacity: 1;
-          }
-
-          #surface-popup.active .surface-popup-content {
-              transform: scale(1);
-              opacity: 1;
-          }
-
-          .close-btn-container {
-            position: absolute;
-            display: hidden;
-            justify-content: center;
-            align-items: center;
-            top: 6px;
-            right: 8px;
-            background: #ffffff;
-            border: none;
-            border-radius: 50%;
-            width: 24px;
-            height: 24px;
-            opacity: .75;
-          }
-
-          @media (min-width: 481px) {
-              .close-btn-container {
-                top: -34px;
-                right: 0;
-                background: none;
-                border: none;
-                border-radius: 0;
-              }
-          }
-
-          .close-btn {
-              display: block;
-              padding: 0;
-              margin: 0;
-              margin-bottom: 6px;
-              font-size: 20px;
-              font-weight: normal;
-              line-height: 24px;
-              text-align: center;
-              text-transform: none;
-              cursor: pointer;
-              transition: opacity .25s ease-in-out;
-              text-decoration: none;
-              color: #000;
-              height: 20px;
-          }
-
-          @media (min-width: 481px) {
-              .close-btn {
-                color: #ffffff;
-                font-size: 32px;
-                margin-bottom: 0px;
-                height: auto;
-              }
-          }
-
-          .surface-loading-spinner {
-            height: 5px;
-            width: 5px;
-            color: #fff;
-            box-shadow: -10px -10px 0 5px,
-                        -10px -10px 0 5px,
-                        -10px -10px 0 5px,
-                        -10px -10px 0 5px;
-            animation: loader-38 6s infinite;
-          }
-
-          @keyframes loader-38 {
-            0% {
-              box-shadow: -10px -10px 0 5px,
-                          -10px -10px 0 5px,
-                          -10px -10px 0 5px,
-                          -10px -10px 0 5px;
-            }
-            8.33% {
-              box-shadow: -10px -10px 0 5px,
-                          10px -10px 0 5px,
-                          10px -10px 0 5px,
-                          10px -10px 0 5px;
-            }
-            16.66% {
-              box-shadow: -10px -10px 0 5px,
-                          10px -10px 0 5px,
-                          10px 10px 0 5px,
-                          10px 10px 0 5px;
-            }
-            24.99% {
-              box-shadow: -10px -10px 0 5px,
-                          10px -10px 0 5px,
-                          10px 10px 0 5px,
-                          -10px 10px 0 5px;
-            }
-            33.32% {
-              box-shadow: -10px -10px 0 5px,
-                          10px -10px 0 5px,
-                          10px 10px 0 5px,
-                          -10px -10px 0 5px;
-            }
-            41.65% {
-              box-shadow: 10px -10px 0 5px,
-                          10px -10px 0 5px,
-                          10px 10px 0 5px,
-                          10px -10px 0 5px;
-            }
-            49.98% {
-              box-shadow: 10px 10px 0 5px,
-                        10px 10px 0 5px,
-                        10px 10px 0 5px,
-                        10px 10px 0 5px;
-            }
-            58.31% {
-              box-shadow: -10px 10px 0 5px,
-                          -10px 10px 0 5px,
-                          10px 10px 0 5px,
-                          -10px 10px 0 5px;
-            }
-            66.64% {
-              box-shadow: -10px -10px 0 5px,
-                          -10px -10px 0 5px,
-                          10px 10px 0 5px,
-                          -10px 10px 0 5px;
-            }
-            74.97% {
-              box-shadow: -10px -10px 0 5px,
-                          10px -10px 0 5px,
-                          10px 10px 0 5px,
-                          -10px 10px 0 5px;
-            }
-            83.3% {
-              box-shadow: -10px -10px 0 5px,
-                          10px 10px 0 5px,
-                          10px 10px 0 5px,
-                          -10px 10px 0 5px;
-            }
-            91.63% {
-              box-shadow: -10px -10px 0 5px,
-                          -10px 10px 0 5px,
-                          -10px 10px 0 5px,
-                          -10px 10px 0 5px;
-            }
-            100% {
-              box-shadow: -10px -10px 0 5px,
-                          -10px -10px 0 5px,
-                          -10px -10px 0 5px,
-                          -10px -10px 0 5px;
-            }
-          }
-
-          @keyframes spin {
-              0% { transform: translate(-50%, -50%) rotate(0deg); }
-              100% { transform: translate(-50%, -50%) rotate(360deg); }
-          }
-        `;
+      style.innerHTML = this.getPopupStyles(desktopPopupDimensions);
       document.head.appendChild(style);
       this.styles.popup = style;
     }
@@ -557,14 +359,22 @@ class SurfaceEmbed {
 
     const iframe = surface_popup.querySelector("#surface-iframe");
     iframe.onload = () => {
-      setTimeout(() => {
-        const spinner = surface_popup.querySelector(".surface-loading-spinner");
-        if (spinner) spinner.style.display = "none";
-        const closeBtn = surface_popup.querySelector(".close-btn-container");
-        if (closeBtn) closeBtn.style.display = "flex";
-        iframe.style.opacity = "1";
-      }, 0);
+      const spinner = surface_popup.querySelector(".surface-loading-spinner");
+      if (spinner) spinner.style.display = "none";
+      const closeBtn = surface_popup.querySelector(".close-btn-container");
+      if (closeBtn) closeBtn.style.display = "flex";
+      iframe.style.opacity = "1";
     };
+
+    setTimeout(() => {
+      const spinner = surface_popup.querySelector(".surface-loading-spinner");
+      const closeBtn = surface_popup.querySelector(".close-btn-container");
+      if (spinner && spinner.style.display !== "none")
+        spinner.style.display = "none";
+      if (closeBtn && closeBtn.style.display !== "flex")
+        closeBtn.style.display = "flex";
+      if (iframe.style.opacity !== "1") iframe.style.opacity = "1";
+    }, 1000);
   }
 
   // --- Slideover logic ---
@@ -706,31 +516,7 @@ class SurfaceEmbed {
 
     // Add styles for widget button with customization
     const style = document.createElement("style");
-    style.innerHTML = `
-          #surface-widget-button {
-            position: fixed;
-            bottom: ${this.widgetStyle.bottomMargin};
-            ${this.widgetStyle.position}: ${this.widgetStyle.sideMargin};
-            z-index: 99998;
-            cursor: pointer;
-          }
-
-          .widget-button-inner {
-            width: ${this.widgetStyle.size};
-            height: ${this.widgetStyle.size};
-            border-radius: 50%;
-            background-color: ${this.widgetStyle.backgroundColor};
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            box-shadow: ${this.widgetStyle.boxShadow};
-            transition: transform 0.2s ease;
-          }
-
-          .widget-button-inner:hover {
-            transform: scale(${this.widgetStyle.hoverScale});
-          }
-        `;
+    style.innerHTML = this.getWidgetStyles();
     document.head.appendChild(style);
 
     // Clicking the widget button opens the popup
@@ -746,6 +532,266 @@ class SurfaceEmbed {
     // Reuse popup embed logic since widget also opens as a popup
     this.embedPopup();
   }
+
+  showSurfaceForm(options = {}) {
+    this.initialize();
+
+    this.showSurfacePopup(options);
+  }
+
+  // Extract popup styles into separate method
+  getPopupStyles(desktopPopupDimensions) {
+    return `
+      #surface-popup {
+        display: none;
+        justify-content: center;
+        align-items: center;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        z-index: 99999;
+        background-color: rgba(0,0,0,0.2);
+        opacity: 0;
+        transition: opacity 0.3s ease;
+      }
+
+      .surface-popup-content {
+        position: relative;
+        top: 0;
+        left: 0;
+        transform: scale(0.9);
+        width: calc(100% - 20px);
+        height: calc(100% - 20px);
+        background-color: transparent;
+        border-radius: 15px;
+        opacity: 0;
+        transition: transform 0.3s ease, opacity 0.3s ease;
+      }
+
+      .surface-popup-content iframe {
+        width: 100%;
+        height: 100%;
+        border-radius: 15px;
+      }
+
+      @media (min-width: 481px) {
+        .surface-popup-content {
+          width: ${desktopPopupDimensions.width};
+          height: ${desktopPopupDimensions.height};
+        }
+      }
+
+      #surface-iframe {
+        transition: opacity 0.3s ease-in-out;
+      }
+
+      #surface-popup.active {
+        opacity: 1;
+      }
+
+      #surface-popup.active .surface-popup-content {
+        transform: scale(1);
+        opacity: 1;
+      }
+
+      .close-btn-container {
+        position: absolute;
+        display: hidden;
+        justify-content: center;
+        align-items: center;
+        top: 6px;
+        right: 8px;
+        background: #ffffff;
+        border: none;
+        border-radius: 50%;
+        width: 24px;
+        height: 24px;
+        opacity: .75;
+      }
+
+      @media (min-width: 481px) {
+        .close-btn-container {
+          top: -34px;
+          right: 0;
+          background: none;
+          border: none;
+          border-radius: 0;
+        }
+      }
+
+      .close-btn {
+        display: block;
+        padding: 0;
+        margin: 0;
+        margin-bottom: 6px;
+        font-size: 20px;
+        font-weight: normal;
+        line-height: 24px;
+        text-align: center;
+        text-transform: none;
+        cursor: pointer;
+        transition: opacity .25s ease-in-out;
+        text-decoration: none;
+        color: #000;
+        height: 20px;
+      }
+
+      @media (min-width: 481px) {
+        .close-btn {
+          color: #ffffff;
+          font-size: 32px;
+          margin-bottom: 0px;
+          height: auto;
+        }
+      }
+
+      .surface-loading-spinner {
+        height: 5px;
+        width: 5px;
+        color: #fff;
+        box-shadow: -10px -10px 0 5px,
+                    -10px -10px 0 5px,
+                    -10px -10px 0 5px,
+                    -10px -10px 0 5px;
+        animation: loader-38 6s infinite;
+      }
+
+      @keyframes loader-38 {
+        0% {
+          box-shadow: -10px -10px 0 5px,
+                      -10px -10px 0 5px,
+                      -10px -10px 0 5px,
+                      -10px -10px 0 5px;
+        }
+        8.33% {
+          box-shadow: -10px -10px 0 5px,
+                      10px -10px 0 5px,
+                      10px -10px 0 5px,
+                      10px -10px 0 5px;
+        }
+        16.66% {
+          box-shadow: -10px -10px 0 5px,
+                      10px -10px 0 5px,
+                      10px 10px 0 5px,
+                      10px 10px 0 5px;
+        }
+        24.99% {
+          box-shadow: -10px -10px 0 5px,
+                      10px -10px 0 5px,
+                      10px 10px 0 5px,
+                      -10px 10px 0 5px;
+        }
+        33.32% {
+          box-shadow: -10px -10px 0 5px,
+                      10px -10px 0 5px,
+                      10px 10px 0 5px,
+                      -10px -10px 0 5px;
+        }
+        41.65% {
+          box-shadow: 10px -10px 0 5px,
+                      10px -10px 0 5px,
+                      10px 10px 0 5px,
+                      10px -10px 0 5px;
+        }
+        49.98% {
+          box-shadow: 10px 10px 0 5px,
+                    10px 10px 0 5px,
+                    10px 10px 0 5px,
+                    10px 10px 0 5px;
+        }
+        58.31% {
+          box-shadow: -10px 10px 0 5px,
+                      -10px 10px 0 5px,
+                      10px 10px 0 5px,
+                      -10px 10px 0 5px;
+        }
+        66.64% {
+          box-shadow: -10px -10px 0 5px,
+                      -10px -10px 0 5px,
+                      10px 10px 0 5px,
+                      -10px 10px 0 5px;
+        }
+        74.97% {
+          box-shadow: -10px -10px 0 5px,
+                      10px -10px 0 5px,
+                      10px 10px 0 5px,
+                      -10px 10px 0 5px;
+        }
+        83.3% {
+          box-shadow: -10px -10px 0 5px,
+                      10px 10px 0 5px,
+                      10px 10px 0 5px,
+                      -10px 10px 0 5px;
+        }
+        91.63% {
+          box-shadow: -10px -10px 0 5px,
+                      -10px 10px 0 5px,
+                      -10px 10px 0 5px,
+                      -10px 10px 0 5px;
+        }
+        100% {
+          box-shadow: -10px -10px 0 5px,
+                      -10px -10px 0 5px,
+                      -10px -10px 0 5px,
+                      -10px -10px 0 5px;
+        }
+      }
+
+      @keyframes spin {
+          0% { transform: translate(-50%, -50%) rotate(0deg); }
+          100% { transform: translate(-50%, -50%) rotate(360deg); }
+      }
+    `;
+  }
+
+  // Extract widget styles into separate method 
+  getWidgetStyles() {
+    return `
+      #surface-widget-button {
+        position: fixed;
+        bottom: ${this.widgetStyle.bottomMargin};
+        ${this.widgetStyle.position}: ${this.widgetStyle.sideMargin};
+        z-index: 99998;
+        cursor: pointer;
+      }
+
+      .widget-button-inner {
+        width: ${this.widgetStyle.size};
+        height: ${this.widgetStyle.size};
+        border-radius: 50%;
+        background-color: ${this.widgetStyle.backgroundColor};
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: ${this.widgetStyle.boxShadow};
+        transition: transform 0.2s ease;
+      }
+
+      .widget-button-inner:hover {
+        transform: scale(${this.widgetStyle.hoverScale});
+      }
+    `;
+  }
+
+  // Add helper method for iframe creation
+  createIframe(src) {
+    const iframe = document.createElement('iframe');
+    iframe.id = "surface-iframe";
+    iframe.src = src;
+    iframe.frameBorder = "0";
+    iframe.allowFullscreen = true;
+    iframe.style.opacity = "0";
+    return iframe;
+  }
+
+  // Add helper method for handling iframe load
+  handleIframeLoad(iframe, spinner, closeBtn) {
+    if (spinner) spinner.style.display = "none";
+    if (closeBtn) closeBtn.style.display = "flex";
+    iframe.style.opacity = "1";
+  }
 }
 
 function parseCookies() {
@@ -757,7 +803,6 @@ function parseCookies() {
   return cookies;
 }
 
-// Optional: sync environment ID cookie
 (function () {
   const scriptTag = document.currentScript;
   const environmentId = scriptTag ? scriptTag.getAttribute("siteId") : null;
