@@ -113,6 +113,7 @@ class SurfaceEmbed {
     if (embed_type === "widget") {
       this.addWidgetButton();
     }
+    this.formInputTriggerInitialize();
   }
 
   log(level, message) {
@@ -545,7 +546,6 @@ class SurfaceEmbed {
 
   showSurfaceForm(options = {}, fromInputTrigger = true) {
     this.initialize();
-
     if (options) {
       // Convert options to entries format while preserving existing data
       const newEntries = Object.entries(options).map(([key, value]) => ({
@@ -817,6 +817,34 @@ class SurfaceEmbed {
     if (spinner) spinner.style.display = "none";
     if (closeBtn) closeBtn.style.display = "flex";
     iframe.style.opacity = "1";
+  }
+
+  // Form Input Trigger Initialization
+  formInputTriggerInitialize() {
+    const e = document
+      .querySelector("[data-question-id]")
+      ?.getAttribute("data-question-id");
+    const t = document.querySelector("form.surface-form-handler");
+
+    if (e && t) {
+      t.addEventListener("submit", (n) => {
+        n.preventDefault();
+        const o = t.querySelector('input[type="email"]'),
+          c = o?.value.trim();
+        if (o && /^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/.test(c)) {
+          this.showSurfaceForm({ [e + "_emailAddress"]: c }, true);
+        } else {
+          o?.reportValidity();
+        }
+      });
+
+      t.addEventListener("keydown", (n) => {
+        if (n.key === "Enter" && document.activeElement.type === "email") {
+          n.preventDefault();
+          t.dispatchEvent(new Event("submit", { cancelable: true }));
+        }
+      });
+    }
   }
 
   // Add getter/setter for popupSize
