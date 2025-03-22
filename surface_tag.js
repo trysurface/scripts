@@ -374,6 +374,7 @@ class SurfaceEmbed {
       const closeBtn = surface_popup.querySelector(".close-btn-container");
       if (closeBtn) closeBtn.style.display = "flex";
       iframe.style.opacity = "1";
+      iframe.style.boxShadow = "0px 0px 15px rgba(0,0,0,0.2)";
     };
   }
 
@@ -568,7 +569,7 @@ class SurfaceEmbed {
         width: 100%;
         height: 100%;
         z-index: 99999;
-        background-color: rgba(0,0,0,0.2);
+        background-color: rgba(0,0,0,0.5);
         opacity: 0;
         transition: opacity 0.3s ease;
       }
