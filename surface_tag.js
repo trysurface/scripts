@@ -821,9 +821,10 @@ class SurfaceEmbed {
 
   // Form Input Trigger Initialization
   formInputTriggerInitialize() {
-    const e = document
-      .querySelector("[data-question-id]")
-      ?.getAttribute("data-question-id");
+    const e =
+      document
+        .querySelector("[data-question-id]")
+        ?.getAttribute("data-question-id")
     const t = document.querySelector("form.surface-form-handler");
 
     if (e && t) {
@@ -831,8 +832,19 @@ class SurfaceEmbed {
         n.preventDefault();
         const o = t.querySelector('input[type="email"]'),
           c = o?.value.trim();
+        const oFirstName = t.querySelector('input[name="firstName"]'),
+          f = oFirstName?.value.trim();
+        const oLastName = t.querySelector('input[name="lastName"]'),
+          l = oLastName?.value.trim();
         if (o && /^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/.test(c)) {
-          this.showSurfaceForm({ [e + "_emailAddress"]: c }, true);
+          this.showSurfaceForm(
+            {
+              [e + "_emailAddress"]: c,
+              [e + "_firstName"]: f,
+              [e + "_lastName"]: l,
+            },
+            true
+          );
         } else {
           o?.reportValidity();
         }
