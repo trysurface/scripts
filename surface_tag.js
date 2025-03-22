@@ -839,9 +839,9 @@ class SurfaceEmbed {
         if (o && /^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/.test(c)) {
           this.showSurfaceForm(
             {
-              [e + "_emailAddress"]: c,
-              [e + "_firstName"]: f,
-              [e + "_lastName"]: l,
+              ...(c && { [e + "_emailAddress"]: c }),
+              ...(f && { [e + "_firstName"]: f }),
+              ...(l && { [e + "_lastName"]: l }),
             },
             true
           );
