@@ -59,7 +59,7 @@ function SurfaceSyncCookie(visitorId) {
 class SurfaceEmbed {
   constructor(src, embed_type, target_element_class, options = {}) {
     this._popupSize = options.popupSize || "medium";
-    
+
     this.styles = {
       popup: null,
       widget: null,
@@ -86,9 +86,9 @@ class SurfaceEmbed {
 
     // Use the singleton surfaceTagStore instance
     if (options.prefillData) {
-      surfaceTagStore.partialFilledData = Object.entries(options.prefillData).map(
-        ([key, value]) => ({ [key]: value })
-      );
+      surfaceTagStore.partialFilledData = Object.entries(
+        options.prefillData
+      ).map(([key, value]) => ({ [key]: value }));
     }
     SurfaceSyncCookie(src);
     this.src = new URL(src);
@@ -103,7 +103,8 @@ class SurfaceEmbed {
       (embed_type === "popup" ||
         embed_type === "slideover" ||
         embed_type === "widget" ||
-        embed_type === "inline") &&
+        embed_type === "inline" ||
+        embed_type === "input-trigger") &&
       target_element_class
     ) {
       this.setupClickHandlers();
@@ -154,7 +155,11 @@ class SurfaceEmbed {
           this.initialize();
         }
 
-        if (this.embed_type === "popup" || this.embed_type === "widget") {
+        if (
+          this.embed_type === "popup" ||
+          this.embed_type === "widget" ||
+          this.embed_type === "input-trigger"
+        ) {
           this.showSurfacePopup();
         } else if (this.embed_type === "slideover") {
           this.showSurfaceSlideover();
@@ -173,7 +178,11 @@ class SurfaceEmbed {
 
     this.surface_popup_reference = document.createElement("div");
 
-    if (this.embed_type === "popup" || this.embed_type === "widget") {
+    if (
+      this.embed_type === "popup" ||
+      this.embed_type === "widget" ||
+      this.embed_type === "input-trigger"
+    ) {
       this.embedSurfaceForm = this.embedPopup;
       this.showSurfaceForm = this.showSurfacePopup;
       this.hideSurfaceForm = this.hideSurfacePopup;
