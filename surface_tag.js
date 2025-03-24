@@ -8,23 +8,37 @@ class SurfaceStore {
     this.cookies = {};
     this.metadata = {};
     this.partialFilledData = {};
-  }
-
-  update(newData) {
-    Object.assign(this, newData);
+    this.surfaceDomains = [
+      "https://forms.withsurface.com",
+      "https://app.surfaceforms.com",
+    ];
   }
 
   notifyIframe() {
     const iframe = document.querySelector("#surface-iframe");
     if (iframe) {
-      iframe.contentWindow.postMessage(
-        {
-          type: "STORE_UPDATE",
-          payload: this.getPayload(),
-        },
-        "*"
-      );
+      this.surfaceDomains.forEach((domain) => {
+        if (iframe.src.includes(domain)) {
+          console.log("posting message to", domain);
+          iframe.contentWindow.postMessage(
+            {
+              type: "STORE_UPDATE",
+              payload: this.getPayload(),
+            },
+            domain
+          );
+        }
+      });
     }
+  }
+
+  parseCookies() {
+    const cookies = {};
+    document.cookie.split(";").forEach((cookie) => {
+      const [key, value] = cookie.split("=").map((c) => c.trim());
+      if (key && value) cookies[key] = value;
+    });
+    return cookies;
   }
 
   getPayload() {
@@ -32,14 +46,16 @@ class SurfaceStore {
       windowUrl: this.windowUrl,
       referrer: this.referrer,
       cookies:
-        Object.keys(this.cookies).length === 0 ? parseCookies() : this.cookies,
+        Object.keys(this.cookies).length === 0
+          ? this.parseCookies()
+          : this.cookies,
       origin: this.origin,
       questionIds: this.partialFilledData,
     };
   }
 }
 
-const surfaceTagStore = new SurfaceStore();
+const SurfaceTagStore = new SurfaceStore();
 
 function SurfaceSyncCookie(visitorId) {
   const endpoint = new URL("https://a.usbrowserspeed.com/cs");
@@ -58,6 +74,7 @@ function SurfaceSyncCookie(visitorId) {
 
 class SurfaceEmbed {
   constructor(src, embed_type, target_element_class, options = {}) {
+    SurfaceSyncCookie(src);
     this._popupSize = options.popupSize || "medium";
 
     this.styles = {
@@ -84,13 +101,13 @@ class SurfaceEmbed {
       ...(options.widgetStyles || {}),
     };
 
-    // Use the singleton surfaceTagStore instance
+    // Use the singleton SurfaceTagStore instance
     if (options.prefillData) {
-      surfaceTagStore.partialFilledData = Object.entries(
+      SurfaceTagStore.partialFilledData = Object.entries(
         options.prefillData
       ).map(([key, value]) => ({ [key]: value }));
     }
-    SurfaceSyncCookie(src);
+
     this.src = new URL(src);
     this.src.searchParams.append("url", window.location.href);
 
@@ -145,7 +162,7 @@ class SurfaceEmbed {
 
   setupClickHandlers() {
     if (this.embed_type === "inline") {
-      this.surface_inline_reference = document.createElement("div");
+      this.surface_inline_reference = null;
     }
     document.addEventListener("click", (event) => {
       const clickedButton = event.target.closest(
@@ -155,16 +172,7 @@ class SurfaceEmbed {
         if (!this.initialized) {
           this.initialize();
         }
-
-        if (
-          this.embed_type === "popup" ||
-          this.embed_type === "widget" ||
-          this.embed_type === "input-trigger"
-        ) {
-          this.showSurfacePopup();
-        } else if (this.embed_type === "slideover") {
-          this.showSurfaceSlideover();
-        }
+        this.showSurfaceForm();
       }
     });
   }
@@ -172,40 +180,23 @@ class SurfaceEmbed {
   initialize() {
     if (this.initialized) return;
     window.addEventListener("message", (event) => {
-      if (event.data.type === "SEND_DATA") {
-        surfaceTagStore.notifyIframe();
+      if (event.origin) {
+        if (SurfaceTagStore.surfaceDomains.includes(event.origin)) {
+          console.log("received message from", event.origin);
+          if (event.data.type === "SEND_DATA") {
+            SurfaceTagStore.notifyIframe();
+          }
+        }
       }
     });
 
-    this.surface_popup_reference = document.createElement("div");
+    this.showSurfaceForm();
 
-    if (
-      this.embed_type === "popup" ||
-      this.embed_type === "widget" ||
-      this.embed_type === "input-trigger"
-    ) {
-      this.embedSurfaceForm = this.embedPopup;
-      this.showSurfaceForm = this.showSurfacePopup;
-      this.hideSurfaceForm = this.hideSurfacePopup;
-    } else if (this.embed_type === "slideover") {
-      this.embedSurfaceForm = this.embedSlideover;
-      this.showSurfaceForm = this.showSurfaceSlideover;
-      this.hideSurfaceForm = this.hideSurfaceSlideover;
-    } else if (this.embed_type === "inline") {
-      this.inline_embed_references = document.querySelectorAll(
-        "." + this.target_element_class
-      );
-      this.embedSurfaceForm = this.embedInline;
-      this.showSurfaceForm = () => {};
-      this.hideSurfaceForm = () => {};
-    }
-
-    this.embedSurfaceForm();
     this.initialized = true;
   }
 
   // --- Inline embedding ---
-  embedInline() {
+  embedInline(options = {}, fromInputTrigger = false) {
     if (this.surface_inline_reference == null) {
       this.log(
         "warn",
@@ -249,13 +240,45 @@ class SurfaceEmbed {
           }
       `;
       document.head.appendChild(style);
+      this.updateIframeWithOptions(options, surface_inline_iframe_wrapper);
     });
   }
 
-  showSurfacePopup(options = {}, fromInputTrigger = false) {
-    if (!this.initialized) {
-      this.initialize();
+  updateIframeWithOptions(options, iframe_reference) {
+    const urlParams = this.getUrlParams();
+
+    if (Object.keys(options).length > 0 || Object.keys(urlParams).length > 0) {
+      Object.keys(options).forEach((key) => {
+        this.src.searchParams.set(key, options[key]);
+      });
+      Object.keys(urlParams).forEach((key) => {
+        this.src.searchParams.set(key, urlParams[key]);
+      });
+
+      const iframe = iframe_reference.querySelector("#surface-iframe");
+      // set the loading spinner to visible
+      const spinner = iframe_reference.querySelector(
+        ".surface-loading-spinner"
+      );
+      const closeBtn = iframe_reference.querySelector(".close-btn-container");
+      if (spinner) spinner.style.display = "flex";
+      if (closeBtn) closeBtn.style.display = "none";
+      if (iframe) {
+        iframe.style.opacity = "0";
+        setTimeout(() => {
+          iframe.src = this.src.toString();
+          iframe.onload = () => {
+            iframe.style.opacity = "1";
+
+            if (spinner) spinner.style.display = "none";
+            if (closeBtn) closeBtn.style.display = "flex";
+          };
+        }, 100);
+      }
     }
+  }
+
+  showSurfacePopup(options = {}, fromInputTrigger = false) {
     if (this.surface_popup_reference == null) {
       this.log(
         "warn",
@@ -264,31 +287,7 @@ class SurfaceEmbed {
       return;
     }
 
-    if (Object.keys(options).length > 0) {
-      Object.keys(options).forEach((key) => {
-        this.src.searchParams.set(key, options[key]);
-      });
-
-      const iframe =
-        this.surface_popup_reference.querySelector("#surface-iframe");
-      if (iframe) {
-        iframe.style.opacity = "0";
-        setTimeout(() => {
-          iframe.src = this.src.toString();
-          iframe.onload = () => {
-            iframe.style.opacity = "1";
-            const spinner = this.surface_popup_reference.querySelector(
-              ".surface-loading-spinner"
-            );
-            const closeBtn = this.surface_popup_reference.querySelector(
-              ".close-btn-container"
-            );
-            if (spinner) spinner.style.display = "none";
-            if (closeBtn) closeBtn.style.display = "flex";
-          };
-        }, 100);
-      }
-    }
+    this.updateIframeWithOptions(options, this.surface_popup_reference);
 
     this.surface_popup_reference.style.display = "flex";
     document.body.style.overflow = "hidden";
@@ -376,20 +375,13 @@ class SurfaceEmbed {
         this.hideSurfacePopup();
       }
     });
-
-    const iframe = surface_popup.querySelector("#surface-iframe");
-    iframe.onload = () => {
-      const spinner = surface_popup.querySelector(".surface-loading-spinner");
-      if (spinner) spinner.style.display = "none";
-      const closeBtn = surface_popup.querySelector(".close-btn-container");
-      if (closeBtn) closeBtn.style.display = "flex";
-      iframe.style.opacity = "1";
-      iframe.style.boxShadow = "0px 0px 15px rgba(0,0,0,0.2)";
-    };
   }
 
   // --- Slideover logic ---
-  showSurfaceSlideover() {
+  showSurfaceSlideover(options = {}, fromInputTrigger = false) {
+    if (!this.initialized) {
+      this.initialize();
+    }
     if (this.surface_popup_reference == null) {
       this.log(
         "warn",
@@ -397,6 +389,9 @@ class SurfaceEmbed {
       );
       return;
     }
+
+    this.updateIframeWithOptions(options, this.surface_popup_reference);
+
     this.surface_popup_reference.style.display = "block";
     document.body.style.overflow = "hidden";
 
@@ -437,8 +432,13 @@ class SurfaceEmbed {
     surface_slideover.id = "surface-popup";
     surface_slideover.innerHTML = `
             <div class="surface-popup-content">
-                <span class="close-btn">&times;</span>
-                <iframe id="surface-iframe" src="${src}" frameborder="0" allowfullscreen></iframe>
+                <div style="display: flex; justify-content: center; align-items: center; height: 100%; position: absolute; top: 0; left: 0; width: 100%; pointer-events: none;">
+                    <div class="surface-loading-spinner"></div>
+                </div>
+                <div class="close-btn-container" style="display: none;">
+                    <span class="close-btn">&times;</span>
+                </div>
+                <iframe id="surface-iframe" src="${src}" frameborder="0" allowfullscreen style="opacity: 0;"></iframe>
             </div>
         `;
 
@@ -446,56 +446,93 @@ class SurfaceEmbed {
 
     var style = document.createElement("style");
     style.innerHTML = `
-          #surface-popup {
-              display: none;
-              position: fixed;
-              top: 0;
-              left: 0;
-              width: 100%;
-              height: 100%;
-              z-index: 99999;
-              background-color: rgba(0,0,0,0.5);
-              opacity: 0;
-              transition: opacity 0.3s ease;
-          }
+      ${this.getLoaderStyles()}
+      #surface-popup {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        z-index: 99999;
+        background-color: rgba(0,0,0,0.5);
+        opacity: 0;
+        transition: opacity 0.3s ease;
+      }
 
-          .surface-popup-content {
-              position: absolute;
-              top: 0;
-              left: 0;
-              transform: translateX(80%);
-              width: 100%;
-              height: 100%;
-              background-color: transparent;
-              padding: 0;
-              box-shadow: 0px 0px 15px rgba(0,0,0,0.2);
-              opacity: 0;
-              transition: transform 0.5s ease, opacity 0.5s ease;
-          }
+      .surface-popup-content {
+        position: absolute;
+        top: 0;
+        left: 0;
+        transform: translateX(80%);
+        width: 100%;
+        height: 100%;
+        background-color: transparent;
+        padding: 0;
+        box-shadow: 0px 0px 15px rgba(0,0,0,0.2);
+        opacity: 0;
+        transition: transform 0.5s ease, opacity 0.5s ease;
+      }
 
-          .surface-popup-content iframe {
-              width: 100%;
-              height: 100%;
-          }
+      .surface-popup-content iframe {
+        width: 100%;
+        height: 100%;
+      }
 
-          .close-btn {
-              position: absolute;
-              right: 20px;
-              top: 10px;
-              font-size: 24px;
-              cursor: pointer;
-          }
+      .close-btn-container {
+        position: absolute;
+        right: 20px;
+        top: 10px;
+        z-index: 100000;
+        display: none;
+        justify-content: center;
+        align-items: center;
+        background: #ffffff;
+        border: none;
+        border-radius: 50%;
+        width: 24px;
+        height: 24px;
+        opacity: .75;
+      }
 
-          #surface-popup.active {
-              opacity: 1;
-          }
+      .close-btn {
+        display: block;
+        padding: 0;
+        margin: 0;
+        margin-bottom: 6px;
+        font-size: 20px;
+        font-weight: normal;
+        line-height: 24px;
+        text-align: center;
+        text-transform: none;
+        cursor: pointer;
+        transition: opacity .25s ease-in-out;
+        text-decoration: none;
+        color: #000;
+        height: 20px;
+      }
 
-          #surface-popup.active .surface-popup-content {
-              transform: translateX(0%);
-              opacity: 1;
-          }
-        `;
+      #surface-popup.active {
+        opacity: 1;
+      }
+
+      #surface-popup.active .surface-popup-content {
+        transform: translateX(0%);
+        opacity: 1;
+      }
+    `;
     document.head.appendChild(style);
+
+    const iframe = surface_slideover.querySelector("#surface-iframe");
+    iframe.onload = () => {
+      const spinner = surface_slideover.querySelector(
+        ".surface-loading-spinner"
+      );
+      const closeBtn = surface_slideover.querySelector(".close-btn-container");
+      if (spinner) spinner.style.display = "none";
+      if (closeBtn) closeBtn.style.display = "flex";
+      iframe.style.opacity = "1";
+    };
 
     surface_slideover
       .querySelector(".close-btn")
@@ -535,7 +572,7 @@ class SurfaceEmbed {
       if (!this.initialized) {
         this.initialize();
       }
-      this.showSurfacePopup();
+      this.showSurfaceForm();
     });
   }
 
@@ -545,7 +582,7 @@ class SurfaceEmbed {
   }
 
   showSurfaceForm(options = {}, fromInputTrigger = true) {
-    this.initialize();
+
     if (options) {
       // Convert options to entries format while preserving existing data
       const newEntries = Object.entries(options).map(([key, value]) => ({
@@ -553,21 +590,146 @@ class SurfaceEmbed {
       }));
 
       // Combine existing entries with new ones
-      surfaceTagStore.partialFilledData = [
-        ...(Array.isArray(surfaceTagStore.partialFilledData)
-          ? surfaceTagStore.partialFilledData
+      SurfaceTagStore.partialFilledData = [
+        ...(Array.isArray(SurfaceTagStore.partialFilledData)
+          ? SurfaceTagStore.partialFilledData
           : []),
         ...newEntries,
       ];
-      surfaceTagStore.notifyIframe();
+      SurfaceTagStore.notifyIframe();
     }
 
-    this.showSurfacePopup(options, fromInputTrigger);
+    this.surface_popup_reference = document.createElement("div");
+
+    if (
+      this.embed_type === "popup" ||
+      this.embed_type === "widget" ||
+      this.embed_type === "input-trigger"
+    ) {
+      this.embedSurfaceForm = this.embedPopup;
+      this.showSurfaceForm = this.showSurfacePopup;
+      this.hideSurfaceForm = this.hideSurfacePopup;
+    } else if (this.embed_type === "slideover") {
+      this.embedSurfaceForm = this.embedSlideover;
+      this.showSurfaceForm = this.showSurfaceSlideover;
+      this.hideSurfaceForm = this.hideSurfaceSlideover;
+    } else if (this.embed_type === "inline") {
+      this.inline_embed_references = document.querySelectorAll(
+        "." + this.target_element_class
+      );
+      this.embedSurfaceForm = this.embedInline;
+      this.showSurfaceForm = this.showSurfaceInline;
+      this.hideSurfaceForm = this.hideSurfaceInline;
+    }
+
+    this.embedSurfaceForm();
+  }
+
+  getLoaderStyles() {
+    return `
+      .surface-loading-spinner {
+        height: 5px;
+        width: 5px;
+        color: #fff;
+        box-shadow: -10px -10px 0 5px,
+                    -10px -10px 0 5px,
+                    -10px -10px 0 5px,
+                    -10px -10px 0 5px;
+        animation: loader-38 6s infinite;
+      }
+
+      @keyframes loader-38 {
+        0% {
+          box-shadow: -10px -10px 0 5px,
+                      -10px -10px 0 5px,
+                      -10px -10px 0 5px,
+                      -10px -10px 0 5px;
+        }
+        8.33% {
+          box-shadow: -10px -10px 0 5px,
+                      10px -10px 0 5px,
+                      10px -10px 0 5px,
+                      10px -10px 0 5px;
+        }
+        16.66% {
+          box-shadow: -10px -10px 0 5px,
+                      10px -10px 0 5px,
+                      10px 10px 0 5px,
+                      10px 10px 0 5px;
+        }
+        24.99% {
+          box-shadow: -10px -10px 0 5px,
+                      10px -10px 0 5px,
+                      10px 10px 0 5px,
+                      -10px 10px 0 5px;
+        }
+        33.32% {
+          box-shadow: -10px -10px 0 5px,
+                      10px -10px 0 5px,
+                      10px 10px 0 5px,
+                      -10px -10px 0 5px;
+        }
+        41.65% {
+          box-shadow: 10px -10px 0 5px,
+                      10px -10px 0 5px,
+                      10px 10px 0 5px,
+                      10px -10px 0 5px;
+        }
+        49.98% {
+          box-shadow: 10px 10px 0 5px,
+                    10px 10px 0 5px,
+                    10px 10px 0 5px,
+                    10px 10px 0 5px;
+        }
+        58.31% {
+          box-shadow: -10px 10px 0 5px,
+                      -10px 10px 0 5px,
+                      10px 10px 0 5px,
+                      -10px 10px 0 5px;
+        }
+        66.64% {
+          box-shadow: -10px -10px 0 5px,
+                      -10px -10px 0 5px,
+                      10px 10px 0 5px,
+                      -10px 10px 0 5px;
+        }
+        74.97% {
+          box-shadow: -10px -10px 0 5px,
+                      10px -10px 0 5px,
+                      10px 10px 0 5px,
+                      -10px 10px 0 5px;
+        }
+        83.3% {
+          box-shadow: -10px -10px 0 5px,
+                      10px 10px 0 5px,
+                      10px 10px 0 5px,
+                      -10px 10px 0 5px;
+        }
+        91.63% {
+          box-shadow: -10px -10px 0 5px,
+                      -10px 10px 0 5px,
+                      -10px 10px 0 5px,
+                      -10px 10px 0 5px;
+        }
+        100% {
+          box-shadow: -10px -10px 0 5px,
+                      -10px -10px 0 5px,
+                      -10px -10px 0 5px,
+                      -10px -10px 0 5px;
+        }
+      }
+
+      @keyframes spin {
+          0% { transform: translate(-50%, -50%) rotate(0deg); }
+          100% { transform: translate(-50%, -50%) rotate(360deg); }
+      }
+    `;
   }
 
   // Extract popup styles into separate method
   getPopupStyles(desktopPopupDimensions) {
     return `
+      ${this.getLoaderStyles()}
       #surface-popup {
         display: none;
         justify-content: center;
@@ -672,7 +834,12 @@ class SurfaceEmbed {
           height: auto;
         }
       }
+    `;
+  }
 
+  // Extract widget styles into separate method
+  getWidgetStyles() {
+    return `
       .surface-loading-spinner {
         height: 5px;
         width: 5px;
@@ -801,30 +968,11 @@ class SurfaceEmbed {
     `;
   }
 
-  // Add helper method for iframe creation
-  createIframe(src) {
-    const iframe = document.createElement("iframe");
-    iframe.id = "surface-iframe";
-    iframe.src = src;
-    iframe.frameBorder = "0";
-    iframe.allowFullscreen = true;
-    iframe.style.opacity = "0";
-    return iframe;
-  }
-
-  // Add helper method for handling iframe load
-  handleIframeLoad(iframe, spinner, closeBtn) {
-    if (spinner) spinner.style.display = "none";
-    if (closeBtn) closeBtn.style.display = "flex";
-    iframe.style.opacity = "1";
-  }
-
   // Form Input Trigger Initialization
   formInputTriggerInitialize() {
-    const e =
-      document
-        .querySelector("[data-question-id]")
-        ?.getAttribute("data-question-id")
+    const e = document
+      .querySelector("[data-question-id]")
+      ?.getAttribute("data-question-id");
     const t = document.querySelector("form.surface-form-handler");
 
     if (e && t) {
@@ -872,15 +1020,6 @@ class SurfaceEmbed {
       this._popupSize = size;
     }
   }
-}
-
-function parseCookies() {
-  const cookies = {};
-  document.cookie.split(";").forEach((cookie) => {
-    const [key, value] = cookie.split("=").map((c) => c.trim());
-    if (key && value) cookies[key] = value;
-  });
-  return cookies;
 }
 
 (function () {
