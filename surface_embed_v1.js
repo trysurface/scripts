@@ -124,12 +124,13 @@ class SurfaceEmbed {
       target_element_class
     ) {
       this.setupClickHandlers();
+      this.formInputTriggerInitialize();
     }
 
     if (embed_type === "widget") {
       this.addWidgetButton();
+      this.formInputTriggerInitialize();
     }
-    this.formInputTriggerInitialize();
   }
 
   log(level, message) {
@@ -580,7 +581,6 @@ class SurfaceEmbed {
   }
 
   showSurfaceForm(options = {}, fromInputTrigger = true) {
-
     if (options) {
       // Convert options to entries format while preserving existing data
       const newEntries = Object.entries(options).map(([key, value]) => ({
@@ -968,40 +968,71 @@ class SurfaceEmbed {
 
   // Form Input Trigger Initialization
   formInputTriggerInitialize() {
+    if (!this.initialized) {
+      this.initialize();
+    }
+    // const e = document
+    //   .querySelector("[data-question-id]")
+    //   ?.getAttribute("data-question-id");
+    // const t = document.querySelector("form.surface-form-handler");
+
+    // if (e && t) {
+    //   t.addEventListener("submit", (n) => {
+    //     n.preventDefault();
+    //     const o = t.querySelector('input[type="email"]'),
+    //       c = o?.value.trim();
+    //     const oFirstName = t.querySelector('input[name="firstName"]'),
+    //       f = oFirstName?.value.trim();
+    //     const oLastName = t.querySelector('input[name="lastName"]'),
+    //       l = oLastName?.value.trim();
+    //     if (o && /^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/.test(c)) {
+    //       this.showSurfaceForm(
+    //         {
+    //           ...(c && { [e + "_emailAddress"]: c }),
+    //           ...(f && { [e + "_firstName"]: f }),
+    //           ...(l && { [e + "_lastName"]: l }),
+    //         },
+    //         true
+    //       );
+    //     } else {
+    //       o?.reportValidity();
+    //     }
+    //   });
+
+    //   t.addEventListener("keydown", (n) => {
+    //     if (n.key === "Enter" && document.activeElement.type === "email") {
+    //       n.preventDefault();
+    //       t.dispatchEvent(new Event("submit", { cancelable: true }));
+    //     }
+    //   });
+    // }
+
     const e = document
       .querySelector("[data-question-id]")
       ?.getAttribute("data-question-id");
     const t = document.querySelector("form.surface-form-handler");
 
-    if (e && t) {
-      t.addEventListener("submit", (n) => {
-        n.preventDefault();
-        const o = t.querySelector('input[type="email"]'),
-          c = o?.value.trim();
-        const oFirstName = t.querySelector('input[name="firstName"]'),
-          f = oFirstName?.value.trim();
-        const oLastName = t.querySelector('input[name="lastName"]'),
-          l = oLastName?.value.trim();
-        if (o && /^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/.test(c)) {
-          this.showSurfaceForm(
-            {
-              ...(c && { [e + "_emailAddress"]: c }),
-              ...(f && { [e + "_firstName"]: f }),
-              ...(l && { [e + "_lastName"]: l }),
-            },
-            true
-          );
-        } else {
-          o?.reportValidity();
-        }
-      });
+    const handleSubmitCallback = (n) => {
+      n.preventDefault();
+      const o = t.querySelector('input[type="email"]'),
+        c = o?.value.trim();
+      if (o && /^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/.test(c)) {
+        this.showSurfaceForm({ [`${e}_emailAddress`]: c }, true);
+      } else {
+        o?.reportValidity();
+      }
+    }
 
-      t.addEventListener("keydown", (n) => {
-        if (n.key === "Enter" && document.activeElement.type === "email") {
-          n.preventDefault();
-          t.dispatchEvent(new Event("submit", { cancelable: true }));
-        }
-      });
+    const handleKeyDownCallback = (n) => {
+      if (n.key === "Enter" && document.activeElement.type === "email") {
+        n.preventDefault();
+        t.dispatchEvent(new Event("submit", { cancelable: true }));
+      }
+    }
+    if (e && t) {
+      t.addEventListener("submit", handleSubmitCallback);
+
+      t.addEventListener("keydown", handleKeyDownCallback);
     }
   }
 
