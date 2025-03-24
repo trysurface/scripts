@@ -19,7 +19,6 @@ class SurfaceStore {
     if (iframe) {
       this.surfaceDomains.forEach((domain) => {
         if (iframe.src.includes(domain)) {
-          console.log("posting message to", domain);
           iframe.contentWindow.postMessage(
             {
               type: "STORE_UPDATE",
@@ -182,7 +181,6 @@ class SurfaceEmbed {
     window.addEventListener("message", (event) => {
       if (event.origin) {
         if (SurfaceTagStore.surfaceDomains.includes(event.origin)) {
-          console.log("received message from", event.origin);
           if (event.data.type === "SEND_DATA") {
             SurfaceTagStore.notifyIframe();
           }
