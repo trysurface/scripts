@@ -125,6 +125,7 @@ class SurfaceEmbed {
       target_element_class
     ) {
       if (this.embed_type === "inline") {
+        if (this.initialized) return;
         this.surface_inline_reference = null;
         this.inline_embed_references = document.querySelectorAll(
           "." + this.target_element_class
@@ -132,12 +133,12 @@ class SurfaceEmbed {
         this.embedSurfaceForm = this.embedInline;
         this.shouldShowSurfaceForm = this.showSurfaceInline;
         this.hideSurfaceForm = this.hideSurfaceInline;
-        this.embedSurfaceForm();
       } else if (
         this.embed_type === "popup" ||
         this.embed_type === "widget" ||
         this.embed_type === "input-trigger"
       ) {
+        if (this.initialized) return;
         this.embedSurfaceForm = this.embedPopup;
         this.shouldShowSurfaceForm = this.showSurfacePopup;
         this.hideSurfaceForm = this.hideSurfacePopup;
@@ -148,6 +149,7 @@ class SurfaceEmbed {
           this.addWidgetButton();
         }
       } else if (this.embed_type === "slideover") {
+        if (this.initialized) return;
         this.embedSurfaceForm = this.embedSlideover;
         this.shouldShowSurfaceForm = this.showSurfaceSlideover;
         this.hideSurfaceForm = this.hideSurfaceSlideover;
@@ -196,9 +198,9 @@ class SurfaceEmbed {
       if (clickedButton) {
         if (!this.initialized) {
           this.initialize();
+        } else {
+          this.shouldShowSurfaceForm();
         }
-        this.embedSurfaceForm();
-        this.shouldShowSurfaceForm();
       }
     });
   }
@@ -214,9 +216,8 @@ class SurfaceEmbed {
         }
       }
     });
-
-    if (this.shouldShowSurfaceForm) {
-      this.shouldShowSurfaceForm();
+    if (this.embedSurfaceForm) {
+      this.embedSurfaceForm();
     }
 
     this.initialized = true;
@@ -275,6 +276,9 @@ class SurfaceEmbed {
     const urlParams = this.getUrlParams();
 
     if (Object.keys(options).length > 0 || Object.keys(urlParams).length > 0) {
+      // Store original URL to compare if we actually need to update
+      const originalUrl = this.src.toString();
+
       Object.keys(options).forEach((key) => {
         this.src.searchParams.set(key, options[key]);
       });
@@ -282,25 +286,28 @@ class SurfaceEmbed {
         this.src.searchParams.set(key, urlParams[key]);
       });
 
-      const iframe = iframe_reference.querySelector("#surface-iframe");
-      // set the loading spinner to visible
-      const spinner = iframe_reference.querySelector(
-        ".surface-loading-spinner"
-      );
-      const closeBtn = iframe_reference.querySelector(".close-btn-container");
-      if (spinner) spinner.style.display = "flex";
-      if (closeBtn) closeBtn.style.display = "none";
-      if (iframe) {
-        iframe.style.opacity = "0";
-        setTimeout(() => {
-          iframe.src = this.src.toString();
-          iframe.onload = () => {
-            iframe.style.opacity = "1";
+      // Only update iframe if URL actually changed
+      if (originalUrl !== this.src.toString()) {
+        const iframe = iframe_reference.querySelector("#surface-iframe");
+        // set the loading spinner to visible
+        const spinner = iframe_reference.querySelector(
+          ".surface-loading-spinner"
+        );
+        const closeBtn = iframe_reference.querySelector(".close-btn-container");
+        if (spinner) spinner.style.display = "flex";
+        if (closeBtn) closeBtn.style.display = "none";
+        if (iframe) {
+          iframe.style.opacity = "0";
+          setTimeout(() => {
+            iframe.src = this.src.toString();
+            iframe.onload = () => {
+              iframe.style.opacity = "1";
 
-            if (spinner) spinner.style.display = "none";
-            if (closeBtn) closeBtn.style.display = "flex";
-          };
-        }, 100);
+              if (spinner) spinner.style.display = "none";
+              if (closeBtn) closeBtn.style.display = "flex";
+            };
+          }, 0);
+        }
       }
     }
   }
@@ -353,8 +360,9 @@ class SurfaceEmbed {
     const surface_popup = this.surface_popup_reference;
     const src = this.src.toString();
 
-    surface_popup.id = "surface-popup";
-    surface_popup.innerHTML = `
+    if (!this.initialized) {
+      surface_popup.id = "surface-popup";
+      surface_popup.innerHTML = `
             <div class="surface-popup-content">
                 <div style="display: flex; justify-content: center; align-items: center; height: 100%; position: absolute; top: 0; left: 0; width: 100%; pointer-events: none;">
                     <div class="surface-loading-spinner"></div>
@@ -366,29 +374,30 @@ class SurfaceEmbed {
             </div>
         `;
 
-    document.body.appendChild(surface_popup);
+      document.body.appendChild(surface_popup);
 
-    const desktopPopupDimensions = {
-      width: "calc(100% - 80px)",
-      height: "calc(100% - 80px)",
-    };
+      const desktopPopupDimensions = {
+        width: "calc(100% - 80px)",
+        height: "calc(100% - 80px)",
+      };
 
-    if (this._popupSize === "small") {
-      desktopPopupDimensions.width = "50%";
-      desktopPopupDimensions.height = "60%";
-    } else if (this._popupSize === "medium") {
-      desktopPopupDimensions.width = "70%";
-      desktopPopupDimensions.height = "80%";
-    } else if (this._popupSize === "large") {
-      desktopPopupDimensions.width = "calc(100% - 80px)";
-      desktopPopupDimensions.height = "calc(100% - 80px)";
-    }
+      if (this._popupSize === "small") {
+        desktopPopupDimensions.width = "50%";
+        desktopPopupDimensions.height = "60%";
+      } else if (this._popupSize === "medium") {
+        desktopPopupDimensions.width = "70%";
+        desktopPopupDimensions.height = "80%";
+      } else if (this._popupSize === "large") {
+        desktopPopupDimensions.width = "calc(100% - 80px)";
+        desktopPopupDimensions.height = "calc(100% - 80px)";
+      }
 
-    if (!this.styles.popup) {
-      const style = document.createElement("style");
-      style.innerHTML = this.getPopupStyles(desktopPopupDimensions);
-      document.head.appendChild(style);
-      this.styles.popup = style;
+      if (!this.styles.popup) {
+        const style = document.createElement("style");
+        style.innerHTML = this.getPopupStyles(desktopPopupDimensions);
+        document.head.appendChild(style);
+        this.styles.popup = style;
+      }
     }
 
     surface_popup
@@ -1001,7 +1010,13 @@ class SurfaceEmbed {
 
   // Show Surface Form
   showSurfaceForm() {
-    this.embedSurfaceForm();
+    if (!this.initialized) {
+      this.initialize();
+    }
+    // Only update iframe options if we have new data to send
+    if (Object.keys(this.options).length > 0) {
+      this.updateIframeWithOptions(this.options, this.surface_popup_reference);
+    }
     this.shouldShowSurfaceForm();
   }
 
