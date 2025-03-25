@@ -11,8 +11,7 @@ class SurfaceStore {
     this.surfaceDomains = [
       "https://forms.withsurface.com",
       "https://app.withsurface.com",
-      "https://dev.withsurface.com",
-      "https://surfaceforms-git-eng-1695-surface-iframe-post-me-641b21-surface.vercel.app",
+      "https://dev.withsurface.com"
     ];
   }
 
