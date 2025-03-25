@@ -10,7 +10,9 @@ class SurfaceStore {
     this.partialFilledData = {};
     this.surfaceDomains = [
       "https://forms.withsurface.com",
-      "https://app.surfaceforms.com",
+      "https://app.withsurface.com",
+      "https://dev.withsurface.com",
+      "https://surfaceforms-git-eng-1695-surface-iframe-post-me-641b21-surface.vercel.app",
     ];
   }
 
@@ -74,6 +76,7 @@ function SurfaceSyncCookie(visitorId) {
 class SurfaceEmbed {
   constructor(src, embed_type, target_element_class, options = {}) {
     SurfaceSyncCookie(src);
+    SurfaceTagStore.notifyIframe();
     this._popupSize = options.popupSize || "medium";
 
     this.styles = {
@@ -609,11 +612,6 @@ class SurfaceEmbed {
     });
   }
 
-  embedWidget() {
-    // Reuse popup embed logic since widget also opens as a popup
-    this.embedPopup();
-  }
-
   getLoaderStyles() {
     return `
       .surface-loading-spinner {
@@ -715,7 +713,6 @@ class SurfaceEmbed {
     `;
   }
 
-  // Extract popup styles into separate method
   getPopupStyles(desktopPopupDimensions) {
     return `
       ${this.getLoaderStyles()}
@@ -826,7 +823,6 @@ class SurfaceEmbed {
     `;
   }
 
-  // Extract widget styles into separate method
   getWidgetStyles() {
     return `
       .surface-loading-spinner {
@@ -928,7 +924,6 @@ class SurfaceEmbed {
     `;
   }
 
-  // Extract widget styles into separate method
   getWidgetStyles() {
     return `
       #surface-widget-button {
