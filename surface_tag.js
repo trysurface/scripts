@@ -114,7 +114,8 @@ class SurfaceEmbed {
     this.target_element_class = target_element_class;
     this.options = options;
     this.options.popupSize = this._popupSize;
-
+    this.shouldShowSurfaceForm = () => {};
+    this.embedSurfaceForm = () => {};
     if (
       (embed_type === "popup" ||
         embed_type === "slideover" ||
@@ -123,12 +124,39 @@ class SurfaceEmbed {
         embed_type === "input-trigger") &&
       target_element_class
     ) {
-      this.setupClickHandlers();
-      this.formInputTriggerInitialize();
-    }
+      if (this.embed_type === "inline") {
+        this.surface_inline_reference = null;
+        this.inline_embed_references = document.querySelectorAll(
+          "." + this.target_element_class
+        );
+        this.embedSurfaceForm = this.embedInline;
+        this.shouldShowSurfaceForm = this.showSurfaceInline;
+        this.hideSurfaceForm = this.hideSurfaceInline;
+        this.embedSurfaceForm();
+      } else if (
+        this.embed_type === "popup" ||
+        this.embed_type === "widget" ||
+        this.embed_type === "input-trigger"
+      ) {
+        this.embedSurfaceForm = this.embedPopup;
+        this.shouldShowSurfaceForm = this.showSurfacePopup;
+        this.hideSurfaceForm = this.hideSurfacePopup;
+        if (this.embed_type === "widget") {
+          if (this.surface_popup_reference == null) {
+            this.surface_popup_reference = document.createElement("div");
+          }
+          this.addWidgetButton();
+        }
+      } else if (this.embed_type === "slideover") {
+        this.embedSurfaceForm = this.embedSlideover;
+        this.shouldShowSurfaceForm = this.showSurfaceSlideover;
+        this.hideSurfaceForm = this.hideSurfaceSlideover;
+      }
 
-    if (embed_type === "widget") {
-      this.addWidgetButton();
+      if (this.surface_popup_reference == null) {
+        this.surface_popup_reference = document.createElement("div");
+      }
+      this.setupClickHandlers();
       this.formInputTriggerInitialize();
     }
   }
@@ -161,9 +189,6 @@ class SurfaceEmbed {
   }
 
   setupClickHandlers() {
-    if (this.embed_type === "inline") {
-      this.surface_inline_reference = null;
-    }
     document.addEventListener("click", (event) => {
       const clickedButton = event.target.closest(
         "." + this.target_element_class
@@ -172,7 +197,8 @@ class SurfaceEmbed {
         if (!this.initialized) {
           this.initialize();
         }
-        this.showSurfaceForm();
+        this.embedSurfaceForm();
+        this.shouldShowSurfaceForm();
       }
     });
   }
@@ -189,7 +215,9 @@ class SurfaceEmbed {
       }
     });
 
-    this.showSurfaceForm();
+    if (this.shouldShowSurfaceForm) {
+      this.shouldShowSurfaceForm();
+    }
 
     this.initialized = true;
   }
@@ -281,7 +309,7 @@ class SurfaceEmbed {
     if (this.surface_popup_reference == null) {
       this.log(
         "warn",
-        "Invalid showSurfaceForm invocation. Embed type is not popup or slideover"
+        "Invalid shouldShowSurfaceForm invocation. Embed type is not popup or slideover"
       );
       return;
     }
@@ -378,13 +406,10 @@ class SurfaceEmbed {
 
   // --- Slideover logic ---
   showSurfaceSlideover(options = {}, fromInputTrigger = false) {
-    if (!this.initialized) {
-      this.initialize();
-    }
     if (this.surface_popup_reference == null) {
       this.log(
         "warn",
-        "Invalid showSurfaceForm invocation. Embed type is not popup or slideover"
+        "Invalid shouldShowSurfaceForm invocation. Embed type is not popup or slideover"
       );
       return;
     }
@@ -578,49 +603,6 @@ class SurfaceEmbed {
   embedWidget() {
     // Reuse popup embed logic since widget also opens as a popup
     this.embedPopup();
-  }
-
-  showSurfaceForm(options = {}, fromInputTrigger = true) {
-    if (options) {
-      // Convert options to entries format while preserving existing data
-      const newEntries = Object.entries(options).map(([key, value]) => ({
-        [key]: value,
-      }));
-
-      // Combine existing entries with new ones
-      SurfaceTagStore.partialFilledData = [
-        ...(Array.isArray(SurfaceTagStore.partialFilledData)
-          ? SurfaceTagStore.partialFilledData
-          : []),
-        ...newEntries,
-      ];
-      SurfaceTagStore.notifyIframe();
-    }
-
-    this.surface_popup_reference = document.createElement("div");
-
-    if (
-      this.embed_type === "popup" ||
-      this.embed_type === "widget" ||
-      this.embed_type === "input-trigger"
-    ) {
-      this.embedSurfaceForm = this.embedPopup;
-      this.showSurfaceForm = this.showSurfacePopup;
-      this.hideSurfaceForm = this.hideSurfacePopup;
-    } else if (this.embed_type === "slideover") {
-      this.embedSurfaceForm = this.embedSlideover;
-      this.showSurfaceForm = this.showSurfaceSlideover;
-      this.hideSurfaceForm = this.hideSurfaceSlideover;
-    } else if (this.embed_type === "inline") {
-      this.inline_embed_references = document.querySelectorAll(
-        "." + this.target_element_class
-      );
-      this.embedSurfaceForm = this.embedInline;
-      this.showSurfaceForm = this.showSurfaceInline;
-      this.hideSurfaceForm = this.hideSurfaceInline;
-    }
-
-    this.embedSurfaceForm();
   }
 
   getLoaderStyles() {
@@ -968,10 +950,6 @@ class SurfaceEmbed {
 
   // Form Input Trigger Initialization
   formInputTriggerInitialize() {
-    if (!this.initialized) {
-      this.initialize();
-    }
-
     const e = document
       .querySelector("[data-question-id]")
       ?.getAttribute("data-question-id");
@@ -982,7 +960,24 @@ class SurfaceEmbed {
       const o = t.querySelector('input[type="email"]'),
         c = o?.value.trim();
       if (o && /^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/.test(c)) {
-        this.showSurfaceForm({ [`${e}_emailAddress`]: c }, true);
+        const options = { [`${e}_emailAddress`]: c };
+        if (options) {
+          // Convert options to entries format while preserving existing data
+          const newEntries = Object.entries(options).map(([key, value]) => ({
+            [key]: value,
+          }));
+
+          // Combine existing entries with new ones
+          SurfaceTagStore.partialFilledData = [
+            ...(Array.isArray(SurfaceTagStore.partialFilledData)
+              ? SurfaceTagStore.partialFilledData
+              : []),
+            ...newEntries,
+          ];
+          SurfaceTagStore.notifyIframe();
+          this.updateIframeWithOptions(options, this.surface_popup_reference);
+          this.showSurfaceForm();
+        }
       } else {
         o?.reportValidity();
       }
@@ -995,10 +990,19 @@ class SurfaceEmbed {
       }
     };
     if (e && t) {
+      if (!this.initialized) {
+        this.initialize();
+      }
       t.addEventListener("submit", handleSubmitCallback);
 
       t.addEventListener("keydown", handleKeyDownCallback);
     }
+  }
+
+  // Show Surface Form
+  showSurfaceForm() {
+    this.embedSurfaceForm();
+    this.shouldShowSurfaceForm();
   }
 
   // Add getter/setter for popupSize
