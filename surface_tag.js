@@ -11,8 +11,7 @@ class SurfaceStore {
     this.surfaceDomains = [
       "https://forms.withsurface.com",
       "https://app.withsurface.com",
-      "https://dev.withsurface.com",
-      "https://surfaceforms-git-eng-1695-surface-iframe-post-me-641b21-surface.vercel.app"
+      "https://dev.withsurface.com"
     ];
   }
 
@@ -981,6 +980,9 @@ class SurfaceEmbed {
           ];
           SurfaceTagStore.notifyIframe();
           this.updateIframeWithOptions(options, this.surface_popup_reference);
+          if (!this.initialized) {
+            this.initialize();
+          }
           this.showSurfaceForm();
         }
       } else {
@@ -995,9 +997,6 @@ class SurfaceEmbed {
       }
     };
     if (e && t) {
-      if (!this.initialized) {
-        this.initialize();
-      }
       t.addEventListener("submit", handleSubmitCallback);
 
       t.addEventListener("keydown", handleKeyDownCallback);
