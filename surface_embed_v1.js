@@ -135,6 +135,7 @@ class SurfaceEmbed {
         this.embedSurfaceForm = this.embedInline;
         this.shouldShowSurfaceForm = this.showSurfaceInline;
         this.hideSurfaceForm = this.hideSurfaceInline;
+        this.initializeMessageListenerAndEmbed();
       } else if (
         this.embed_type === "popup" ||
         this.embed_type === "widget" ||
