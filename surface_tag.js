@@ -11,8 +11,7 @@ class SurfaceStore {
     this.surfaceDomains = [
       "https://forms.withsurface.com",
       "https://app.withsurface.com",
-      "https://dev.withsurface.com",
-      "https://surfaceforms-git-eng-1695-surface-iframe-post-me-641b21-surface.vercel.app"
+      "https://dev.withsurface.com"
     ];
   }
 
@@ -200,7 +199,7 @@ class SurfaceEmbed {
       );
       if (clickedButton) {
         if (!this.initialized) {
-          this.initialize();
+          this.initializeMessageListenerAndEmbed();
           this.shouldShowSurfaceForm();
         } else {
           this.shouldShowSurfaceForm();
@@ -209,7 +208,7 @@ class SurfaceEmbed {
     });
   }
 
-  initialize() {
+  initializeMessageListenerAndEmbed() {
     if (this.initialized) return;
     window.addEventListener("message", (event) => {
       if (event.origin) {
@@ -607,7 +606,7 @@ class SurfaceEmbed {
     // Clicking the widget button opens the popup
     widgetButton.addEventListener("click", () => {
       if (!this.initialized) {
-        this.initialize();
+        this.initializeMessageListenerAndEmbed();
       }
       this.showSurfaceForm();
     });
@@ -981,6 +980,9 @@ class SurfaceEmbed {
           ];
           SurfaceTagStore.notifyIframe();
           this.updateIframeWithOptions(options, this.surface_popup_reference);
+          if (!this.initialized) {
+            this.initializeMessageListenerAndEmbed();
+          }
           this.showSurfaceForm();
         }
       } else {
@@ -995,9 +997,6 @@ class SurfaceEmbed {
       }
     };
     if (e && t) {
-      if (!this.initialized) {
-        this.initialize();
-      }
       t.addEventListener("submit", handleSubmitCallback);
 
       t.addEventListener("keydown", handleKeyDownCallback);
@@ -1007,7 +1006,7 @@ class SurfaceEmbed {
   // Show Surface Form
   showSurfaceForm() {
     if (!this.initialized) {
-      this.initialize();
+      this.initializeMessageListenerAndEmbed();
     }
     // Only update iframe options if we have new data to send
     if (Object.keys(this.options).length > 0) {
@@ -1016,7 +1015,7 @@ class SurfaceEmbed {
     this.shouldShowSurfaceForm();
   }
 
-  // Add getter/setter for popupSize
+  // getter/setter for popupSize
   get popupSize() {
     return this._popupSize;
   }
