@@ -982,6 +982,7 @@ class SurfaceEmbed {
           this.updateIframeWithOptions(options, this.surface_popup_reference);
           if (!this.initialized) {
             this.initializeMessageListenerAndEmbed();
+
           }
           this.showSurfaceForm();
         }
