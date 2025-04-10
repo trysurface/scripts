@@ -64,6 +64,7 @@ class SurfaceExternalForm {
       formId,
       responses: responses,
       finished,
+      environmentId: this.environmentId
     };
 
     if (this.config.debugMode) {
@@ -78,7 +79,7 @@ class SurfaceExternalForm {
     }
 
     fetch(
-      `${this.config.serverBaseUrl}/environments/${this.environmentId}/htmlForm/submitResponse`,
+      `${this.config.serverBaseUrl}/externalForm/submit`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
