@@ -1,5 +1,146 @@
 let SurfaceSyncCookieHappenedOnce = false;
 
+class SurfaceExternalForm {
+  constructor(environmentId) {
+    this.formStates = {};
+    this.responseIds = {};
+
+    this.config = {
+      serverBaseUrl:
+        localStorage.getItem("surfaceServerBaseURL") ||
+        "http://forms.withsurface.com/api/v1",
+      debugMode: window.location.search.includes("surfaceDebug=true"),
+    };
+
+    this.environmentId = environmentId;
+
+    this.forms = Array.from(document.querySelectorAll("form")).filter((form) =>
+      Boolean(form.getAttribute("data-id"))
+    );
+  }
+
+  storeQuestionData({ formId, questionId, variableName = "value", value }) {
+    if (!this.formStates[formId]) {
+      this.formStates[formId] = {};
+    }
+    if (!this.formStates[formId][questionId]) {
+      this.formStates[formId][questionId] = {};
+    }
+    this.formStates[formId][questionId][variableName] = value;
+  }
+
+  submitForm(form) {
+    const formId = form.getAttribute("data-id");
+    const formCompletedInput = form.querySelector(
+      'input[name="formCompleted"]'
+    );
+    const finished = formCompletedInput
+      ? formCompletedInput.value === "true"
+      : false;
+    const responses = Object.entries(this.formStates[formId] || {}).map(
+      ([questionId, data]) => ({
+        questionId,
+        response: data,
+      })
+    );
+    const payload = {
+      id: this.responseIds[formId],
+      formId,
+      responses: responses,
+      finished,
+    };
+
+    if (this.config.debugMode) {
+      console.log("Submitting form data:", payload);
+    }
+
+    if (this.environmentId == null) {
+      console.error(
+        "Skipping form submission as the environmentId is not configured."
+      );
+      return;
+    }
+
+    fetch(
+      `${this.config.serverBaseUrl}/externalForm/submit`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      }
+    )
+      .then((response) => response.json())
+      .then((data) => {
+        if (data && data.data && data.data.response && data.data.response.id) {
+          this.responseIds[formId] = data.data.response.id;
+          if (this.config.debugMode)
+            console.log("Response ID stored:", data.data.response.id);
+        }
+      })
+      .catch((error) => {
+        if (this.config.debugMode)
+          console.error("Error submitting form:", error);
+      });
+  }
+
+  handleInputChange(formId, event) {
+    const elementId = event.target.getAttribute("data-id");
+    const [questionId, variableName] = elementId.includes("_")
+      ? elementId.split("_")
+      : [elementId, null];
+    const value = event.target.value;
+
+    if (this.config.debugMode) {
+      console.log(
+        `Form ${formId} element changed - Question ID: ${questionId}, Variable Name: ${variableName}, Value: ${value}`
+      );
+    }
+    this.storeQuestionData({
+      formId,
+      questionId,
+      variableName: variableName ?? "value",
+      value,
+    });
+  }
+
+  attachFormHandlers() {
+    if (!this.environmentId) {
+      this.config.debugMode && console.warn("No environment id configured");
+      return;
+    }
+
+    if (this.forms.length === 0) {
+      this.config.debugMode &&
+        console.warn("No forms with data-id attribute found");
+      return;
+    }
+
+    this.forms.forEach((form) => {
+      const formId = form.getAttribute("data-id");
+
+      if (this.config.debugMode) {
+        console.log(`Attaching handlers to form: ${formId}`);
+      }
+
+      form
+        .querySelectorAll("input[data-id], select[data-id]")
+        .forEach((element) =>
+          element.addEventListener("change", (e) =>
+            this.handleInputChange(formId, e)
+          )
+        );
+
+      form.addEventListener("submit", (event) => {
+        event.preventDefault();
+        if (this.config.debugMode) {
+          console.log(`Form ${formId} submitted`);
+        }
+        this.submitForm(event.target);
+      });
+    });
+  }
+}
+
 class SurfaceStore {
   constructor() {
     this.windowUrl = new URL(window.location.href).toString();
@@ -69,147 +210,6 @@ function SurfaceSyncCookie(visitorId) {
       credentials: "include",
     });
     SurfaceSyncCookieHappenedOnce = true;
-  }
-}
-
-class SurfaceExternalForm {
-  constructor(environmentId) {
-   
-    this.formStates = {};
-    this.responseIds = {};
-
-    this.config = {
-      serverBaseUrl:
-        localStorage.getItem("surfaceServerBaseURL") ||
-        "http://forms.withsurface.com/api/v1",
-      debugMode: window.location.search.includes("surfaceDebug=true"),
-    };
-
-    this.environmentId = environmentId;
-
-    this.forms = Array.from(document.querySelectorAll("form")).filter((form) =>
-      Boolean(form.getAttribute("data-id"))
-    );
-  }
-
-  storeQuestionData({ formId, questionId, variableName = "value", value }) {
-    if (!this.formStates[formId]) {
-      this.formStates[formId] = {};
-    }
-    if (!this.formStates[formId][questionId]) {
-      this.formStates[formId][questionId] = {};
-    }
-    this.formStates[formId][questionId][variableName] = value;
-  }
-
-  submitForm(form) {
-    const formId = form.getAttribute("data-id");
-    const formCompletedInput = form.querySelector(
-      'input[name="formCompleted"]'
-    );
-    const finished = formCompletedInput
-      ? formCompletedInput.value === "true"
-      : false;
-    const responses = Object.entries(this.formStates[formId] || {}).map(
-      ([questionId, data]) => ({
-        questionId,
-        response: data,
-      })
-    );
-    const payload = {
-      id: this.responseIds[formId],
-      formId,
-      responses: responses,
-      finished,
-    };
-
-    if (this.config.debugMode) {
-      console.log("Submitting form data:", payload);
-    }
-
-    if (this.environmentId == null) {
-      console.error(
-        "Skipping form submission as the environmentId is not configured."
-      );
-      return;
-    }
-
-    fetch(
-      `${this.config.serverBaseUrl}/environments/${this.environmentId}/htmlForm/submitResponse`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      }
-    )
-      .then((response) => response.json())
-      .then((data) => {
-        if (data && data.data && data.data.response && data.data.response.id) {
-          this.responseIds[formId] = data.data.response.id;
-          if (this.config.debugMode)
-            console.log("Response ID stored:", data.data.response.id);
-        }
-      })
-      .catch((error) => {
-        if (this.config.debugMode)
-          console.error("Error submitting form:", error);
-      });
-  }
-
-  handleInputChange(formId, event) {
-    const elementId = event.target.getAttribute("data-id");
-    const [questionId, variableName] = elementId.includes("_")
-      ? elementId.split("_")
-      : [elementId, null];
-    const value = event.target.value;
-
-    if (this.config.debugMode) {
-      console.log(
-        `Form ${formId} element changed - Question ID: ${questionId}, Variable Name: ${variableName}, Value: ${value}`
-      );
-    }
-    this.storeQuestionData({
-      formId,
-      questionId,
-      variableName: variableName ?? "value",
-      value,
-    });
-  }
-
-  attachFormHandlers() {
-    if(!this.environmentId){
-        this.config.debugMode && console.warn("No environment id configured")
-        return;
-    }
-        
-    if (this.forms.length === 0) {
-        this.config.debugMode && console.warn("No forms with data-id attribute found");
-        return;
-    }
-
-    this.forms.forEach((form) => {
-      const formId = form.getAttribute("data-id");
-
-      if (this.config.debugMode) {
-        console.log(`Attaching handlers to form: ${formId}`);
-      }
-
-      form
-        .querySelectorAll("input[data-id], select[data-id]")
-        .forEach((element) =>
-          element.addEventListener("change", (e) =>
-            this.handleInputChange(formId, e)
-          )
-        );
-
-      form.addEventListener("submit", (event) => {
-        event.preventDefault();
-        if (this.config.debugMode) {
-          console.log(`Form ${formId} submitted`);
-        }
-        this.submitForm(event.target);
-      });
-    });
   }
 }
 
@@ -307,32 +307,32 @@ class SurfaceEmbed {
     }
   }
 
-    log(level, message) {
-        const prefix = "Surface Embed :: ";
-        const fullMessage = prefix + message;
-        if (level == "info") {
-            console.log(fullMessage);
-        }
-        if (level == "warn") {
-            console.warn(fullMessage);
-        }
-        if (level == "error") {
-            console.error(fullMessage);
-        }
+  log(level, message) {
+    const prefix = "Surface Embed :: ";
+    const fullMessage = prefix + message;
+    if (level == "info") {
+      console.log(fullMessage);
     }
+    if (level == "warn") {
+      console.warn(fullMessage);
+    }
+    if (level == "error") {
+      console.error(fullMessage);
+    }
+  }
 
   getUrlParams() {
     let params = {};
     let queryString = window.location.search.slice(1);
     let pairs = queryString.split("&");
 
-        pairs.forEach((pair) => {
-            let [key, value] = pair.split("=");
-            params[decodeURIComponent(key)] = decodeURIComponent(value || "");
-        });
+    pairs.forEach((pair) => {
+      let [key, value] = pair.split("=");
+      params[decodeURIComponent(key)] = decodeURIComponent(value || "");
+    });
 
-        return params;
-    }
+    return params;
+  }
 
   setupClickHandlers() {
     document.addEventListener("click", (event) => {
@@ -377,8 +377,8 @@ class SurfaceEmbed {
       );
     }
 
-        const src = this.src.toString();
-        const target_client_divs = this.inline_embed_references;
+    const src = this.src.toString();
+    const target_client_divs = this.inline_embed_references;
 
     target_client_divs.forEach((client_div) => {
       if (client_div.querySelector('#surface-inline-div')) {
@@ -388,11 +388,11 @@ class SurfaceEmbed {
       const surface_inline_iframe_wrapper = document.createElement("div");
       surface_inline_iframe_wrapper.id = "surface-inline-div";
 
-            const inline_iframe = document.createElement("iframe");
-            inline_iframe.id = "surface-iframe";
-            inline_iframe.src = src;
-            inline_iframe.frameBorder = "0";
-            inline_iframe.allowFullscreen = true;
+      const inline_iframe = document.createElement("iframe");
+      inline_iframe.id = "surface-iframe";
+      inline_iframe.src = src;
+      inline_iframe.frameBorder = "0";
+      inline_iframe.allowFullscreen = true;
 
       // Optional inline style
       if (
@@ -402,8 +402,8 @@ class SurfaceEmbed {
         Object.assign(inline_iframe.style, this.iframeInlineStyle);
       }
 
-            client_div.appendChild(surface_inline_iframe_wrapper);
-            surface_inline_iframe_wrapper.appendChild(inline_iframe);
+      client_div.appendChild(surface_inline_iframe_wrapper);
+      surface_inline_iframe_wrapper.appendChild(inline_iframe);
 
       var style = document.createElement("style");
       style.innerHTML = `
@@ -498,14 +498,13 @@ class SurfaceEmbed {
     }, 300);
   }
 
-    // --- The popup embed method ---
-    embedPopup() {
-        if (this.surface_popup_reference == null) {
-            this.log(
-                "error",
-                `Cannot embed popup because Surface embed type is ${this.embed_type}`
-            );
-        }
+  embedPopup() {
+    if (this.surface_popup_reference == null) {
+      this.log(
+        "error",
+        `Cannot embed popup because Surface embed type is ${this.embed_type}`
+      );
+    }
 
     const surface_popup = this.surface_popup_reference;
     const src = this.src.toString();
@@ -1182,6 +1181,8 @@ class SurfaceEmbed {
   const environmentId = scriptTag ? scriptTag.getAttribute("siteId") : null;
 
   if (environmentId != null) {
+    const externalFormsManager = new SurfaceExternalForm(environmentId);
+    externalFormsManager.attachFormHandlers();
     const syncCookiePayload = {
       type: "LogAnonLeadEnvIdPayload",
       environmentId: environmentId,
