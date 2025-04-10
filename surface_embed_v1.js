@@ -48,6 +48,7 @@ class SurfaceExternalForm {
       formId,
       responses: responses,
       finished,
+      environmentId: this.environmentId,
     };
 
     if (this.config.debugMode) {
