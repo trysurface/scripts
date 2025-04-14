@@ -30,14 +30,9 @@ class SurfaceExternalForm {
     this.formStates[formId][questionId][variableName] = value;
   }
 
-  submitForm(form) {
+  submitForm(form, finished = false) {
     const formId = form.getAttribute("data-id");
-    const formCompletedInput = form.querySelector(
-      'input[name="formCompleted"]'
-    );
-    const finished = formCompletedInput
-      ? formCompletedInput.value === "true"
-      : false;
+
     const responses = Object.entries(this.formStates[formId] || {}).map(
       ([questionId, data]) => ({
         questionId,
@@ -129,12 +124,23 @@ class SurfaceExternalForm {
           )
         );
 
+      const surfaceNextButtonElements = document.getElementsByClassName(
+        "surface-next-button"
+      );
+      if (surfaceNextButtonElements.length > 0) {
+        Array.from(surfaceNextButtonElements).forEach((button) => {
+          button.addEventListener("click", (event) => {
+            this.submitForm(form, false);
+          });
+        });
+      }
+
       form.addEventListener("submit", (event) => {
         event.preventDefault();
         if (this.config.debugMode) {
           console.log(`Form ${formId} submitted`);
         }
-        this.submitForm(event.target);
+        this.submitForm(form, true);
       });
     });
   }
