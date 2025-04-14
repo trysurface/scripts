@@ -1,23 +1,45 @@
 let SurfaceSyncCookieHappenedOnce = false;
 
 class SurfaceExternalForm {
-  constructor(siteId) {
+  constructor(props) {
     this.formStates = {};
     this.responseIds = {};
 
     this.config = {
       serverBaseUrl:
-        localStorage.getItem("surfaceServerBaseURL") ||
-        "https://forms.withsurface.com/api/v1",
+        props && props.serverBaseUrl
+          ? props.serverBaseUrl
+          : "https://forms.withsurface.com/api/v1",
       debugMode: window.location.search.includes("surfaceDebug=true"),
     };
 
     this.environmentId =
-      siteId || document.currentScript.getAttribute("siteId") || null;
+      props && props.siteId
+        ? props.siteId
+        : document.currentScript.getAttribute("siteId") || null;
 
     this.forms = Array.from(document.querySelectorAll("form")).filter((form) =>
       Boolean(form.getAttribute("data-id"))
     );
+  }
+
+  log(message, level = "log") {
+    if (this.config.debugMode) {
+      switch (level) {
+        case "log":
+          console.log(message);
+          break;
+        case "warn":
+          console.warn(message);
+          break;
+        case "error":
+          console.error(message);
+          break;
+        default:
+          console.log(message);
+          break;
+      }
+    }
   }
 
   storeQuestionData({ formId, questionId, variableName = "value", value }) {
@@ -47,13 +69,12 @@ class SurfaceExternalForm {
       environmentId: this.environmentId,
     };
 
-    if (this.config.debugMode) {
-      console.log("Submitting form data:", payload);
-    }
+    this.log("Submitting form data:", payload);
 
     if (this.environmentId == null) {
-      console.error(
-        "Skipping form submission as the environmentId is not configured."
+      this.log(
+        "Skipping form submission as the environmentId is not configured.",
+        "error"
       );
       return;
     }
@@ -67,13 +88,11 @@ class SurfaceExternalForm {
       .then((data) => {
         if (data && data.data && data.data.response && data.data.response.id) {
           this.responseIds[formId] = data.data.response.id;
-          if (this.config.debugMode)
-            console.log("Response ID stored:", data.data.response.id);
+          this.log("Response ID stored:", data.data.response.id);
         }
       })
       .catch((error) => {
-        if (this.config.debugMode)
-          console.error("Error submitting form:", error);
+        this.log("Error submitting form:", error, "error");
       });
   }
 
@@ -84,11 +103,9 @@ class SurfaceExternalForm {
       : [elementId, null];
     const value = event.target.value;
 
-    if (this.config.debugMode) {
-      console.log(
-        `Form ${formId} element changed - Question ID: ${questionId}, Variable Name: ${variableName}, Value: ${value}`
-      );
-    }
+    this.log(
+      `Form ${formId} element changed - Question ID: ${questionId}, Variable Name: ${variableName}, Value: ${value}`
+    );
     this.storeQuestionData({
       formId,
       questionId,
@@ -99,22 +116,19 @@ class SurfaceExternalForm {
 
   attachFormHandlers() {
     if (!this.environmentId) {
-      this.config.debugMode && console.warn("No environment id configured");
+      this.log("No environment id configured", "warn");
       return;
     }
 
     if (this.forms.length === 0) {
-      this.config.debugMode &&
-        console.warn("No forms with data-id attribute found");
+      this.log("No forms with data-id attribute found", "warn");
       return;
     }
 
     this.forms.forEach((form) => {
       const formId = form.getAttribute("data-id");
 
-      if (this.config.debugMode) {
-        console.log(`Attaching handlers to form: ${formId}`);
-      }
+      this.log(`Attaching handlers to form: ${formId}`);
 
       form
         .querySelectorAll("input[data-id], select[data-id]")
@@ -137,9 +151,7 @@ class SurfaceExternalForm {
 
       form.addEventListener("submit", (event) => {
         event.preventDefault();
-        if (this.config.debugMode) {
-          console.log(`Form ${formId} submitted`);
-        }
+        this.log(`Form ${formId} submitted`);
         this.submitForm(form, true);
       });
     });
