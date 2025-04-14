@@ -1,18 +1,19 @@
 let SurfaceSyncCookieHappenedOnce = false;
 
 class SurfaceExternalForm {
-  constructor(environmentId) {
+  constructor(siteId) {
     this.formStates = {};
     this.responseIds = {};
 
     this.config = {
       serverBaseUrl:
         localStorage.getItem("surfaceServerBaseURL") ||
-        "http://forms.withsurface.com/api/v1",
+        "https://forms.withsurface.com/api/v1",
       debugMode: window.location.search.includes("surfaceDebug=true"),
     };
 
-    this.environmentId = environmentId;
+    this.environmentId =
+      siteId || document.currentScript.getAttribute("siteId") || null;
 
     this.forms = Array.from(document.querySelectorAll("form")).filter((form) =>
       Boolean(form.getAttribute("data-id"))
@@ -62,14 +63,11 @@ class SurfaceExternalForm {
       return;
     }
 
-    fetch(
-      `${this.config.serverBaseUrl}/externalForm/submit`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      }
-    )
+    fetch(`${this.config.serverBaseUrl}/externalForm/submit`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    })
       .then((response) => response.json())
       .then((data) => {
         if (data && data.data && data.data.response && data.data.response.id) {
@@ -153,7 +151,7 @@ class SurfaceStore {
     this.surfaceDomains = [
       "https://forms.withsurface.com",
       "https://app.withsurface.com",
-      "https://dev.withsurface.com"
+      "https://dev.withsurface.com",
     ];
   }
 
@@ -382,10 +380,10 @@ class SurfaceEmbed {
     const target_client_divs = this.inline_embed_references;
 
     target_client_divs.forEach((client_div) => {
-      if (client_div.querySelector('#surface-inline-div')) {
+      if (client_div.querySelector("#surface-inline-div")) {
         return;
       }
-      
+
       const surface_inline_iframe_wrapper = document.createElement("div");
       surface_inline_iframe_wrapper.id = "surface-inline-div";
 
@@ -1182,8 +1180,6 @@ class SurfaceEmbed {
   const environmentId = scriptTag ? scriptTag.getAttribute("siteId") : null;
 
   if (environmentId != null) {
-    const externalFormsManager = new SurfaceExternalForm(environmentId);
-    externalFormsManager.attachFormHandlers();
     const syncCookiePayload = {
       type: "LogAnonLeadEnvIdPayload",
       environmentId: environmentId,
