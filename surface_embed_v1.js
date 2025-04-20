@@ -166,13 +166,6 @@ class SurfaceStore {
     this.cookies = {};
     this.metadata = {};
     this.partialFilledData = {};
-    this.breakpoints = {
-      sm: 0,
-      md: 768,
-      lg: 1024,
-      xl: 1280,
-      "2xl": 1536,
-    };
     this.debugMode = window.location.search.includes("surfaceDebug=true");
     this.surfaceDomains = [
       "https://forms.withsurface.com",
@@ -383,13 +376,17 @@ class SurfaceEmbed {
   }
 
   findMatchingBreakpoint() {
-    const sortedBreakpoints = Object.entries(SurfaceTagStore.breakpoints).sort(
-      ([, a], [, b]) => b - a
-    );
-
-    return sortedBreakpoints.find(
-      ([, breakpoint]) => window.innerWidth >= breakpoint
-    );
+    const width = window.innerWidth;
+    const breakpoints = [
+      { name: "sm", min: 0, max: 640 },
+      { name: "md", min: 640, max: 768 },
+      { name: "lg", min: 768, max: 1024 },
+      { name: "xl", min: 1024, max: 1280 },
+      { name: "2xl", min: 1280, max: Infinity }
+    ];
+    
+    const match = breakpoints.find(bp => width >= bp.min && width < bp.max);
+    return [match.name, match.min];
   }
 
   log(level, message) {
