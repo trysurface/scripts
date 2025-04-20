@@ -167,7 +167,7 @@ class SurfaceStore {
     this.metadata = {};
     this.partialFilledData = {};
     this.breakpoints = {
-      sm: 640,
+      sm: 0,
       md: 768,
       lg: 1024,
       xl: 1280,
