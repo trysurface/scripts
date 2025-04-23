@@ -141,6 +141,11 @@ class SurfaceExternalForm {
       const surfaceNextButtonElements = document.getElementsByClassName(
         "surface-next-button"
       );
+
+      const surfaceSubmitButtonElements = document.getElementsByClassName(
+        "surface-submit-button"
+      );
+
       if (surfaceNextButtonElements.length > 0) {
         Array.from(surfaceNextButtonElements).forEach((button) => {
           button.addEventListener("click", (event) => {
@@ -149,11 +154,19 @@ class SurfaceExternalForm {
         });
       }
 
-      form.addEventListener("submit", (event) => {
-        event.preventDefault();
-        this.log(`Form ${formId} submitted`);
-        this.submitForm(form, true);
-      });
+      if (surfaceSubmitButtonElements.length > 0) {
+        Array.from(surfaceSubmitButtonElements).forEach((button) => {
+          button.addEventListener("click", (event) => {
+            this.submitForm(form, true);
+          });
+        });
+      } else {
+        form.addEventListener("submit", (event) => {
+          event.preventDefault();
+          this.log(`Form ${formId} submitted`);
+          this.submitForm(form, true);
+        });
+      }
     });
   }
 }
