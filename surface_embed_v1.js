@@ -2,8 +2,13 @@ let SurfaceSyncCookieHappenedOnce = false;
 
 class SurfaceExternalForm {
   constructor(props) {
+    this.initialRenderTime = new Date();
     this.formStates = {};
     this.responseIds = {};
+    this.windowUrl = new URL(window.location.href).toString();
+    this.formSessions = {};
+    this.formInitializationStatus = {};
+    this.formStarted = {};
 
     this.config = {
       serverBaseUrl:
@@ -21,6 +26,101 @@ class SurfaceExternalForm {
     this.forms = Array.from(document.querySelectorAll("form")).filter((form) =>
       Boolean(form.getAttribute("data-id"))
     );
+  }
+
+  getLeadSessionId(formId) {
+    return this.formSessions[formId] && this.formSessions[formId].sessionId
+      ? this.formSessions[formId].sessionId
+      : null;
+  }
+
+  async sendBeacon(url, payload) {
+    try {
+      const blob = new Blob([JSON.stringify(payload)], {
+        type: "application/json",
+      });
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon(url, blob);
+      } else {
+        // Fallback to fetch if sendBeacon is not supported
+        const response = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(payload),
+          keepalive: true,
+        });
+        if (!response.ok) {
+          throw new Error("Network response was not ok");
+        }
+      }
+    } catch (error) {
+      console.error("Push event API failed: ", error);
+    }
+  }
+
+  callFormViewApi(formId) {
+    const apiUrl = `${this.config.serverBaseUrl}/externalForm/initialize`;
+    const payload = {
+      formId,
+      environmentId: this.environmentId,
+      leadSessionId: this.getLeadSessionId(formId),
+    };
+    this.sendBeacon(apiUrl, payload);
+  }
+
+  callFormStartedApi(formId) {
+    const apiUrl = `${this.config.serverBaseUrl}/externalForm/formStarted`;
+    const payload = {
+      formId,
+      environmentId: this.environmentId,
+      leadSessionId: this.getLeadSessionId(formId),
+    };
+    this.sendBeacon(apiUrl, payload);
+  }
+
+  async identify(formId) {
+    const apiUrl = `${this.config.serverBaseUrl}/lead/identify`;
+    const parentUrl = new URL(this.windowUrl);
+    const payload = {
+      formId,
+      environmentId: this.environmentId,
+      source: "surfaceForm",
+      sourceURL: parentUrl.href,
+      sourceURLDomain: parentUrl.hostname,
+      sourceURLPath: parentUrl.pathname,
+      sourceUrlSearchParams: parentUrl.search,
+    };
+    try {
+      const identifyResponse = await fetch(apiUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+      const jsonData = await identifyResponse.json();
+      if (
+        identifyResponse.ok &&
+        jsonData.data &&
+        jsonData.data.data &&
+        jsonData.data.data.sessionId
+      ) {
+        this.formSessions[formId] = jsonData.data.data;
+      }
+    } catch (error) {
+      this.log("Error identifying lead:", error, "error");
+    }
+  }
+
+  async initializeForm(formId) {
+    if (this.formInitializationStatus[formId]) {
+      return;
+    }
+    this.formInitializationStatus[formId] = true;
+    await this.identify(formId);
+    this.callFormViewApi(formId);
   }
 
   log(message, level = "log") {
@@ -67,6 +167,8 @@ class SurfaceExternalForm {
       responses: responses,
       finished,
       environmentId: this.environmentId,
+      leadSessionId: this.getLeadSessionId(formId),
+      initialRenderTime: this.initialRenderTime.toISOString(),
     };
 
     this.log("Submitting form data:", payload);
@@ -97,6 +199,11 @@ class SurfaceExternalForm {
   }
 
   handleInputChange(formId, event) {
+    if (!this.formStarted[formId]) {
+      this.callFormStartedApi(formId);
+      this.formStarted[formId] = true;
+    }
+
     const elementId = event.target.getAttribute("data-id");
     const [questionId, variableName] = elementId.includes("_")
       ? elementId.split("_")
@@ -138,11 +245,11 @@ class SurfaceExternalForm {
           )
         );
 
-      const surfaceNextButtonElements = document.getElementsByClassName(
+      const surfaceNextButtonElements = form.getElementsByClassName(
         "surface-next-button"
       );
 
-      const surfaceSubmitButtonElements = document.getElementsByClassName(
+      const surfaceSubmitButtonElements = form.getElementsByClassName(
         "surface-submit-button"
       );
 
@@ -152,9 +259,7 @@ class SurfaceExternalForm {
             this.submitForm(form, false);
           });
         });
-      }
-
-      if (surfaceSubmitButtonElements.length > 0) {
+      } else if (surfaceSubmitButtonElements.length > 0) {
         Array.from(surfaceSubmitButtonElements).forEach((button) => {
           button.addEventListener("click", (event) => {
             this.submitForm(form, true);
@@ -167,6 +272,12 @@ class SurfaceExternalForm {
           this.submitForm(form, true);
         });
       }
+
+      // initialize the form state
+      this.formStates[formId] = {};
+      this.formStarted[formId] = false;
+
+      this.initializeForm(formId);
     });
   }
 }
