@@ -166,6 +166,13 @@ class SurfaceStore {
     this.cookies = {};
     this.metadata = {};
     this.partialFilledData = {};
+    this.validEmbedTypes = [
+      "popup",
+      "slideover",
+      "widget",
+      "inline",
+      "input-trigger",
+    ];
     this.debugMode = window.location.search.includes("surfaceDebug=true");
     this.surfaceDomains = [
       "https://forms.withsurface.com",
@@ -277,12 +284,13 @@ class SurfaceEmbed {
     this.options.popupSize = this._popupSize;
     this.shouldShowSurfaceForm = () => {};
     this.embedSurfaceForm = () => {};
+
+    if (!SurfaceTagStore.validEmbedTypes.includes(this.embed_type)) {
+      this.log("error", "Invalid embed type: must be string or object");
+    }
+
     if (
-      (this.embed_type === "popup" ||
-        this.embed_type === "slideover" ||
-        this.embed_type === "widget" ||
-        this.embed_type === "inline" ||
-        this.embed_type === "input-trigger") &&
+      SurfaceTagStore.validEmbedTypes.includes(this.embed_type) &&
       target_element_class
     ) {
       if (this.embed_type === "inline") {
@@ -340,7 +348,7 @@ class SurfaceEmbed {
 
   handleObjectEmbedType(embed_type) {
     const embedTypeWithDefault = this.ensureDefaultEmbedType(embed_type);
-    const matchingBreakpoint = this.findMatchingBreakpoint();
+    const matchingBreakpoint = this.getCurrentScreenBreakpoint();
 
     if (!matchingBreakpoint) {
       this.log(
@@ -375,17 +383,17 @@ class SurfaceEmbed {
     return embed_type;
   }
 
-  findMatchingBreakpoint() {
+  getCurrentScreenBreakpoint() {
     const width = window.innerWidth;
     const breakpoints = [
       { name: "sm", min: 0, max: 640 },
       { name: "md", min: 640, max: 768 },
       { name: "lg", min: 768, max: 1024 },
       { name: "xl", min: 1024, max: 1280 },
-      { name: "2xl", min: 1280, max: Infinity }
+      { name: "2xl", min: 1280, max: Infinity },
     ];
-    
-    const match = breakpoints.find(bp => width >= bp.min && width < bp.max);
+
+    const match = breakpoints.find((bp) => width >= bp.min && width < bp.max);
     return [match.name, match.min];
   }
 
