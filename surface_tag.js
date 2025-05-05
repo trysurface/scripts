@@ -290,6 +290,14 @@ class SurfaceStore {
     this.cookies = {};
     this.metadata = {};
     this.partialFilledData = {};
+    this.validEmbedTypes = [
+      "popup",
+      "slideover",
+      "widget",
+      "inline",
+      "input-trigger",
+    ];
+    this.debugMode = window.location.search.includes("surfaceDebug=true");
     this.surfaceDomains = [
       "https://forms.withsurface.com",
       "https://app.withsurface.com",
@@ -355,7 +363,7 @@ function SurfaceSyncCookie(visitorId) {
 }
 
 class SurfaceEmbed {
-  constructor(src, embed_type, target_element_class, options = {}) {
+  constructor(src, surface_embed_type, target_element_class, options = {}) {
     SurfaceSyncCookie(src);
     SurfaceTagStore.notifyIframe();
     this._popupSize = options.popupSize || "medium";
@@ -394,18 +402,19 @@ class SurfaceEmbed {
     this.src = new URL(src);
     this.src.searchParams.append("url", window.location.href);
 
-    this.embed_type = embed_type;
+    this.embed_type = this.getEmbedType(surface_embed_type);
     this.target_element_class = target_element_class;
     this.options = options;
     this.options.popupSize = this._popupSize;
     this.shouldShowSurfaceForm = () => {};
     this.embedSurfaceForm = () => {};
+
+    if (!SurfaceTagStore.validEmbedTypes.includes(this.embed_type)) {
+      this.log("error", "Invalid embed type: must be string or object");
+    }
+
     if (
-      (embed_type === "popup" ||
-        embed_type === "slideover" ||
-        embed_type === "widget" ||
-        embed_type === "inline" ||
-        embed_type === "input-trigger") &&
+      SurfaceTagStore.validEmbedTypes.includes(this.embed_type) &&
       target_element_class
     ) {
       if (this.embed_type === "inline") {
@@ -448,10 +457,74 @@ class SurfaceEmbed {
     }
   }
 
+  getEmbedType(embed_type) {
+    if (typeof embed_type === "string") {
+      return embed_type;
+    }
+
+    if (typeof embed_type === "object") {
+      return this.handleObjectEmbedType(embed_type);
+    }
+
+    this.log("error", "Invalid embed type: must be string or object");
+    return null;
+  }
+
+  handleObjectEmbedType(embed_type) {
+    const embedTypeWithDefault = this.ensureDefaultEmbedType(embed_type);
+    const matchingBreakpoint = this.getCurrentScreenBreakpoint();
+
+    if (!matchingBreakpoint) {
+      this.log(
+        "info",
+        "No matching breakpoint found, using default embed type"
+      );
+      return embedTypeWithDefault.default;
+    }
+
+    const [breakpointKey] = matchingBreakpoint;
+    const embedType = embedTypeWithDefault[breakpointKey];
+
+    if (embedType) {
+      this.log(
+        "info",
+        `Using ${breakpointKey} breakpoint embed type: ${embedType}`
+      );
+      return embedType;
+    }
+
+    this.log(
+      "warn",
+      `No embed type defined for breakpoint: ${breakpointKey}, using default`
+    );
+    return embedTypeWithDefault.default;
+  }
+
+  ensureDefaultEmbedType(embed_type) {
+    if (!embed_type.default) {
+      embed_type.default = embed_type.sm || Object.values(embed_type)[0];
+    }
+    return embed_type;
+  }
+
+  getCurrentScreenBreakpoint() {
+    const width = window.innerWidth;
+    const breakpoints = [
+      { name: "2xl", min: 1536 },
+      { name: "xl", min: 1280 },
+      { name: "lg", min: 1024 },
+      { name: "md", min: 768 },
+      { name: "sm", min: 0 },
+    ];
+
+    const matchingBreakpoint = breakpoints.find((bp) => width >= bp.min);
+    return [matchingBreakpoint.name, matchingBreakpoint.min];
+  }
+
   log(level, message) {
     const prefix = "Surface Embed :: ";
     const fullMessage = prefix + message;
-    if (level == "info") {
+    if (level == "info" && SurfaceTagStore.debugMode) {
       console.log(fullMessage);
     }
     if (level == "warn") {
