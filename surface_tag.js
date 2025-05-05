@@ -386,15 +386,15 @@ class SurfaceEmbed {
   getCurrentScreenBreakpoint() {
     const width = window.innerWidth;
     const breakpoints = [
-      { name: "sm", min: 0, max: 640 },
-      { name: "md", min: 640, max: 768 },
-      { name: "lg", min: 768, max: 1024 },
-      { name: "xl", min: 1024, max: 1280 },
-      { name: "2xl", min: 1280, max: Infinity },
+      { name: "2xl", min: 1536 },
+      { name: "xl", min: 1280 },
+      { name: "lg", min: 1024 },
+      { name: "md", min: 768 },
+      { name: "sm", min: 0 },
     ];
 
-    const match = breakpoints.find((bp) => width >= bp.min && width < bp.max);
-    return [match.name, match.min];
+    const matchingBreakpoint = breakpoints.find((bp) => width >= bp.min);
+    return [matchingBreakpoint.name, matchingBreakpoint.min];
   }
 
   log(level, message) {
