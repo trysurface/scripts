@@ -1096,8 +1096,8 @@ class SurfaceEmbed {
         top: 0;
         left: 0;
         transform: scale(0.9);
-        width: 80%;
-        height: 70%;
+        width: calc(100% - 20px);
+        height: calc(100% - 20px);
         background-color: transparent;
         border-radius: 15px;
         opacity: 0;
@@ -1109,8 +1109,15 @@ class SurfaceEmbed {
         height: 100%;
         border-radius: 15px;
       }
-
+      
       @media (min-width: 481px) {
+        .surface-popup-content {
+          width: 70%;
+          height: 60%;
+        }
+      }
+
+      @media (min-width: 1024px) {
         .surface-popup-content {
           width: ${desktopPopupDimensions.width};
           height: ${desktopPopupDimensions.height};
