@@ -366,7 +366,8 @@ class SurfaceEmbed {
   constructor(src, surface_embed_type, target_element_class, options = {}) {
     SurfaceSyncCookie(src);
     SurfaceTagStore.notifyIframe();
-    this.handleAutoPopupSize(options.popupSize);
+    this._popupSize = options.popupSize || "medium";
+
     this.styles = {
       popup: null,
       widget: null,
@@ -1095,8 +1096,8 @@ class SurfaceEmbed {
         top: 0;
         left: 0;
         transform: scale(0.9);
-        width: calc(100% - 20px);
-        height: calc(100% - 20px);
+        width: 80%;
+        height: 70%;
         background-color: transparent;
         border-radius: 15px;
         opacity: 0;
@@ -1376,7 +1377,6 @@ class SurfaceEmbed {
 
   // getter/setter for popupSize
   get popupSize() {
-    console.log("Popup size:", this._popupSize);
     return this._popupSize;
   }
 
@@ -1385,17 +1385,7 @@ class SurfaceEmbed {
       this.log("warn", "Invalid popup size. Using 'medium' instead.");
       this._popupSize = "medium";
     } else {
-      this.handleAutoPopupSize(size);
-    }
-  }
-
-  // handle auto popup size
-  handleAutoPopupSize(defaultSize = "medium") {
-    const screenWidth = window.innerWidth;
-    if (screenWidth < 768) {
-      this._popupSize = "small";
-    } else {
-      this._popupSize = defaultSize;
+      this._popupSize = size;
     }
   }
 }
