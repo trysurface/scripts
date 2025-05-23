@@ -240,7 +240,7 @@ class SurfaceExternalForm {
       this.log(`Attaching handlers to form: ${formId}`);
 
       form
-        .querySelectorAll("input[data-id], select[data-id]")
+        .querySelectorAll("input[data-id], select[data-id], textarea[data-id], fieldset[data-id]")
         .forEach((element) =>
           element.addEventListener("change", (e) =>
             this.handleInputChange(formId, e)
@@ -261,9 +261,11 @@ class SurfaceExternalForm {
             this.submitForm(form, false);
           });
         });
-      } else if (surfaceSubmitButtonElements.length > 0) {
+      } 
+      if (surfaceSubmitButtonElements.length > 0) {
         Array.from(surfaceSubmitButtonElements).forEach((button) => {
           button.addEventListener("click", (event) => {
+            event.preventDefault();
             this.submitForm(form, true);
           });
         });
