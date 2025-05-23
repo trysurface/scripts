@@ -91,6 +91,8 @@ class SurfaceExternalForm {
       sourceURLDomain: parentUrl.hostname,
       sourceURLPath: parentUrl.pathname,
       sourceUrlSearchParams: parentUrl.search,
+      leadId: null,
+      sessionIdFromParams: null
     };
     try {
       const identifyResponse = await fetch(apiUrl, {
