@@ -1,5 +1,134 @@
 let SurfaceSyncCookieHappenedOnce = false;
 
+class PageVisitTracker {
+  constructor() {
+    this.storageKey = 'surface_page_history';
+    this.sessionKey = 'surface_session_start';
+    this.maxHistoryLength = 50; // Limit history to prevent storage bloat
+    this.initializeTracking();
+  }
+
+  initializeTracking() {
+    // Check if this is a new session
+    const sessionStart = sessionStorage.getItem(this.sessionKey);
+    const isNewSession = !sessionStart;
+    
+    if (isNewSession) {
+      // New session - reset history and mark session start
+      sessionStorage.setItem(this.sessionKey, Date.now().toString());
+      this.resetHistory();
+    }
+    
+    // Add current page to history
+    this.addPageToHistory();
+    
+    // Listen for page changes (for SPAs)
+    this.setupPageChangeListeners();
+  }
+
+  resetHistory() {
+    const initialHistory = [{
+      url: window.location.href,
+      timestamp: Date.now(),
+      referrer: document.referrer || null,
+      isLandingPage: true
+    }];
+    
+    try {
+      localStorage.setItem(this.storageKey, JSON.stringify(initialHistory));
+    } catch (error) {
+      console.warn('Unable to store page history:', error);
+    }
+  }
+
+  addPageToHistory() {
+    try {
+      const currentHistory = this.getHistory();
+      const currentUrl = window.location.href;
+      
+      // Don't add duplicate consecutive pages
+      const lastPage = currentHistory[currentHistory.length - 1];
+      if (lastPage && lastPage.url === currentUrl) {
+        return;
+      }
+      
+      const pageData = {
+        url: currentUrl,
+        timestamp: Date.now(),
+        referrer: document.referrer || null,
+        isLandingPage: currentHistory.length === 0
+      };
+      
+      currentHistory.push(pageData);
+      
+      // Limit history length
+      if (currentHistory.length > this.maxHistoryLength) {
+        currentHistory.splice(1, currentHistory.length - this.maxHistoryLength); // Keep first page
+      }
+      
+      localStorage.setItem(this.storageKey, JSON.stringify(currentHistory));
+    } catch (error) {
+      console.warn('Unable to update page history:', error);
+    }
+  }
+
+  getHistory() {
+    try {
+      const stored = localStorage.getItem(this.storageKey);
+      return stored ? JSON.parse(stored) : [];
+    } catch (error) {
+      console.warn('Unable to retrieve page history:', error);
+      return [];
+    }
+  }
+
+  getLandingPage() {
+    const history = this.getHistory();
+    return history.find(page => page.isLandingPage) || history[0] || null;
+  }
+
+  getFormattedHistory() {
+    const history = this.getHistory();
+    return {
+      landingPage: this.getLandingPage(),
+      currentPage: {
+        url: window.location.href,
+        timestamp: Date.now()
+      },
+      visitHistory: history,
+      sessionDuration: this.getSessionDuration()
+    };
+  }
+
+  getSessionDuration() {
+    const sessionStart = sessionStorage.getItem(this.sessionKey);
+    return sessionStart ? Date.now() - parseInt(sessionStart) : 0;
+  }
+
+  setupPageChangeListeners() {
+    // For SPAs that use pushState/replaceState
+    const originalPushState = history.pushState;
+    const originalReplaceState = history.replaceState;
+    
+    history.pushState = (...args) => {
+      originalPushState.apply(history, args);
+      setTimeout(() => this.addPageToHistory(), 0);
+    };
+    
+    history.replaceState = (...args) => {
+      originalReplaceState.apply(history, args);
+      setTimeout(() => this.addPageToHistory(), 0);
+    };
+    
+    // Listen for popstate (back/forward button)
+    window.addEventListener('popstate', () => {
+      setTimeout(() => this.addPageToHistory(), 0);
+    });
+  }
+}
+
+const pageTracker = new PageVisitTracker()
+
 class SurfaceExternalForm {
   constructor(props) {
     this.initialRenderTime = new Date();
@@ -1402,6 +1531,7 @@ class SurfaceEmbed {
     const syncCookiePayload = {
       type: "LogAnonLeadEnvIdPayload",
       environmentId: environmentId,
+      userPageHistory: pageTracker.getFormattedHistory()
     };
     SurfaceSyncCookie(JSON.stringify(syncCookiePayload));
   }
