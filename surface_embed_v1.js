@@ -2,8 +2,8 @@ let SurfaceSyncCookieHappenedOnce = false;
 
 class PageVisitTracker {
   constructor() {
-    this.storageKey = 'surface_page_history';
-    this.sessionKey = 'surface_session_start';
+    this.storageKey = "surface_page_history";
+    this.sessionKey = "surface_session_start";
     this.maxHistoryLength = 50; // Limit history to prevent storage bloat
     this.initializeTracking();
   }
@@ -12,32 +12,34 @@ class PageVisitTracker {
     // Check if this is a new session
     const sessionStart = sessionStorage.getItem(this.sessionKey);
     const isNewSession = !sessionStart;
-    
+
     if (isNewSession) {
       // New session - reset history and mark session start
       sessionStorage.setItem(this.sessionKey, Date.now().toString());
       this.resetHistory();
     }
-    
+
     // Add current page to history
     this.addPageToHistory();
-    
+
     // Listen for page changes (for SPAs)
     this.setupPageChangeListeners();
   }
 
   resetHistory() {
-    const initialHistory = [{
-      url: window.location.href,
-      timestamp: Date.now(),
-      referrer: document.referrer || null,
-      isLandingPage: true
-    }];
-    
+    const initialHistory = [
+      {
+        url: window.location.href,
+        timestamp: Date.now(),
+        referrer: document.referrer || null,
+        isLandingPage: true,
+      },
+    ];
+
     try {
       localStorage.setItem(this.storageKey, JSON.stringify(initialHistory));
     } catch (error) {
-      console.warn('Unable to store page history:', error);
+      console.warn("Unable to store page history:", error);
     }
   }
 
@@ -45,30 +47,30 @@ class PageVisitTracker {
     try {
       const currentHistory = this.getHistory();
       const currentUrl = window.location.href;
-      
+
       // Don't add duplicate consecutive pages
       const lastPage = currentHistory[currentHistory.length - 1];
       if (lastPage && lastPage.url === currentUrl) {
         return;
       }
-      
+
       const pageData = {
         url: currentUrl,
         timestamp: Date.now(),
         referrer: document.referrer || null,
-        isLandingPage: currentHistory.length === 0
+        isLandingPage: currentHistory.length === 0,
       };
-      
+
       currentHistory.push(pageData);
-      
+
       // Limit history length
       if (currentHistory.length > this.maxHistoryLength) {
         currentHistory.splice(1, currentHistory.length - this.maxHistoryLength); // Keep first page
       }
-      
+
       localStorage.setItem(this.storageKey, JSON.stringify(currentHistory));
     } catch (error) {
-      console.warn('Unable to update page history:', error);
+      console.warn("Unable to update page history:", error);
     }
   }
 
@@ -77,14 +79,14 @@ class PageVisitTracker {
       const stored = localStorage.getItem(this.storageKey);
       return stored ? JSON.parse(stored) : [];
     } catch (error) {
-      console.warn('Unable to retrieve page history:', error);
+      console.warn("Unable to retrieve page history:", error);
       return [];
     }
   }
 
   getLandingPage() {
     const history = this.getHistory();
-    return history.find(page => page.isLandingPage) || history[0] || null;
+    return history.find((page) => page.isLandingPage) || history[0] || null;
   }
 
   getFormattedHistory() {
@@ -93,10 +95,10 @@ class PageVisitTracker {
       landingPage: this.getLandingPage(),
       currentPage: {
         url: window.location.href,
-        timestamp: Date.now()
+        timestamp: Date.now(),
       },
       visitHistory: history,
-      sessionDuration: this.getSessionDuration()
+      sessionDuration: this.getSessionDuration(),
     };
   }
 
@@ -109,25 +111,25 @@ class PageVisitTracker {
     // For SPAs that use pushState/replaceState
     const originalPushState = history.pushState;
     const originalReplaceState = history.replaceState;
-    
+
     history.pushState = (...args) => {
       originalPushState.apply(history, args);
       setTimeout(() => this.addPageToHistory(), 0);
     };
-    
+
     history.replaceState = (...args) => {
       originalReplaceState.apply(history, args);
       setTimeout(() => this.addPageToHistory(), 0);
     };
-    
+
     // Listen for popstate (back/forward button)
-    window.addEventListener('popstate', () => {
+    window.addEventListener("popstate", () => {
       setTimeout(() => this.addPageToHistory(), 0);
     });
   }
 }
 
-const pageTracker = new PageVisitTracker()
+const pageTracker = new PageVisitTracker();
 
 class SurfaceExternalForm {
   constructor(props) {
@@ -208,7 +210,6 @@ class SurfaceExternalForm {
     };
     this.sendBeacon(apiUrl, payload);
   }
-
   async identify(formId) {
     const apiUrl = `${this.config.serverBaseUrl}/lead/identify`;
     const parentUrl = new URL(this.windowUrl);
@@ -221,7 +222,7 @@ class SurfaceExternalForm {
       sourceURLPath: parentUrl.pathname,
       sourceUrlSearchParams: parentUrl.search,
       leadId: null,
-      sessionIdFromParams: null
+      sessionIdFromParams: null,
     };
     try {
       const identifyResponse = await fetch(apiUrl, {
@@ -369,7 +370,9 @@ class SurfaceExternalForm {
       this.log(`Attaching handlers to form: ${formId}`);
 
       form
-        .querySelectorAll("input[data-id], select[data-id], textarea[data-id], fieldset[data-id]")
+        .querySelectorAll(
+          "input[data-id], select[data-id], textarea[data-id], fieldset[data-id]"
+        )
         .forEach((element) =>
           element.addEventListener("change", (e) =>
             this.handleInputChange(formId, e)
@@ -390,7 +393,7 @@ class SurfaceExternalForm {
             this.submitForm(form, false);
           });
         });
-      } 
+      }
       if (surfaceSubmitButtonElements.length > 0) {
         Array.from(surfaceSubmitButtonElements).forEach((button) => {
           button.addEventListener("click", (event) => {
@@ -1531,7 +1534,7 @@ class SurfaceEmbed {
     const syncCookiePayload = {
       type: "LogAnonLeadEnvIdPayload",
       environmentId: environmentId,
-      userPageHistory: pageTracker.getFormattedHistory()
+      userPageHistory: pageTracker.getFormattedHistory(),
     };
     SurfaceSyncCookie(JSON.stringify(syncCookiePayload));
   }
