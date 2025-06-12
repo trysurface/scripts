@@ -1,10 +1,11 @@
 let SurfaceSyncCookieHappenedOnce = false;
 
 class PageVisitTracker {
-  constructor() {
+  constructor(onHistoryChange = null) {
     this.storageKey = "surface_page_history";
     this.sessionKey = "surface_session_start";
     this.maxHistoryLength = 50; // Limit history to prevent storage bloat
+    this.onHistoryChange = onHistoryChange;
     this.initializeTracking();
   }
 
@@ -41,6 +42,8 @@ class PageVisitTracker {
     } catch (error) {
       console.warn("Unable to store page history:", error);
     }
+
+    this.callHistoryChange();
   }
 
   addPageToHistory() {
@@ -62,15 +65,22 @@ class PageVisitTracker {
       };
 
       currentHistory.push(pageData);
+      this.callHistoryChange(pageData);
 
       // Limit history length
       if (currentHistory.length > this.maxHistoryLength) {
-        currentHistory.splice(1, currentHistory.length - this.maxHistoryLength); // Keep first page
+        currentHistory.splice(1, currentHistory.length - this.maxHistoryLength);
       }
 
       localStorage.setItem(this.storageKey, JSON.stringify(currentHistory));
     } catch (error) {
       console.warn("Unable to update page history:", error);
+    }
+  }
+
+  callHistoryChange(pageData) {
+    if (typeof this.onHistoryChange === "function") {
+      this.onHistoryChange(pageData);
     }
   }
 
@@ -89,26 +99,12 @@ class PageVisitTracker {
     return history.find((page) => page.isLandingPage) || history[0] || null;
   }
 
-  getFormattedHistory() {
-    const history = this.getHistory();
-    return {
-      landingPage: this.getLandingPage(),
-      currentPage: {
-        url: window.location.href,
-        timestamp: Date.now(),
-      },
-      visitHistory: history,
-      sessionDuration: this.getSessionDuration(),
-    };
-  }
-
   getSessionDuration() {
     const sessionStart = sessionStorage.getItem(this.sessionKey);
     return sessionStart ? Date.now() - parseInt(sessionStart) : 0;
   }
 
   setupPageChangeListeners() {
-    // For SPAs that use pushState/replaceState
     const originalPushState = history.pushState;
     const originalReplaceState = history.replaceState;
 
@@ -122,14 +118,11 @@ class PageVisitTracker {
       setTimeout(() => this.addPageToHistory(), 0);
     };
 
-    // Listen for popstate (back/forward button)
     window.addEventListener("popstate", () => {
       setTimeout(() => this.addPageToHistory(), 0);
     });
   }
 }
-
-const pageTracker = new PageVisitTracker();
 
 class SurfaceExternalForm {
   constructor(props) {
@@ -210,7 +203,6 @@ class SurfaceExternalForm {
     };
     this.sendBeacon(apiUrl, payload);
   }
-
   async identify(formId) {
     const apiUrl = `${this.config.serverBaseUrl}/lead/identify`;
     const parentUrl = new URL(this.windowUrl);
@@ -484,19 +476,32 @@ class SurfaceStore {
 
 const SurfaceTagStore = new SurfaceStore();
 
-function SurfaceSyncCookie(visitorId) {
+function SurfaceSyncCookie(visitorId, enableMultipleSurfaceSync = false) {
   const endpoint = new URL("https://a.usbrowserspeed.com/cs");
   var pid = "b3752b5f7f17d773b265c2847b23ffa444cac7db2af8a040c341973a6704a819";
   endpoint.searchParams.append("pid", pid);
   endpoint.searchParams.append("puid", visitorId);
 
-  if (SurfaceSyncCookieHappenedOnce == false) {
+  if (SurfaceSyncCookieHappenedOnce == false || enableMultipleSurfaceSync) {
     fetch(endpoint.href, {
       mode: "no-cors",
       credentials: "include",
     });
     SurfaceSyncCookieHappenedOnce = true;
   }
+}
+
+function startSurfaceSyncCookie({
+  pageData,
+  environmentId,
+  enableMultipleSurfaceSync = false,
+}) {
+  const payload = {
+    type: "LogAnonLeadEnvIdPayload",
+    environmentId,
+    userPageVisited: pageData,
+  };
+  SurfaceSyncCookie(JSON.stringify(payload), enableMultipleSurfaceSync);
 }
 
 class SurfaceEmbed {
@@ -1530,13 +1535,17 @@ class SurfaceEmbed {
 (function () {
   const scriptTag = document.currentScript;
   const environmentId = scriptTag ? scriptTag.getAttribute("siteId") : null;
-
   if (environmentId != null) {
-    const syncCookiePayload = {
-      type: "LogAnonLeadEnvIdPayload",
-      environmentId: environmentId,
-      userPageHistory: pageTracker.getFormattedHistory(),
-    };
-    SurfaceSyncCookie(JSON.stringify(syncCookiePayload));
+    const pageTracker = new PageVisitTracker((pageData) => {
+      startSurfaceSyncCookie({
+        pageData,
+        environmentId,
+        enableMultipleSurfaceSync: true,
+      });
+    });
+    startSurfaceSyncCookie({
+      pageData: pageTracker.getLandingPage(),
+      environmentId,
+    });
   }
 })();
