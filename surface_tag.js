@@ -1348,6 +1348,7 @@ class SurfaceEmbed {
             this.initializeMessageListenerAndEmbed();
           }
           this.showSurfaceForm();
+          SurfaceTagStore.partialFilledData = [];
         }
       } else {
         o?.reportValidity();
@@ -1357,6 +1358,12 @@ class SurfaceEmbed {
     const handleKeyDownCallback = (t) => (n) => {
       if (n.key === "Enter" && document.activeElement.type === "email") {
         n.preventDefault();
+        const value = n.target.value;
+        const triggers = document.querySelectorAll(".surface-form-handler");
+        triggers.forEach((t) => {
+          t.querySelector('input[type="email"]').value = value;
+        });
+
         t.dispatchEvent(new Event("submit", { cancelable: true }));
       }
     };
