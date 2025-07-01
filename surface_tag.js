@@ -92,7 +92,7 @@ class SurfaceExternalForm {
       sourceURLPath: parentUrl.pathname,
       sourceUrlSearchParams: parentUrl.search,
       leadId: null,
-      sessionIdFromParams: null
+      sessionIdFromParams: null,
     };
     try {
       const identifyResponse = await fetch(apiUrl, {
@@ -240,7 +240,9 @@ class SurfaceExternalForm {
       this.log(`Attaching handlers to form: ${formId}`);
 
       form
-        .querySelectorAll("input[data-id], select[data-id], textarea[data-id], fieldset[data-id]")
+        .querySelectorAll(
+          "input[data-id], select[data-id], textarea[data-id], fieldset[data-id]"
+        )
         .forEach((element) =>
           element.addEventListener("change", (e) =>
             this.handleInputChange(formId, e)
@@ -261,7 +263,7 @@ class SurfaceExternalForm {
             this.submitForm(form, false);
           });
         });
-      } 
+      }
       if (surfaceSubmitButtonElements.length > 0) {
         Array.from(surfaceSubmitButtonElements).forEach((button) => {
           button.addEventListener("click", (event) => {
@@ -1321,9 +1323,9 @@ class SurfaceEmbed {
     const e = document
       .querySelector("[data-question-id]")
       ?.getAttribute("data-question-id");
-    const t = document.querySelector("form.surface-form-handler");
+    const forms = document.querySelectorAll("form.surface-form-handler");
 
-    const handleSubmitCallback = (n) => {
+    const handleSubmitCallback = (t) => (n) => {
       n.preventDefault();
       const o = t.querySelector('input[type="email"]'),
         c = o?.value.trim();
@@ -1348,22 +1350,26 @@ class SurfaceEmbed {
             this.initializeMessageListenerAndEmbed();
           }
           this.showSurfaceForm();
+          SurfaceTagStore.partialFilledData = [];
         }
       } else {
         o?.reportValidity();
       }
     };
 
-    const handleKeyDownCallback = (n) => {
+    const handleKeyDownCallback = (t) => (n) => {
       if (n.key === "Enter" && document.activeElement.type === "email") {
         n.preventDefault();
+
         t.dispatchEvent(new Event("submit", { cancelable: true }));
       }
     };
-    if (e && t) {
-      t.addEventListener("submit", handleSubmitCallback);
 
-      t.addEventListener("keydown", handleKeyDownCallback);
+    if (e && forms.length > 0) {
+      forms.forEach((t) => {
+        t.addEventListener("submit", handleSubmitCallback(t));
+        t.addEventListener("keydown", handleKeyDownCallback(t));
+      });
     }
   }
 
