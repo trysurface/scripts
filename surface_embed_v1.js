@@ -92,7 +92,7 @@ class SurfaceExternalForm {
       sourceURLPath: parentUrl.pathname,
       sourceUrlSearchParams: parentUrl.search,
       leadId: null,
-      sessionIdFromParams: null
+      sessionIdFromParams: null,
     };
     try {
       const identifyResponse = await fetch(apiUrl, {
@@ -240,7 +240,9 @@ class SurfaceExternalForm {
       this.log(`Attaching handlers to form: ${formId}`);
 
       form
-        .querySelectorAll("input[data-id], select[data-id], textarea[data-id], fieldset[data-id]")
+        .querySelectorAll(
+          "input[data-id], select[data-id], textarea[data-id], fieldset[data-id]"
+        )
         .forEach((element) =>
           element.addEventListener("change", (e) =>
             this.handleInputChange(formId, e)
@@ -261,7 +263,7 @@ class SurfaceExternalForm {
             this.submitForm(form, false);
           });
         });
-      } 
+      }
       if (surfaceSubmitButtonElements.length > 0) {
         Array.from(surfaceSubmitButtonElements).forEach((button) => {
           button.addEventListener("click", (event) => {
@@ -1358,11 +1360,6 @@ class SurfaceEmbed {
     const handleKeyDownCallback = (t) => (n) => {
       if (n.key === "Enter" && document.activeElement.type === "email") {
         n.preventDefault();
-        const value = n.target.value;
-        const triggers = document.querySelectorAll(".surface-form-handler");
-        triggers.forEach((t) => {
-          t.querySelector('input[type="email"]').value = value;
-        });
 
         t.dispatchEvent(new Event("submit", { cancelable: true }));
       }
