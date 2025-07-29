@@ -295,6 +295,7 @@ class SurfaceStore {
     this.referrer = document.referrer || "";
     this.cookies = {};
     this.metadata = {};
+    this.urlParams = {};
     this.partialFilledData = {};
     this.validEmbedTypes = [
       "popup",
@@ -309,44 +310,48 @@ class SurfaceStore {
       "https://app.withsurface.com",
       "https://dev.withsurface.com",
     ];
-    this.maybeSendUrlDataToInlineEmbeddedIframe = () => {
-      if (
-        typeof document !== "undefined" &&
-        document.readyState === "loading"
-      ) {
-        document.addEventListener("DOMContentLoaded", () => {
-          this.updateIframeParams();
-        });
-      } else if (typeof document !== "undefined") {
-        this.updateIframeParams();
+    this.initializeMessageListener = () => {
+      const handleMessage = (event) => {
+        if (!event.origin || !this.surfaceDomains.includes(event.origin)) {
+          return;
+        }
+        
+        if (event.data.type === "SEND_DATA") {
+          this.sendPayloadToIframes();
+        }
+      };
+
+      if (typeof document !== "undefined") {
+        if (document.readyState === "loading") {
+          document.addEventListener("DOMContentLoaded", () => {
+            window.addEventListener("message", handleMessage);
+          });
+        } else {
+          window.addEventListener("message", handleMessage);
+        }
       }
     };
 
-    this.updateIframeParams = () => {
-      const surfaceIframes = document.querySelectorAll("iframe");
+    this.sendPayloadToIframes = () => {
+      const iframes = document.querySelectorAll("iframe");
+      
+      if (iframes.length === 0) {
+        return;
+      }
 
-      surfaceIframes.forEach((iframe) => {
-        if (!iframe.src.includes("withsurface.com")) {
-          return;
-        }
-
-        const urlParams = this.getUrlParams();
-        urlParams.url = window.location.href;
-        
-        if (Object.keys(urlParams).length === 0) {
-          return;
-        }
-
-        const iframeUrl = new URL(iframe.src);
-        Object.keys(urlParams).forEach((key) => {
-          iframeUrl.searchParams.set(key, urlParams[key]);
-        });
-
-        iframe.src = iframeUrl.toString();
+      this.urlParams = this.getUrlParams();
+      this.urlParams.url = window.location.href;
+      
+      if (this.debugMode) {
+        console.log("Updating iframe params", this.urlParams);
+      }
+      
+      iframes.forEach((iframe) => {
+        this.notifyIframe(iframe);
       });
     };
 
-    this.maybeSendUrlDataToInlineEmbeddedIframe();
+    this.initializeMessageListener();
   }
 
   getUrlParams() {
@@ -360,12 +365,12 @@ class SurfaceStore {
     return params;
   }
 
-  notifyIframe() {
-    const iframe = document.querySelector("#surface-iframe");
-    if (iframe) {
+  notifyIframe(iframe = null) {
+    const surfaceIframe = iframe || document.querySelector("#surface-iframe");
+    if (surfaceIframe) {
       this.surfaceDomains.forEach((domain) => {
-        if (iframe.src.includes(domain)) {
-          iframe.contentWindow.postMessage(
+        if (surfaceIframe.src.includes(domain)) {
+          surfaceIframe.contentWindow.postMessage(
             {
               type: "STORE_UPDATE",
               payload: this.getPayload(),
@@ -396,6 +401,7 @@ class SurfaceStore {
           : this.cookies,
       origin: this.origin,
       questionIds: this.partialFilledData,
+      urlParams: this.urlParams,
     };
   }
 }
