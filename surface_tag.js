@@ -328,6 +328,7 @@ class SurfaceStore {
       surfaceIframes.forEach((iframe) => {
         if (iframe.src.includes("withsurface.com")) {
           const urlParams = this.getUrlParams();
+          urlParams.url = window.location.href;
           if (Object.keys(urlParams).length > 0) {
             const iframeUrl = new URL(iframe.src);
             Object.keys(urlParams).forEach((key) => {
