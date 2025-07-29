@@ -309,7 +309,7 @@ class SurfaceStore {
       "https://app.withsurface.com",
       "https://dev.withsurface.com",
     ];
-    this.sendParamsToManualIframe = () => {
+    this.maybeSendUrlDataToInlineEmbeddedIframe = () => {
       if (
         typeof document !== "undefined" &&
         document.readyState === "loading"
@@ -326,33 +326,36 @@ class SurfaceStore {
       const surfaceIframes = document.querySelectorAll("iframe");
 
       surfaceIframes.forEach((iframe) => {
-        if (iframe.src.includes("withsurface.com")) {
-          const urlParams = this.getUrlParams();
-          urlParams.url = window.location.href;
-          if (Object.keys(urlParams).length > 0) {
-            const iframeUrl = new URL(iframe.src);
-            Object.keys(urlParams).forEach((key) => {
-              iframeUrl.searchParams.set(key, urlParams[key]);
-            });
-
-            iframe.src = iframeUrl.toString();
-          }
+        if (!iframe.src.includes("withsurface.com")) {
+          return;
         }
+
+        const urlParams = this.getUrlParams();
+        urlParams.url = window.location.href;
+        
+        if (Object.keys(urlParams).length === 0) {
+          return;
+        }
+
+        const iframeUrl = new URL(iframe.src);
+        Object.keys(urlParams).forEach((key) => {
+          iframeUrl.searchParams.set(key, urlParams[key]);
+        });
+
+        iframe.src = iframeUrl.toString();
       });
     };
 
-    this.sendParamsToManualIframe();
+    this.maybeSendUrlDataToInlineEmbeddedIframe();
   }
 
   getUrlParams() {
-    let params = {};
-    let queryString = window.location.search.slice(1);
-    let pairs = queryString.split("&");
-
-    pairs.forEach((pair) => {
-      let [key, value] = pair.split("=");
-      params[decodeURIComponent(key)] = decodeURIComponent(value || "");
-    });
+    const params = {};
+    const searchParams = new URLSearchParams(window.location.search);
+    
+    for (const [key, value] of searchParams) {
+      params[key] = value;
+    }
 
     return params;
   }
