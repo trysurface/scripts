@@ -309,6 +309,51 @@ class SurfaceStore {
       "https://app.withsurface.com",
       "https://dev.withsurface.com",
     ];
+    this.sendParamsToManualIframe = () => {
+      if (
+        typeof document !== "undefined" &&
+        document.readyState === "loading"
+      ) {
+        document.addEventListener("DOMContentLoaded", () => {
+          this.updateIframeParams();
+        });
+      } else if (typeof document !== "undefined") {
+        this.updateIframeParams();
+      }
+    };
+
+    this.updateIframeParams = () => {
+      const surfaceIframes = document.querySelectorAll("iframe");
+
+      surfaceIframes.forEach((iframe) => {
+        if (iframe.src.includes("withsurface.com")) {
+          const urlParams = this.getUrlParams();
+          if (Object.keys(urlParams).length > 0) {
+            const iframeUrl = new URL(iframe.src);
+            Object.keys(urlParams).forEach((key) => {
+              iframeUrl.searchParams.set(key, urlParams[key]);
+            });
+
+            iframe.src = iframeUrl.toString();
+          }
+        }
+      });
+    };
+
+    this.sendParamsToManualIframe();
+  }
+
+  getUrlParams() {
+    let params = {};
+    let queryString = window.location.search.slice(1);
+    let pairs = queryString.split("&");
+
+    pairs.forEach((pair) => {
+      let [key, value] = pair.split("=");
+      params[decodeURIComponent(key)] = decodeURIComponent(value || "");
+    });
+
+    return params;
   }
 
   notifyIframe() {
@@ -541,19 +586,6 @@ class SurfaceEmbed {
     }
   }
 
-  getUrlParams() {
-    let params = {};
-    let queryString = window.location.search.slice(1);
-    let pairs = queryString.split("&");
-
-    pairs.forEach((pair) => {
-      let [key, value] = pair.split("=");
-      params[decodeURIComponent(key)] = decodeURIComponent(value || "");
-    });
-
-    return params;
-  }
-
   setupClickHandlers() {
     document.addEventListener("click", (event) => {
       const clickedButton = event.target.closest(
@@ -642,7 +674,7 @@ class SurfaceEmbed {
   }
 
   updateIframeWithOptions(options, iframe_reference) {
-    const urlParams = this.getUrlParams();
+    const urlParams = SurfaceTagStore.getUrlParams();
 
     if (Object.keys(options).length > 0 || Object.keys(urlParams).length > 0) {
       // Store original URL to compare if we actually need to update
