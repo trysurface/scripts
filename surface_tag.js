@@ -675,9 +675,19 @@ class SurfaceEmbed {
 
   updateIframeWithOptions(options, iframe_reference) {
     const iframe = iframe_reference.querySelector("#surface-iframe");
-    // set the loading spinner to visible
     const spinner = iframe_reference.querySelector(".surface-loading-spinner");
     const closeBtn = iframe_reference.querySelector(".close-btn-container");
+    
+    const optionsKey = JSON.stringify(options);
+    if (this._cachedOptionsKey === optionsKey && iframe && iframe.src) {
+      if (spinner) spinner.style.display = "none";
+      if (closeBtn) closeBtn.style.display = "flex";
+      iframe.style.opacity = "1";
+      return;
+    }
+    
+    this._cachedOptionsKey = optionsKey;
+    
     if (spinner) spinner.style.display = "flex";
     if (closeBtn) closeBtn.style.display = "none";
     if (iframe) {
