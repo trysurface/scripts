@@ -310,14 +310,14 @@ class SurfaceStore {
       "https://app.withsurface.com",
       "https://dev.withsurface.com",
     ];
-    this.initializeMessageListener = () => {
+    this._initializeMessageListener = () => {
       const handleMessage = (event) => {
         if (!event.origin || !this.surfaceDomains.includes(event.origin)) {
           return;
         }
-        
+
         if (event.data.type === "SEND_DATA") {
-          this.sendPayloadToIframes();
+          this._sendPayloadToIframes();
         }
       };
 
@@ -332,32 +332,32 @@ class SurfaceStore {
       }
     };
 
-    this.sendPayloadToIframes = () => {
+    this._sendPayloadToIframes = () => {
       const iframes = document.querySelectorAll("iframe");
-      
+
       if (iframes.length === 0) {
         return;
       }
 
       this.urlParams = this.getUrlParams();
       this.urlParams.url = window.location.href;
-      
+
       if (this.debugMode) {
         console.log("Updating iframe params", this.urlParams);
       }
-      
+
       iframes.forEach((iframe) => {
         this.notifyIframe(iframe);
       });
     };
 
-    this.initializeMessageListener();
+    this._initializeMessageListener();
   }
 
   getUrlParams() {
     const params = {};
     const searchParams = new URLSearchParams(window.location.search);
-    
+
     for (const [key, value] of searchParams) {
       params[key] = value;
     }
@@ -684,42 +684,23 @@ class SurfaceEmbed {
   }
 
   updateIframeWithOptions(options, iframe_reference) {
-    const urlParams = SurfaceTagStore.getUrlParams();
+    const iframe = iframe_reference.querySelector("#surface-iframe");
+    // set the loading spinner to visible
+    const spinner = iframe_reference.querySelector(".surface-loading-spinner");
+    const closeBtn = iframe_reference.querySelector(".close-btn-container");
+    if (spinner) spinner.style.display = "flex";
+    if (closeBtn) closeBtn.style.display = "none";
+    if (iframe) {
+      iframe.style.opacity = "0";
+      setTimeout(() => {
+        iframe.src = this.src.toString();
+        iframe.onload = () => {
+          iframe.style.opacity = "1";
 
-    if (Object.keys(options).length > 0 || Object.keys(urlParams).length > 0) {
-      // Store original URL to compare if we actually need to update
-      const originalUrl = this.src.toString();
-
-      Object.keys(options).forEach((key) => {
-        this.src.searchParams.set(key, options[key]);
-      });
-      Object.keys(urlParams).forEach((key) => {
-        this.src.searchParams.set(key, urlParams[key]);
-      });
-
-      // Only update iframe if URL actually changed
-      if (originalUrl !== this.src.toString()) {
-        const iframe = iframe_reference.querySelector("#surface-iframe");
-        // set the loading spinner to visible
-        const spinner = iframe_reference.querySelector(
-          ".surface-loading-spinner"
-        );
-        const closeBtn = iframe_reference.querySelector(".close-btn-container");
-        if (spinner) spinner.style.display = "flex";
-        if (closeBtn) closeBtn.style.display = "none";
-        if (iframe) {
-          iframe.style.opacity = "0";
-          setTimeout(() => {
-            iframe.src = this.src.toString();
-            iframe.onload = () => {
-              iframe.style.opacity = "1";
-
-              if (spinner) spinner.style.display = "none";
-              if (closeBtn) closeBtn.style.display = "flex";
-            };
-          }, 0);
-        }
-      }
+          if (spinner) spinner.style.display = "none";
+          if (closeBtn) closeBtn.style.display = "flex";
+        };
+      }, 0);
     }
   }
 
