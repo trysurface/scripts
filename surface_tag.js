@@ -1345,34 +1345,22 @@ class SurfaceEmbed {
       if (o && /^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/.test(c)) {
         const options = { [`${e}_emailAddress`]: c };
         if (options) {
-          // Convert options to entries format while preserving existing data
-          const newEntries = Object.entries(options).map(([key, value]) => ({
-            [key]: value,
-          }));
-
-          // Get existing data or initialize empty array
           const existingData = Array.isArray(SurfaceTagStore.partialFilledData)
             ? SurfaceTagStore.partialFilledData
             : [];
 
-          // Create a map to track existing keys for efficient updates
-          const existingDataMap = new Map();
+          const dataMap = new Map();
           existingData.forEach((entry, index) => {
             const key = Object.keys(entry)[0];
-            existingDataMap.set(key, index);
+            dataMap.set(key, index);
           });
 
-          // Process new entries - update existing or add new
-          newEntries.forEach((newEntry) => {
-            const key = Object.keys(newEntry)[0];
-            const value = newEntry[key];
+          Object.entries(options).forEach(([key, value]) => {
+            const newEntry = { [key]: value };
             
-            if (existingDataMap.has(key)) {
-              // Update existing entry
-              const index = existingDataMap.get(key);
-              existingData[index] = { [key]: value };
+            if (dataMap.has(key)) {
+              existingData[dataMap.get(key)] = newEntry;
             } else {
-              // Add new entry
               existingData.push(newEntry);
             }
           });
