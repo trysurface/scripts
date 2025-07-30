@@ -308,7 +308,7 @@ class SurfaceStore {
     this.surfaceDomains = [
       "https://forms.withsurface.com",
       "https://app.withsurface.com",
-      "https://dev.withsurface.com",
+      "https://dev.withsurface.com"
     ];
     this._initializeMessageListener = () => {
       const handleMessage = (event) => {
@@ -426,7 +426,6 @@ function SurfaceSyncCookie(visitorId) {
 class SurfaceEmbed {
   constructor(src, surface_embed_type, target_element_class, options = {}) {
     SurfaceSyncCookie(src);
-    SurfaceTagStore.notifyIframe();
     this._popupSize = options.popupSize || "medium";
 
     this.styles = {
@@ -614,15 +613,6 @@ class SurfaceEmbed {
 
   initializeMessageListenerAndEmbed() {
     if (this.initialized) return;
-    window.addEventListener("message", (event) => {
-      if (event.origin) {
-        if (SurfaceTagStore.surfaceDomains.includes(event.origin)) {
-          if (event.data.type === "SEND_DATA") {
-            SurfaceTagStore.notifyIframe();
-          }
-        }
-      }
-    });
     if (this.embedSurfaceForm) {
       this.embedSurfaceForm();
     }
@@ -1360,20 +1350,40 @@ class SurfaceEmbed {
             [key]: value,
           }));
 
-          // Combine existing entries with new ones
-          SurfaceTagStore.partialFilledData = [
-            ...(Array.isArray(SurfaceTagStore.partialFilledData)
-              ? SurfaceTagStore.partialFilledData
-              : []),
-            ...newEntries,
-          ];
+          // Get existing data or initialize empty array
+          const existingData = Array.isArray(SurfaceTagStore.partialFilledData)
+            ? SurfaceTagStore.partialFilledData
+            : [];
+
+          // Create a map to track existing keys for efficient updates
+          const existingDataMap = new Map();
+          existingData.forEach((entry, index) => {
+            const key = Object.keys(entry)[0];
+            existingDataMap.set(key, index);
+          });
+
+          // Process new entries - update existing or add new
+          newEntries.forEach((newEntry) => {
+            const key = Object.keys(newEntry)[0];
+            const value = newEntry[key];
+            
+            if (existingDataMap.has(key)) {
+              // Update existing entry
+              const index = existingDataMap.get(key);
+              existingData[index] = { [key]: value };
+            } else {
+              // Add new entry
+              existingData.push(newEntry);
+            }
+          });
+
+          SurfaceTagStore.partialFilledData = existingData;
           SurfaceTagStore.notifyIframe();
           this.updateIframeWithOptions(options, this.surface_popup_reference);
           if (!this.initialized) {
             this.initializeMessageListenerAndEmbed();
           }
           this.showSurfaceForm();
-          SurfaceTagStore.partialFilledData = [];
         }
       } else {
         o?.reportValidity();
