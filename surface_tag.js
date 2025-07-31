@@ -295,6 +295,7 @@ class SurfaceStore {
     this.referrer = document.referrer || "";
     this.cookies = {};
     this.metadata = {};
+    this.urlParams = {};
     this.partialFilledData = {};
     this.validEmbedTypes = [
       "popup",
@@ -307,16 +308,72 @@ class SurfaceStore {
     this.surfaceDomains = [
       "https://forms.withsurface.com",
       "https://app.withsurface.com",
-      "https://dev.withsurface.com",
+      "https://dev.withsurface.com"
     ];
+
+    this._initializeMessageListener();
   }
 
-  notifyIframe() {
-    const iframe = document.querySelector("#surface-iframe");
-    if (iframe) {
+  _initializeMessageListener = () => {
+    const handleMessage = (event) => {
+      if (!event.origin || !this.surfaceDomains.includes(event.origin)) {
+        return;
+      }
+
+      if (event.data.type === "SEND_DATA") {
+        this._sendPayloadToIframes();
+      }
+    };
+
+    if (typeof document === "undefined") {
+      return;
+    }
+
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", () => {
+        window.addEventListener("message", handleMessage);
+      });
+    } else {
+      window.addEventListener("message", handleMessage);
+    }
+  };
+
+  _sendPayloadToIframes = () => {
+    const iframes = document.querySelectorAll("iframe");
+
+    if (iframes.length === 0) {
+      return;
+    }
+
+    this.urlParams = this.getUrlParams();
+    this.urlParams.url = window.location.href;
+
+    if (this.debugMode) {
+      console.log("Updating iframe params", this.urlParams);
+    }
+
+    iframes.forEach((iframe) => {
+      this.notifyIframe(iframe);
+    });
+  };
+
+  getUrlParams() {
+    const params = {};
+    const searchParams = new URLSearchParams(window.location.search);
+
+    for (const [key, value] of searchParams) {
+      params[key] = value;
+    }
+
+    return params;
+  }
+
+  notifyIframe(iframe = null) {
+    const surfaceIframe = iframe || document.querySelector("#surface-iframe");
+    if (surfaceIframe) {
       this.surfaceDomains.forEach((domain) => {
-        if (iframe.src.includes(domain)) {
-          iframe.contentWindow.postMessage(
+        if (surfaceIframe.src.includes(domain)) {
+          surfaceIframe.contentWindow.postMessage(
             {
               type: "STORE_UPDATE",
               payload: this.getPayload(),
@@ -331,8 +388,13 @@ class SurfaceStore {
   parseCookies() {
     const cookies = {};
     document.cookie.split(";").forEach((cookie) => {
-      const [key, value] = cookie.split("=").map((c) => c.trim());
-      if (key && value) cookies[key] = value;
+      const trimmedCookie = cookie.trim();
+      const firstEqualIndex = trimmedCookie.indexOf("=");
+      if (firstEqualIndex !== -1) {
+        const key = trimmedCookie.substring(0, firstEqualIndex);
+        const value = trimmedCookie.substring(firstEqualIndex + 1);
+        if (key && value !== undefined) cookies[key] = value;
+      }
     });
     return cookies;
   }
@@ -347,6 +409,7 @@ class SurfaceStore {
           : this.cookies,
       origin: this.origin,
       questionIds: this.partialFilledData,
+      urlParams: this.urlParams,
     };
   }
 }
@@ -370,8 +433,9 @@ function SurfaceSyncCookie(visitorId) {
 
 class SurfaceEmbed {
   constructor(src, surface_embed_type, target_element_class, options = {}) {
+    this.src = new URL(src);
+    
     SurfaceSyncCookie(src);
-    SurfaceTagStore.notifyIframe();
     this._popupSize = options.popupSize || "medium";
 
     this.styles = {
@@ -381,7 +445,6 @@ class SurfaceEmbed {
 
     this.initialized = false;
 
-    // Add default widget styles
     const defaultWidgetStyles = {
       position: "right",
       bottomMargin: "40px",
@@ -392,21 +455,24 @@ class SurfaceEmbed {
       boxShadow: "0 6px 12px rgba(0,0,0,0.25)",
     };
 
-    // Merge default styles with any custom styles from options
     this.widgetStyle = {
       ...defaultWidgetStyles,
       ...(options.widgetStyles || {}),
     };
 
-    // Use the singleton SurfaceTagStore instance
     if (options.prefillData) {
       SurfaceTagStore.partialFilledData = Object.entries(
         options.prefillData
       ).map(([key, value]) => ({ [key]: value }));
     }
 
-    this.src = new URL(src);
-    this.src.searchParams.append("url", window.location.href);
+    this._cachedSrcUrl = null;
+    this._getSrcUrl = () => {
+      if (!this._cachedSrcUrl) {
+        this._cachedSrcUrl = this.src.toString();
+      }
+      return this._cachedSrcUrl;
+    };
 
     this.embed_type = this.getEmbedType(surface_embed_type);
     this.target_element_class = target_element_class;
@@ -432,7 +498,7 @@ class SurfaceEmbed {
         this.embedSurfaceForm = this.embedInline;
         this.shouldShowSurfaceForm = this.showSurfaceInline;
         this.hideSurfaceForm = this.hideSurfaceInline;
-        this.initializeMessageListenerAndEmbed();
+        this.initializeEmbed();
       } else if (
         this.embed_type === "popup" ||
         this.embed_type === "widget" ||
@@ -541,46 +607,26 @@ class SurfaceEmbed {
     }
   }
 
-  getUrlParams() {
-    let params = {};
-    let queryString = window.location.search.slice(1);
-    let pairs = queryString.split("&");
-
-    pairs.forEach((pair) => {
-      let [key, value] = pair.split("=");
-      params[decodeURIComponent(key)] = decodeURIComponent(value || "");
-    });
-
-    return params;
-  }
-
   setupClickHandlers() {
-    document.addEventListener("click", (event) => {
+    this._clickHandler = (event) => {
       const clickedButton = event.target.closest(
         "." + this.target_element_class
       );
       if (clickedButton) {
         if (!this.initialized) {
-          this.initializeMessageListenerAndEmbed();
+          this.initializeEmbed();
           this.shouldShowSurfaceForm();
         } else {
           this.shouldShowSurfaceForm();
         }
       }
-    });
+    };
+    
+    document.addEventListener("click", this._clickHandler);
   }
 
-  initializeMessageListenerAndEmbed() {
+  initializeEmbed() {
     if (this.initialized) return;
-    window.addEventListener("message", (event) => {
-      if (event.origin) {
-        if (SurfaceTagStore.surfaceDomains.includes(event.origin)) {
-          if (event.data.type === "SEND_DATA") {
-            SurfaceTagStore.notifyIframe();
-          }
-        }
-      }
-    });
     if (this.embedSurfaceForm) {
       this.embedSurfaceForm();
     }
@@ -597,11 +643,12 @@ class SurfaceEmbed {
       );
     }
 
-    const src = this.src.toString();
+    const src = this._getSrcUrl();
     const target_client_divs = this.inline_embed_references;
 
     target_client_divs.forEach((client_div) => {
-      if (client_div.querySelector("#surface-inline-div")) {
+      const existingDiv = client_div.querySelector("#surface-inline-div");
+      if (existingDiv) {
         return;
       }
 
@@ -614,7 +661,6 @@ class SurfaceEmbed {
       inline_iframe.frameBorder = "0";
       inline_iframe.allowFullscreen = true;
 
-      // Optional inline style
       if (
         this.iframeInlineStyle &&
         typeof this.iframeInlineStyle === "object"
@@ -642,42 +688,45 @@ class SurfaceEmbed {
   }
 
   updateIframeWithOptions(options, iframe_reference) {
-    const urlParams = this.getUrlParams();
+    const iframe = iframe_reference.querySelector("#surface-iframe");
+    const spinner = iframe_reference.querySelector(".surface-loading-spinner");
+    const closeBtn = iframe_reference.querySelector(".close-btn-container");
 
-    if (Object.keys(options).length > 0 || Object.keys(urlParams).length > 0) {
-      // Store original URL to compare if we actually need to update
-      const originalUrl = this.src.toString();
+    const optionsKey = JSON.stringify(options);
+    if (this._cachedOptionsKey === optionsKey && iframe && iframe.src) {
+      if (spinner) spinner.style.display = "none";
+      if (closeBtn) closeBtn.style.display = "flex";
+      iframe.style.opacity = "1";
+      return;
+    }
 
-      Object.keys(options).forEach((key) => {
-        this.src.searchParams.set(key, options[key]);
-      });
-      Object.keys(urlParams).forEach((key) => {
-        this.src.searchParams.set(key, urlParams[key]);
-      });
+    this._cachedOptionsKey = optionsKey;
 
-      // Only update iframe if URL actually changed
-      if (originalUrl !== this.src.toString()) {
-        const iframe = iframe_reference.querySelector("#surface-iframe");
-        // set the loading spinner to visible
-        const spinner = iframe_reference.querySelector(
-          ".surface-loading-spinner"
-        );
-        const closeBtn = iframe_reference.querySelector(".close-btn-container");
-        if (spinner) spinner.style.display = "flex";
-        if (closeBtn) closeBtn.style.display = "none";
-        if (iframe) {
-          iframe.style.opacity = "0";
-          setTimeout(() => {
-            iframe.src = this.src.toString();
-            iframe.onload = () => {
-              iframe.style.opacity = "1";
-
-              if (spinner) spinner.style.display = "none";
-              if (closeBtn) closeBtn.style.display = "flex";
-            };
-          }, 0);
+    if (spinner) spinner.style.display = "flex";
+    if (closeBtn) closeBtn.style.display = "none";
+    if (iframe) {
+      iframe.style.opacity = "0";
+      setTimeout(() => {
+        try {
+          const url = new URL(this._getSrcUrl());
+          if (url.protocol !== 'https:') {
+            this.log("error", 'Only HTTPS URLs are allowed');
+          }
+          iframe.src = url.toString();
+          iframe.onload = () => {
+            iframe.style.opacity = "1";
+            if (spinner) spinner.style.display = "none";
+            if (closeBtn) closeBtn.style.display = "flex";
+          };
+          iframe.onerror = () => {
+            this.log("error", "Failed to load iframe content");
+            if (spinner) spinner.style.display = "none";
+          };
+        } catch (error) {
+          this.log("error", `Invalid iframe URL: ${error.message}`);
+          if (spinner) spinner.style.display = "none";
         }
-      }
+      }, 0);
     }
   }
 
@@ -727,7 +776,7 @@ class SurfaceEmbed {
     }
 
     const surface_popup = this.surface_popup_reference;
-    const src = this.src.toString();
+    const src = this._getSrcUrl();
 
     if (!this.initialized) {
       surface_popup.id = "surface-popup";
@@ -829,7 +878,7 @@ class SurfaceEmbed {
     }
 
     const surface_slideover = this.surface_popup_reference;
-    const src = this.src.toString();
+    const src = this._getSrcUrl();
 
     surface_slideover.id = "surface-popup";
     surface_slideover.innerHTML = `
@@ -942,7 +991,6 @@ class SurfaceEmbed {
         this.hideSurfaceSlideover();
       });
 
-    // Close slideover if user clicks outside the content
     window.addEventListener("click", (event) => {
       if (event.target == surface_slideover) {
         this.hideSurfaceSlideover();
@@ -964,15 +1012,13 @@ class SurfaceEmbed {
 
     document.body.appendChild(widgetButton);
 
-    // Add styles for widget button with customization
     const style = document.createElement("style");
     style.innerHTML = this.getWidgetStyles();
     document.head.appendChild(style);
 
-    // Clicking the widget button opens the popup
     widgetButton.addEventListener("click", () => {
       if (!this.initialized) {
-        this.initializeMessageListenerAndEmbed();
+        this.initializeEmbed();
       }
       this.showSurfaceForm();
     });
@@ -1191,107 +1237,7 @@ class SurfaceEmbed {
 
   getWidgetStyles() {
     return `
-      .surface-loading-spinner {
-        height: 5px;
-        width: 5px;
-        color: #fff;
-        box-shadow: -10px -10px 0 5px,
-                    -10px -10px 0 5px,
-                    -10px -10px 0 5px,
-                    -10px -10px 0 5px;
-        animation: loader-38 6s infinite;
-      }
-
-      @keyframes loader-38 {
-        0% {
-          box-shadow: -10px -10px 0 5px,
-                      -10px -10px 0 5px,
-                      -10px -10px 0 5px,
-                      -10px -10px 0 5px;
-        }
-        8.33% {
-          box-shadow: -10px -10px 0 5px,
-                      10px -10px 0 5px,
-                      10px -10px 0 5px,
-                      10px -10px 0 5px;
-        }
-        16.66% {
-          box-shadow: -10px -10px 0 5px,
-                      10px -10px 0 5px,
-                      10px 10px 0 5px,
-                      10px 10px 0 5px;
-        }
-        24.99% {
-          box-shadow: -10px -10px 0 5px,
-                      10px -10px 0 5px,
-                      10px 10px 0 5px,
-                      -10px 10px 0 5px;
-        }
-        33.32% {
-          box-shadow: -10px -10px 0 5px,
-                      10px -10px 0 5px,
-                      10px 10px 0 5px,
-                      -10px -10px 0 5px;
-        }
-        41.65% {
-          box-shadow: 10px -10px 0 5px,
-                      10px -10px 0 5px,
-                      10px 10px 0 5px,
-                      10px -10px 0 5px;
-        }
-        49.98% {
-          box-shadow: 10px 10px 0 5px,
-                    10px 10px 0 5px,
-                    10px 10px 0 5px,
-                    10px 10px 0 5px;
-        }
-        58.31% {
-          box-shadow: -10px 10px 0 5px,
-                      -10px 10px 0 5px,
-                      10px 10px 0 5px,
-                      -10px 10px 0 5px;
-        }
-        66.64% {
-          box-shadow: -10px -10px 0 5px,
-                      -10px -10px 0 5px,
-                      10px 10px 0 5px,
-                      -10px 10px 0 5px;
-        }
-        74.97% {
-          box-shadow: -10px -10px 0 5px,
-                      10px -10px 0 5px,
-                      10px 10px 0 5px,
-                      -10px 10px 0 5px;
-        }
-        83.3% {
-          box-shadow: -10px -10px 0 5px,
-                      10px 10px 0 5px,
-                      10px 10px 0 5px,
-                      -10px 10px 0 5px;
-        }
-        91.63% {
-          box-shadow: -10px -10px 0 5px,
-                      -10px 10px 0 5px,
-                      -10px 10px 0 5px,
-                      -10px 10px 0 5px;
-        }
-        100% {
-          box-shadow: -10px -10px 0 5px,
-                      -10px -10px 0 5px,
-                      -10px -10px 0 5px,
-                      -10px -10px 0 5px;
-        }
-      }
-
-      @keyframes spin {
-          0% { transform: translate(-50%, -50%) rotate(0deg); }
-          100% { transform: translate(-50%, -50%) rotate(360deg); }
-      }
-    `;
-  }
-
-  getWidgetStyles() {
-    return `
+      ${this.getLoaderStyles()}
       #surface-widget-button {
         position: fixed;
         bottom: ${this.widgetStyle.bottomMargin};
@@ -1332,25 +1278,33 @@ class SurfaceEmbed {
       if (o && /^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/.test(c)) {
         const options = { [`${e}_emailAddress`]: c };
         if (options) {
-          // Convert options to entries format while preserving existing data
-          const newEntries = Object.entries(options).map(([key, value]) => ({
-            [key]: value,
-          }));
+          const existingData = Array.isArray(SurfaceTagStore.partialFilledData)
+            ? SurfaceTagStore.partialFilledData
+            : [];
 
-          // Combine existing entries with new ones
-          SurfaceTagStore.partialFilledData = [
-            ...(Array.isArray(SurfaceTagStore.partialFilledData)
-              ? SurfaceTagStore.partialFilledData
-              : []),
-            ...newEntries,
-          ];
+          const dataMap = new Map();
+          existingData.forEach((entry, index) => {
+            const key = Object.keys(entry)[0];
+            dataMap.set(key, index);
+          });
+
+          Object.entries(options).forEach(([key, value]) => {
+            const newEntry = { [key]: value };
+
+            if (dataMap.has(key)) {
+              existingData[dataMap.get(key)] = newEntry;
+            } else {
+              existingData.push(newEntry);
+            }
+          });
+
+          SurfaceTagStore.partialFilledData = existingData;
           SurfaceTagStore.notifyIframe();
           this.updateIframeWithOptions(options, this.surface_popup_reference);
           if (!this.initialized) {
-            this.initializeMessageListenerAndEmbed();
+            this.initializeEmbed();
           }
           this.showSurfaceForm();
-          SurfaceTagStore.partialFilledData = [];
         }
       } else {
         o?.reportValidity();
@@ -1367,8 +1321,11 @@ class SurfaceEmbed {
 
     if (e && forms.length > 0) {
       forms.forEach((t) => {
-        t.addEventListener("submit", handleSubmitCallback(t));
-        t.addEventListener("keydown", handleKeyDownCallback(t));
+        const submitHandler = handleSubmitCallback(t);
+        const keydownHandler = handleKeyDownCallback(t);
+        
+        t.addEventListener("submit", submitHandler);
+        t.addEventListener("keydown", keydownHandler);
       });
     }
   }
@@ -1376,12 +1333,9 @@ class SurfaceEmbed {
   // Show Surface Form
   showSurfaceForm() {
     if (!this.initialized) {
-      this.initializeMessageListenerAndEmbed();
+      this.initializeEmbed();
     }
-    // Only update iframe options if we have new data to send
-    if (Object.keys(this.options).length > 0) {
-      this.updateIframeWithOptions(this.options, this.surface_popup_reference);
-    }
+
     this.shouldShowSurfaceForm();
   }
 
