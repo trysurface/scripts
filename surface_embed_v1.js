@@ -308,51 +308,54 @@ class SurfaceStore {
     this.surfaceDomains = [
       "https://forms.withsurface.com",
       "https://app.withsurface.com",
-      "https://dev.withsurface.com"
+      "https://dev.withsurface.com",
     ];
-    this._initializeMessageListener = () => {
-      const handleMessage = (event) => {
-        if (!event.origin || !this.surfaceDomains.includes(event.origin)) {
-          return;
-        }
-
-        if (event.data.type === "SEND_DATA") {
-          this._sendPayloadToIframes();
-        }
-      };
-
-      if (typeof document !== "undefined") {
-        if (document.readyState === "loading") {
-          document.addEventListener("DOMContentLoaded", () => {
-            window.addEventListener("message", handleMessage);
-          });
-        } else {
-          window.addEventListener("message", handleMessage);
-        }
-      }
-    };
-
-    this._sendPayloadToIframes = () => {
-      const iframes = document.querySelectorAll("iframe");
-
-      if (iframes.length === 0) {
-        return;
-      }
-
-      this.urlParams = this.getUrlParams();
-      this.urlParams.url = window.location.href;
-
-      if (this.debugMode) {
-        console.log("Updating iframe params", this.urlParams);
-      }
-
-      iframes.forEach((iframe) => {
-        this.notifyIframe(iframe);
-      });
-    };
 
     this._initializeMessageListener();
   }
+
+  _initializeMessageListener = () => {
+    const handleMessage = (event) => {
+      if (!event.origin || !this.surfaceDomains.includes(event.origin)) {
+        return;
+      }
+
+      if (event.data.type === "SEND_DATA") {
+        this._sendPayloadToIframes();
+      }
+    };
+
+    if (typeof document === "undefined") {
+      return;
+    }
+
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", () => {
+        window.addEventListener("message", handleMessage);
+      });
+    } else {
+      window.addEventListener("message", handleMessage);
+    }
+  };
+
+  _sendPayloadToIframes = () => {
+    const iframes = document.querySelectorAll("iframe");
+
+    if (iframes.length === 0) {
+      return;
+    }
+
+    this.urlParams = this.getUrlParams();
+    this.urlParams.url = window.location.href;
+
+    if (this.debugMode) {
+      console.log("Updating iframe params", this.urlParams);
+    }
+
+    iframes.forEach((iframe) => {
+      this.notifyIframe(iframe);
+    });
+  };
 
   getUrlParams() {
     const params = {};
@@ -677,7 +680,7 @@ class SurfaceEmbed {
     const iframe = iframe_reference.querySelector("#surface-iframe");
     const spinner = iframe_reference.querySelector(".surface-loading-spinner");
     const closeBtn = iframe_reference.querySelector(".close-btn-container");
-    
+
     const optionsKey = JSON.stringify(options);
     if (this._cachedOptionsKey === optionsKey && iframe && iframe.src) {
       if (spinner) spinner.style.display = "none";
@@ -685,9 +688,9 @@ class SurfaceEmbed {
       iframe.style.opacity = "1";
       return;
     }
-    
+
     this._cachedOptionsKey = optionsKey;
-    
+
     if (spinner) spinner.style.display = "flex";
     if (closeBtn) closeBtn.style.display = "none";
     if (iframe) {
@@ -1367,7 +1370,7 @@ class SurfaceEmbed {
 
           Object.entries(options).forEach(([key, value]) => {
             const newEntry = { [key]: value };
-            
+
             if (dataMap.has(key)) {
               existingData[dataMap.get(key)] = newEntry;
             } else {
