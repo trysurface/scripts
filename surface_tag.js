@@ -4,7 +4,7 @@ let SurfaceSyncCookieHappenedOnce = false;
 function getSiteIdFromScript(scriptElement) {
   if (!scriptElement) return null;
   
-  const attributeVariations = ['siteId', 'siteid', 'site-id'];
+  const attributeVariations = ['siteId', 'siteid', 'site-id', 'data-site-id'];
   
   for (const attr of attributeVariations) {
     const value = scriptElement.getAttribute(attr);
