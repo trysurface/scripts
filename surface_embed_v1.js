@@ -1,5 +1,21 @@
 let SurfaceSyncCookieHappenedOnce = false;
 
+// Helper function to get site ID from script tag with multiple attribute name variations
+function getSiteIdFromScript(scriptElement) {
+  if (!scriptElement) return null;
+  
+  const attributeVariations = ['siteId', 'siteid', 'site-id'];
+  
+  for (const attr of attributeVariations) {
+    const value = scriptElement.getAttribute(attr);
+    if (value) {
+      return value;
+    }
+  }
+  
+  return null;
+}
+
 class SurfaceExternalForm {
   constructor(props) {
     this.initialRenderTime = new Date();
@@ -21,7 +37,7 @@ class SurfaceExternalForm {
     this.environmentId =
       props && props.siteId
         ? props.siteId
-        : document.currentScript.getAttribute("siteId") || null;
+        : getSiteIdFromScript(document.currentScript);
 
     this.forms = Array.from(document.querySelectorAll("form")).filter((form) =>
       Boolean(form.getAttribute("data-id"))
@@ -1356,7 +1372,7 @@ class SurfaceEmbed {
 
 (function () {
   const scriptTag = document.currentScript;
-  const environmentId = scriptTag ? scriptTag.getAttribute("siteId") : null;
+  const environmentId = getSiteIdFromScript(scriptTag);
 
   if (environmentId != null) {
     const syncCookiePayload = {
