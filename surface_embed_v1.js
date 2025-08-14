@@ -5,19 +5,18 @@ let SurfaceSharedSessionId = null;
 // Helper function to get site ID from script tag with multiple attribute name variations
 function SurfaceGetSiteIdFromScript(scriptElement) {
   if (!scriptElement) return null;
-  
-  const attributeVariations = ['siteId', 'siteid', 'site-id', 'data-site-id'];
-  
+
+  const attributeVariations = ["siteId", "siteid", "site-id", "data-site-id"];
+
   for (const attr of attributeVariations) {
     const value = scriptElement.getAttribute(attr);
     if (value) {
       return value;
     }
   }
-  
+
   return null;
 }
-
 
 // ========================================
 // START OF DE-ANONYMIZATION CODE
@@ -26,7 +25,10 @@ function SurfaceGetSiteIdFromScript(scriptElement) {
 // Generate a unique session ID for comparison between services
 function SurfaceGenerateSessionId() {
   if (!SurfaceSharedSessionId) {
-    SurfaceSharedSessionId = 'session_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+    SurfaceSharedSessionId =
+      "session_" +
+      Math.random().toString(36).substring(2, 15) +
+      Math.random().toString(36).substring(2, 15);
   }
   return SurfaceSharedSessionId;
 }
@@ -38,8 +40,14 @@ function SurfaceLoadDelivrScript() {
   }
 
   return new Promise((resolve, reject) => {
-    const script = document.createElement('script');
-    script.src = 'https://cdn-staging.delivr.ai/pixels/af2de8af-f94a-48c4-ab9f-77be0bc7e0ab/p.js';
+    const script = document.createElement("script");
+    script.id = "pixel-instance-1";
+    script.setAttribute(
+      "data-instance-id",
+      "af2de8af-f94a-48c4-ab9f-77be0bc7e0ab"
+    );
+    script.src =
+      "https://cdn-staging.delivr.ai/pixels/af2de8af-f94a-48c4-ab9f-77be0bc7e0ab/p.js";
     script.async = true;
     script.onload = resolve;
     script.onerror = reject;
@@ -54,24 +62,24 @@ function SurfaceInitializeDelivrPixel(payload) {
   }
 
   SurfaceLoadDelivrScript()
-    .then(function() {
+    .then(function () {
       // Wait for PixelSDK to be available
       var attempts = 0;
-      var checkPixelSDK = function() {
-        if (window.PixelSDK) {
-          return window.PixelSDK.configureAsync({
+      var checkPixelSDK = function () {
+        if (window.PixelSDK && window.PixelSDK.configure) {
+          window.PixelSDK.configure({
             globalParams: Object.assign({}, payload, {
-              source: 'surface_tag'
-            })
-          }).then(function() {
-            window.PixelSDK.init();
-            SurfaceDelivrPixelInitialized = true;
+              source: "surface_tag",
+            }),
           });
+          window.PixelSDK.init();
+          SurfaceDelivrPixelInitialized = true;
+          return;
         } else if (attempts < 5) {
           attempts++;
-          console.warn('Delivr pixel failed to initialize, retrying...');
-          return new Promise(function(resolve) {
-            setTimeout(function() {
+          console.warn("Delivr pixel failed to initialize, retrying...");
+          return new Promise(function (resolve) {
+            setTimeout(function () {
               resolve(checkPixelSDK());
             }, 100);
           });
@@ -79,8 +87,8 @@ function SurfaceInitializeDelivrPixel(payload) {
       };
       return checkPixelSDK();
     })
-    .catch(function(error) {
-      console.error('Delivr pixel initialization failed:', error);
+    .catch(function (error) {
+      console.error("Delivr pixel initialization failed:", error);
     });
 }
 
@@ -100,16 +108,16 @@ function SurfaceSendToFiveByFive(payload) {
 
 function SurfaceSyncCookie(payload) {
   const sessionId = SurfaceGenerateSessionId();
-  
+
   // Add session ID to payload for both services
   const enhancedPayload = Object.assign({}, payload, {
     type: "LogAnonLeadEnvIdPayload",
-    sessionId: sessionId
+    sessionId: sessionId,
   });
-  
+
   if (SurfaceUsBrowserSpeedInitialized == false) {
     // Send to usbrowserspeed
-    SurfaceSendToFiveByFive(enhancedPayload); 
+    SurfaceSendToFiveByFive(enhancedPayload);
   }
 
   if (SurfaceDelivrPixelInitialized == false) {
@@ -428,7 +436,7 @@ class SurfaceStore {
     this.surfaceDomains = [
       "https://forms.withsurface.com",
       "https://app.withsurface.com",
-      "https://dev.withsurface.com"
+      "https://dev.withsurface.com",
     ];
 
     this._initializeMessageListener();
@@ -536,11 +544,10 @@ class SurfaceStore {
 
 const SurfaceTagStore = new SurfaceStore();
 
-
 class SurfaceEmbed {
   constructor(src, surface_embed_type, target_element_class, options = {}) {
     this.src = new URL(src);
-    
+
     this._popupSize = options.popupSize || "medium";
 
     this.styles = {
@@ -726,7 +733,7 @@ class SurfaceEmbed {
         }
       }
     };
-    
+
     document.addEventListener("click", this._clickHandler);
   }
 
@@ -814,8 +821,8 @@ class SurfaceEmbed {
       setTimeout(() => {
         try {
           const url = new URL(this._getSrcUrl());
-          if (url.protocol !== 'https:') {
-            this.log("error", 'Only HTTPS URLs are allowed');
+          if (url.protocol !== "https:") {
+            this.log("error", "Only HTTPS URLs are allowed");
           }
           iframe.src = url.toString();
           iframe.onload = () => {
@@ -1428,7 +1435,7 @@ class SurfaceEmbed {
       forms.forEach((t) => {
         const submitHandler = handleSubmitCallback(t);
         const keydownHandler = handleKeyDownCallback(t);
-        
+
         t.addEventListener("submit", submitHandler);
         t.addEventListener("keydown", keydownHandler);
       });
