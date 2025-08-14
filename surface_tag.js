@@ -35,13 +35,13 @@ function SurfaceGenerateSessionId() {
 
 // Load Delivr pixel script
 function SurfaceLoadDelivrScript() {
-  if (document.getElementById("pixel-instance-1")) {
+  if (document.getElementById("surface-delivr-pixel")) {
     return Promise.resolve();
   }
 
   return new Promise((resolve, reject) => {
     const script = document.createElement("script");
-    script.id = "pixel-instance-1";
+    script.id = "surface-delivr-pixel";
     script.setAttribute(
       "data-instance-id",
       "af2de8af-f94a-48c4-ab9f-77be0bc7e0ab"
