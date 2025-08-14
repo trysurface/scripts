@@ -35,7 +35,7 @@ function SurfaceGenerateSessionId() {
 
 // Load Delivr pixel script
 function SurfaceLoadDelivrScript() {
-  if (document.querySelector('script[src*="delivr.ai"]')) {
+  if (document.getElementById("pixel-instance-1")) {
     return Promise.resolve();
   }
 
