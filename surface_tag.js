@@ -48,34 +48,40 @@ function SurfaceLoadDelivrScript() {
 }
 
 // Initialize Delivr pixel with shared session ID and environment ID
-async function SurfaceInitializeDelivrPixel(payload) {
+function SurfaceInitializeDelivrPixel(payload) {
   if (SurfaceDelivrPixelInitialized || !payload) {
     return;
   }
 
-  try {
-    await SurfaceLoadDelivrScript();
-    
-    // Wait for PixelSDK to be available
-    let attempts = 0;
-    while (!window.PixelSDK && attempts < 50) {
-      await new Promise(resolve => setTimeout(resolve, 100));
-      attempts++;
-    }
-
-    if (window.PixelSDK) {
-      await window.PixelSDK.configureAsync({
-        globalParams: {
-          ...payload,
-          source: 'surface_tag'
+  SurfaceLoadDelivrScript()
+    .then(function() {
+      // Wait for PixelSDK to be available
+      var attempts = 0;
+      var checkPixelSDK = function() {
+        if (window.PixelSDK) {
+          return window.PixelSDK.configureAsync({
+            globalParams: Object.assign({}, payload, {
+              source: 'surface_tag'
+            })
+          }).then(function() {
+            window.PixelSDK.init();
+            SurfaceDelivrPixelInitialized = true;
+          });
+        } else if (attempts < 5) {
+          attempts++;
+          console.warn('Delivr pixel failed to initialize, retrying...');
+          return new Promise(function(resolve) {
+            setTimeout(function() {
+              resolve(checkPixelSDK());
+            }, 100);
+          });
         }
-      });
-      window.PixelSDK.init();
-      SurfaceDelivrPixelInitialized = true;
-    }
-  } catch (error) {
-    console.error('Delivr pixel initialization failed:', error);
-  }
+      };
+      return checkPixelSDK();
+    })
+    .catch(function(error) {
+      console.error('Delivr pixel initialization failed:', error);
+    });
 }
 
 // Send payload to 5x5
@@ -96,11 +102,10 @@ function SurfaceSyncCookie(payload) {
   const sessionId = SurfaceGenerateSessionId();
   
   // Add session ID to payload for both services
-  const enhancedPayload = {
-    ...payload,
+  const enhancedPayload = Object.assign({}, payload, {
     type: "LogAnonLeadEnvIdPayload",
     sessionId: sessionId
-  };
+  });
   
   if (SurfaceUsBrowserSpeedInitialized == false) {
     // Send to usbrowserspeed
