@@ -1381,6 +1381,13 @@ class SurfaceEmbed {
     const e = document
       .querySelector("[data-question-id]")
       ?.getAttribute("data-question-id");
+
+    const isWorkEmailOnly = document
+      .querySelector("[data-question-id]")
+      ?.getAttribute("data-work-email-only");
+
+    const emailKey = isWorkEmailOnly ? "workEmailAddress" : "emailAddress";
+
     const forms = document.querySelectorAll("form.surface-form-handler");
 
     const handleSubmitCallback = (t) => (n) => {
@@ -1388,7 +1395,7 @@ class SurfaceEmbed {
       const o = t.querySelector('input[type="email"]'),
         c = o?.value.trim();
       if (o && /^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/.test(c)) {
-        const options = { [`${e}_emailAddress`]: c };
+        const options = { [`${e}_${emailKey}`]: c };
         if (options) {
           const existingData = Array.isArray(SurfaceTagStore.partialFilledData)
             ? SurfaceTagStore.partialFilledData
