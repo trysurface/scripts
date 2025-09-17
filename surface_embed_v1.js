@@ -638,6 +638,7 @@ class SurfaceEmbed {
       }
       this.setupClickHandlers();
       this.formInputTriggerInitialize();
+      this.showSurfaceFormFromUrlParameter();
     }
   }
 
@@ -1449,6 +1450,22 @@ class SurfaceEmbed {
     }
 
     this.shouldShowSurfaceForm();
+  }
+
+  // Show Surface Form from URL parameter
+  showSurfaceFormFromUrlParameter() {
+    try {
+      const paramsFromStore = SurfaceTagStore.getUrlParams();
+      if (!paramsFromStore) return;
+      if (paramsFromStore.showSurfaceForm === "true") {
+        this.showSurfaceForm();
+      }
+    } catch (error) {
+      this.log(
+        "error",
+        `Failed to show Surface Form from URL parameter: ${error}`
+      );
+    }
   }
 
   // getter/setter for popupSize
