@@ -907,21 +907,7 @@ class SurfaceEmbed {
 
       document.body.appendChild(surface_popup);
 
-      const desktopPopupDimensions = {
-        width: "calc(100% - 80px)",
-        height: "calc(100% - 80px)",
-      };
-
-      if (this._popupSize === "small") {
-        desktopPopupDimensions.width = "50%";
-        desktopPopupDimensions.height = "60%";
-      } else if (this._popupSize === "medium") {
-        desktopPopupDimensions.width = "70%";
-        desktopPopupDimensions.height = "80%";
-      } else if (this._popupSize === "large") {
-        desktopPopupDimensions.width = "calc(100% - 80px)";
-        desktopPopupDimensions.height = "calc(100% - 80px)";
-      }
+      const desktopPopupDimensions = this._getPopupDimensions();
 
       if (!this.styles.popup) {
         const style = document.createElement("style");
@@ -942,6 +928,42 @@ class SurfaceEmbed {
         this.hideSurfacePopup();
       }
     });
+  }
+
+  _getPopupDimensions() {
+    const defaultDimensions = {
+      width: "calc(100% - 80px)",
+      height: "calc(100% - 80px)",
+    };
+
+    const sizePresets = {
+      small: {
+        width: "500px",
+        height: "80%",
+      },
+      medium: {
+        width: "70%",
+        height: "80%",
+      },
+      large: defaultDimensions,
+    };
+
+    if (typeof this._popupSize === "string" && sizePresets[this._popupSize]) {
+      return { ...sizePresets[this._popupSize] };
+    }
+
+    if (
+      typeof this._popupSize === "object" &&
+      this._popupSize !== null &&
+      (this._popupSize.width || this._popupSize.height)
+    ) {
+      return {
+        width: this._popupSize.width || defaultDimensions.width,
+        height: this._popupSize.height || defaultDimensions.height,
+      };
+    }
+
+    return { ...defaultDimensions };
   }
 
   // --- Slideover logic ---
@@ -1279,6 +1301,7 @@ class SurfaceEmbed {
         .surface-popup-content {
           width: ${desktopPopupDimensions.width};
           height: ${desktopPopupDimensions.height};
+          margin: 20px;
         }
       }
 
@@ -1474,7 +1497,10 @@ class SurfaceEmbed {
   }
 
   set popupSize(size) {
-    if (!["small", "medium", "large"].includes(size)) {
+    if (
+      !["small", "medium", "large"].includes(size) &&
+      !(typeof size === "object" && Object.keys(size).length > 0)
+    ) {
       this.log("warn", "Invalid popup size. Using 'medium' instead.");
       this._popupSize = "medium";
     } else {
