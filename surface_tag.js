@@ -205,7 +205,7 @@ async function SurfaceIdentifyLead(environmentId) {
     fingerprint: fingerprint.id,
     environmentId: environmentId,
     source: "website",
-    sourceURL: parentUrl.href,
+    sourceURL: parentUrl.toString(),
     sourceURLDomain: parentUrl.hostname,
     sourceURLPath: parentUrl.pathname,
     sourceUrlSearchParams: parentUrl.search,
@@ -274,6 +274,7 @@ async function SurfaceSyncCookie(payload) {
   if (SurfaceUsBrowserSpeedInitialized == false) {
     // Call identify first to get lead data
     const leadData = await SurfaceIdentifyLead(payload.environmentId);
+    SurfaceTagStore.notifyIframe()
 
     // Send to usbrowserspeed with lead data
     SurfaceSendToFiveByFive({
