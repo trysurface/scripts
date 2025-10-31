@@ -1,6 +1,69 @@
 let SurfaceUsBrowserSpeedInitialized = false;
 let SurfaceDelivrPixelInitialized = false;
 let SurfaceSharedSessionId = null;
+let EnvironmentId = null;
+let LeadIdentifyInProgress = null;
+
+async function getHash(input) {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(input);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  const hashHex = hashArray
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+  return hashHex;
+}
+
+//To generate fingerprint for the lead
+const getBrowserFingerprint = async (environmentId) => {
+  let fingerprint = {};
+
+  // Device Type
+  fingerprint.deviceType = /Mobi|Android/i.test(navigator.userAgent)
+    ? "Mobile"
+    : "Desktop";
+
+  // Screen Properties
+  fingerprint.screen = {
+    width: screen.width,
+    height: screen.height,
+    colorDepth: screen.colorDepth,
+  };
+
+  // Browser, OS, and Version
+  fingerprint.userAgent = navigator.userAgent;
+
+  //@ts-ignore
+  let userAgentData = navigator.userAgentData || {};
+
+  fingerprint.browser = userAgentData.brands ||
+    userAgentData.uaList || [{ brand: "unknown", version: "unknown" }];
+  fingerprint.os = userAgentData.platform || "unknown";
+
+  // Browser Language
+  fingerprint.language = navigator.language;
+
+  // Installed Plugins
+  if (navigator.plugins != null) {
+    fingerprint.plugins = Array.from(navigator.plugins).map(
+      (plugin) => plugin.name
+    );
+  }
+
+  // Time Zone
+  fingerprint.timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+  fingerprint.environmentId = environmentId;
+
+  // Combine all fingerprint data into a single string
+  let fingerprintString = JSON.stringify(fingerprint);
+
+  // Generate a unique ID using a hash function
+  fingerprint.id = await getHash(fingerprintString);
+
+  return fingerprint;
+};
 
 // Helper function to get site ID from script tag with multiple attribute name variations
 function SurfaceGetSiteIdFromScript(scriptElement) {
@@ -92,6 +155,145 @@ function SurfaceInitializeDelivrPixel(payload) {
     });
 }
 
+function SurfaceSetLeadDataWithTTL({ leadId, leadSessionId, fingerprint }) {
+  const ttl = 10 * 60 * 1000; // 10 minutes in milliseconds
+  const item = {
+    leadId: leadId,
+    leadSessionId: leadSessionId,
+    fingerprint,
+    expiry: new Date().getTime() + ttl,
+  };
+  localStorage.setItem("surfaceLeadData", JSON.stringify(item));
+}
+
+function SurfaceGetLeadDataWithTTL() {
+  const itemStr = localStorage.getItem("surfaceLeadData");
+
+  if (!itemStr) {
+    return null;
+  }
+
+  try {
+    const item = JSON.parse(itemStr);
+    const now = new Date().getTime();
+
+    // Check if expired
+    if (now > item.expiry) {
+      localStorage.removeItem("surfaceLeadData");
+      return null;
+    }
+
+    return {
+      leadId: item?.leadId,
+      leadSessionId: item?.leadSessionId,
+      fingerprint: item?.fingerprint,
+      expiry: item.expiry,
+    };
+  } catch (error) {
+    console.error("Error parsing lead data from localStorage:", error);
+    return null;
+  }
+}
+
+// Identify function to get lead information
+async function SurfaceIdentifyLead(environmentId) {
+  // If a call is already in progress, wait for it to complete
+  if (LeadIdentifyInProgress) {
+    // Poll for cached data with timeout
+    const maxWaitTime = 5000; // 5 seconds max wait
+    const pollInterval = 100; // Check every 100ms
+    const startTime = Date.now();
+
+    while (LeadIdentifyInProgress && Date.now() - startTime < maxWaitTime) {
+      await new Promise((resolve) => setTimeout(resolve, pollInterval));
+
+      // Check if data is now available in cache
+      const cachedData = SurfaceGetLeadDataWithTTL();
+      if (cachedData && cachedData.leadSessionId && cachedData.fingerprint) {
+        return {
+          leadId: cachedData.leadId,
+          leadSessionId: cachedData.leadSessionId,
+          fingerprint: cachedData.fingerprint,
+        };
+      }
+    }
+  }
+
+  // Check if we have valid cached data first
+  const cachedData = SurfaceGetLeadDataWithTTL();
+  const now = new Date().getTime();
+
+  if (
+    cachedData &&
+    cachedData.leadSessionId &&
+    cachedData.fingerprint &&
+    now < cachedData.expiry
+  ) {
+    return {
+      leadId: cachedData.leadId,
+      leadSessionId: cachedData.leadSessionId,
+      fingerprint: cachedData.fingerprint,
+    };
+  }
+
+  // Set flag before making API call
+  LeadIdentifyInProgress = true;
+
+  const fingerprint = await getBrowserFingerprint(environmentId);
+  const apiUrl = "https://forms.withsurface.com/api/v1/lead/identify";
+  const parentUrl = new URL(window.location.href);
+
+  const payload = {
+    fingerprint: fingerprint.id,
+    environmentId: environmentId,
+    source: "website",
+    sourceURL: parentUrl.href,
+    sourceURLDomain: parentUrl.hostname,
+    sourceURLPath: parentUrl.pathname,
+    sourceUrlSearchParams: parentUrl.search,
+    leadId: cachedData?.leadId,
+    sessionIdFromParams: cachedData?.leadSessionId,
+  };
+
+  try {
+    const identifyResponse = await fetch(apiUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const jsonData = await identifyResponse.json();
+
+    if (identifyResponse.ok && jsonData.data && jsonData.data.data) {
+      const leadId = jsonData.data.data.leadId || null;
+      const leadSessionId = jsonData.data.data.sessionId || null;
+
+      // Store in localStorage with TTL
+      SurfaceSetLeadDataWithTTL({
+        leadId,
+        leadSessionId,
+        fingerprint: fingerprint.id,
+      });
+
+      return {
+        leadId: leadId,
+        leadSessionId: leadSessionId,
+        fingerprint: fingerprint.id,
+      };
+    }
+  } catch (error) {
+    console.error("Error identifying lead:", error);
+  } finally {
+    LeadIdentifyInProgress = false;
+  }
+
+  // Reset flag on failure too
+  LeadIdentifyInProgress = false;
+  return null;
+}
+
 // Send payload to 5x5
 function SurfaceSendToFiveByFive(payload) {
   const endpoint = new URL("https://a.usbrowserspeed.com/cs");
@@ -106,7 +308,7 @@ function SurfaceSendToFiveByFive(payload) {
   SurfaceUsBrowserSpeedInitialized = true;
 }
 
-function SurfaceSyncCookie(payload) {
+async function SurfaceSyncCookie(payload) {
   const sessionId = SurfaceGenerateSessionId();
 
   // Add session ID to payload for both services
@@ -116,8 +318,15 @@ function SurfaceSyncCookie(payload) {
   });
 
   if (SurfaceUsBrowserSpeedInitialized == false) {
-    // Send to usbrowserspeed
-    SurfaceSendToFiveByFive(enhancedPayload);
+    // Call identify first to get lead data
+    const leadData = await SurfaceIdentifyLead(payload.environmentId);
+    SurfaceTagStore.sendPayloadToIframes("LEAD_DATA_UPDATE");
+
+    // Send to usbrowserspeed with lead data
+    SurfaceSendToFiveByFive({
+      ...enhancedPayload,
+      ...(leadData ? leadData : {}),
+    });
   }
 
   if (SurfaceDelivrPixelInitialized == false) {
@@ -449,7 +658,14 @@ class SurfaceStore {
       }
 
       if (event.data.type === "SEND_DATA") {
-        this._sendPayloadToIframes();
+        this.sendPayloadToIframes(event.data.type);
+        if (EnvironmentId) {
+          SurfaceIdentifyLead(EnvironmentId)
+            .then(() => {
+              this.sendPayloadToIframes("LEAD_DATA_UPDATE");
+            })
+            .catch((e) => console.log("Failed identify", e));
+        }
       }
     };
 
@@ -466,7 +682,7 @@ class SurfaceStore {
     }
   };
 
-  _sendPayloadToIframes = () => {
+  sendPayloadToIframes = (type = "STORE_UPDATE") => {
     const iframes = document.querySelectorAll("iframe");
 
     if (iframes.length === 0) {
@@ -481,7 +697,7 @@ class SurfaceStore {
     }
 
     iframes.forEach((iframe) => {
-      this.notifyIframe(iframe);
+      this.notifyIframe(iframe, type);
     });
   };
 
@@ -496,15 +712,16 @@ class SurfaceStore {
     return params;
   }
 
-  notifyIframe(iframe = null) {
+  notifyIframe(iframe = null, type = "STORE_UPDATE") {
     const surfaceIframe = iframe || document.querySelector("#surface-iframe");
     if (surfaceIframe) {
       this.surfaceDomains.forEach((domain) => {
         if (surfaceIframe.src.includes(domain)) {
           surfaceIframe.contentWindow.postMessage(
             {
-              type: "STORE_UPDATE",
+              type,
               payload: this.getPayload(),
+              sender: "surface_tag",
             },
             domain
           );
@@ -538,6 +755,7 @@ class SurfaceStore {
       origin: this.origin,
       questionIds: this.partialFilledData,
       urlParams: this.urlParams,
+      surfaceLeadData: SurfaceGetLeadDataWithTTL(),
     };
   }
 }
@@ -1512,6 +1730,7 @@ class SurfaceEmbed {
 (function () {
   const scriptTag = document.currentScript;
   const environmentId = SurfaceGetSiteIdFromScript(scriptTag);
+  EnvironmentId = environmentId;
 
   if (environmentId != null) {
     const syncCookiePayload = {
