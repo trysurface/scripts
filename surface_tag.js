@@ -665,6 +665,8 @@ class SurfaceStore {
               this.sendPayloadToIframes("LEAD_DATA_UPDATE");
             })
             .catch((e) => console.log("Failed identify", e));
+        } else {
+          this.sendPayloadToIframes("LEAD_DATA_UPDATE");
         }
       }
     };
