@@ -658,7 +658,7 @@ class SurfaceStore {
       }
 
       if (event.data.type === "SEND_DATA") {
-        this.sendPayloadToIframes(event.data.type);
+        this.sendPayloadToIframes("STORE_UPDATE");
         if (EnvironmentId) {
           SurfaceIdentifyLead(EnvironmentId)
             .then(() => {
@@ -684,7 +684,18 @@ class SurfaceStore {
     }
   };
 
-  sendPayloadToIframes = (type = "STORE_UPDATE") => {
+  getUrlParams() {
+    const params = {};
+    const searchParams = new URLSearchParams(window.location.search);
+
+    for (const [key, value] of searchParams) {
+      params[key] = value;
+    }
+
+    return params;
+  }
+
+  sendPayloadToIframes = (type) => {
     const iframes = document.querySelectorAll("iframe");
 
     if (iframes.length === 0) {
@@ -703,18 +714,7 @@ class SurfaceStore {
     });
   };
 
-  getUrlParams() {
-    const params = {};
-    const searchParams = new URLSearchParams(window.location.search);
-
-    for (const [key, value] of searchParams) {
-      params[key] = value;
-    }
-
-    return params;
-  }
-
-  notifyIframe(iframe = null, type = "STORE_UPDATE") {
+  notifyIframe(iframe, type) {
     const surfaceIframe = iframe || document.querySelector("#surface-iframe");
     if (surfaceIframe) {
       this.surfaceDomains.forEach((domain) => {
@@ -1655,7 +1655,7 @@ class SurfaceEmbed {
           });
 
           SurfaceTagStore.partialFilledData = existingData;
-          SurfaceTagStore.notifyIframe();
+          SurfaceTagStore.notifyIframe(null, "STORE_UPDATE");
           this.updateIframeWithOptions(options, this.surface_popup_reference);
           if (!this.initialized) {
             this.initializeEmbed();
