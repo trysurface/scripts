@@ -96,65 +96,6 @@ function SurfaceGenerateSessionId() {
   return SurfaceSharedSessionId;
 }
 
-// Load Delivr pixel script
-function SurfaceLoadDelivrScript() {
-  if (document.getElementById("surface-delivr-pixel")) {
-    return Promise.resolve();
-  }
-
-  return new Promise((resolve, reject) => {
-    const script = document.createElement("script");
-    script.id = "surface-delivr-pixel";
-    script.setAttribute(
-      "data-instance-id",
-      "af2de8af-f94a-48c4-ab9f-77be0bc7e0ab"
-    );
-    script.src =
-      "https://cdn-staging.delivr.ai/pixels/af2de8af-f94a-48c4-ab9f-77be0bc7e0ab/p.js";
-    script.async = true;
-    script.onload = resolve;
-    script.onerror = reject;
-    document.head.appendChild(script);
-  });
-}
-
-// Initialize Delivr pixel with shared session ID and environment ID
-function SurfaceInitializeDelivrPixel(payload) {
-  if (SurfaceDelivrPixelInitialized || !payload) {
-    return;
-  }
-
-  SurfaceLoadDelivrScript()
-    .then(function () {
-      // Wait for PixelSDK to be available
-      var attempts = 0;
-      var checkPixelSDK = function () {
-        if (window.PixelSDK && window.PixelSDK.configure) {
-          window.PixelSDK.configure({
-            globalParams: Object.assign({}, payload, {
-              source: "surface_tag",
-            }),
-          });
-          window.PixelSDK.init();
-          SurfaceDelivrPixelInitialized = true;
-          return;
-        } else if (attempts < 5) {
-          attempts++;
-          console.warn("Delivr pixel failed to initialize, retrying...");
-          return new Promise(function (resolve) {
-            setTimeout(function () {
-              resolve(checkPixelSDK());
-            }, 100);
-          });
-        }
-      };
-      return checkPixelSDK();
-    })
-    .catch(function (error) {
-      console.error("Delivr pixel initialization failed:", error);
-    });
-}
-
 function SurfaceSetLeadDataWithTTL({ leadId, leadSessionId, fingerprint }) {
   const ttl = 10 * 60 * 1000; // 10 minutes in milliseconds
   const item = {
@@ -328,15 +269,11 @@ async function SurfaceSyncCookie(payload) {
       ...(leadData ? leadData : {}),
     });
   }
-
-  if (SurfaceDelivrPixelInitialized == false) {
-    // Initialize Delivr pixel with the same session ID and payload data
-    SurfaceInitializeDelivrPixel(enhancedPayload);
-  }
 }
 // ========================================
 // END OF DE-ANONYMIZATION CODE
 // ========================================
+
 class SurfaceExternalForm {
   constructor(props) {
     this.initialRenderTime = new Date();
