@@ -1,5 +1,4 @@
 let SurfaceUsBrowserSpeedInitialized = false;
-let SurfaceDelivrPixelInitialized = false;
 let SurfaceSharedSessionId = null;
 let EnvironmentId = null;
 let LeadIdentifyInProgress = null;
