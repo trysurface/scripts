@@ -3,8 +3,6 @@ let SurfaceSharedSessionId = null;
 let EnvironmentId = null;
 let LeadIdentifyInProgress = null;
 
-console.log("HELO");
-
 async function getHash(input) {
   const encoder = new TextEncoder();
   const data = encoder.encode(input);
@@ -189,7 +187,7 @@ async function SurfaceIdentifyLead(environmentId) {
   LeadIdentifyInProgress = true;
 
   const fingerprint = await getBrowserFingerprint(environmentId);
-  const apiUrl = "http://localhost:3000/api/v1/lead/identify";
+  const apiUrl = "https://forms.withsurface.com/api/v1/lead/identify";
   const parentUrl = new URL(window.location.href);
 
   const payload = {
@@ -592,7 +590,6 @@ class SurfaceStore {
       "https://forms.withsurface.com",
       "https://app.withsurface.com",
       "https://dev.withsurface.com",
-      "http://localhost:3000",
     ];
 
     this._initializeMessageListener();
