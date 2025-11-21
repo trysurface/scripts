@@ -653,7 +653,8 @@ class SurfaceStore {
 
   _initializeMessageListener = () => {
     const handleMessage = (event) => {
-      if (!event.origin || !this.surfaceDomains.includes(event.origin)) {
+      // In debug mode, allow all origins
+      if (!this.debugMode && (!event.origin || !this.surfaceDomains.includes(event.origin))) {
         return;
       }
 
@@ -716,7 +717,25 @@ class SurfaceStore {
 
   notifyIframe(iframe, type) {
     const surfaceIframe = iframe || document.querySelector("#surface-iframe");
-    if (surfaceIframe) {
+    if (!surfaceIframe) return;
+
+    try {
+      const iframeOrigin = new URL(surfaceIframe.src).origin;
+      
+      // In debug mode, send to any origin
+      if (this.debugMode) {
+        surfaceIframe.contentWindow.postMessage(
+          {
+            type,
+            payload: this.getPayload(),
+            sender: "surface_tag",
+          },
+          iframeOrigin
+        );
+        return;
+      }
+
+      // In production, only send to allowed domains
       this.surfaceDomains.forEach((domain) => {
         if (surfaceIframe.src.includes(domain)) {
           surfaceIframe.contentWindow.postMessage(
@@ -729,7 +748,7 @@ class SurfaceStore {
           );
         }
       });
-    }
+    } catch (e) {}
   }
 
   parseCookies() {
