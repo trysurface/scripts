@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="X-UA-Compatible" content="ie=edge" />
+    <title>Inline Embed Test - Surface Form</title>
+    <link rel="stylesheet" href="common.css">
+    <script src="../surface_tag.js" site-id="cm5e6essv0002l603lv3eeqtw"></script>
+  </head>
+  <body>
+    <div class="container">
+      <h1>🧪 Inline Embed Test</h1>
+      <p><a href="index.html">← Back to Test Suite</a></p>
+      
+      <div class="config-section">
+        <strong>Configuration:</strong><br>
+        Form Source: <code id="formSrc">https://dev.withsurface.com/s/cmhmh2ibp000xl40b0ynyiupg</code><br>
+        Environment ID: <code>cm5e6essv0002l603lv3eeqtw</code><br>
+        Debug Mode: <code id="debugMode">false</code> (add <code>?surfaceDebug=true</code> to enable)
+      </div>
+
+      <!-- Events Summary -->
+      <h2>📊 Events Summary</h2>
+      <div class="events-summary">
+        <div class="summary-card">
+          <div class="summary-count" id="totalEvents">0</div>
+          <div class="summary-label">Total Events</div>
+        </div>
+        <div class="summary-card">
+          <div class="summary-count" id="sentEvents">0</div>
+          <div class="summary-label">Sent to Iframe</div>
+        </div>
+        <div class="summary-card">
+          <div class="summary-count" id="receivedEvents">0</div>
+          <div class="summary-label">Received from Iframe</div>
+        </div>
+        <div class="summary-card">
+          <div class="summary-count" id="storeUpdateEvents">0</div>
+          <div class="summary-label">STORE_UPDATE</div>
+        </div>
+        <div class="summary-card">
+          <div class="summary-count" id="leadDataEvents">0</div>
+          <div class="summary-label">LEAD_DATA_UPDATE</div>
+        </div>
+        <div class="summary-card">
+          <div class="summary-count" id="sendDataEvents">0</div>
+          <div class="summary-label">SEND_DATA</div>
+        </div>
+      </div>
+
+      <!-- Events Log -->
+      <h2>📝 Events Log</h2>
+      <div class="button-group">
+        <button class="clear-log" onclick="clearEventLog()">Clear Log</button>
+        <button class="secondary" onclick="exportEvents()">Export Events</button>
+      </div>
+      <div class="events-log" id="eventsLog"></div>
+
+      <!-- Inline Embed -->
+      <div class="section">
+        <h2>Inline Embed (Iframe)</h2>
+        <p>Click the button below to show the form embedded directly in the page.</p>
+        <div class="button-group">
+          <button class="surface-inline-button">Show Inline Form</button>
+        </div>
+        <div class="inline-container surface-inline-container"></div>
+      </div>
+    </div>
+
+    <script src="event-monitor.js"></script>
+    <script>
+      // Get form source from URL or use default
+      const urlParams = new URLSearchParams(window.location.search);
+      const formSrc = urlParams.get("formSrc") || "https://dev.withsurface.com/s/cmhmh2ibp000xl40b0ynyiupg";
+      const debugMode = window.location.search.includes("surfaceDebug=true");
+      
+      document.getElementById("formSrc").textContent = formSrc;
+      document.getElementById("debugMode").textContent = debugMode;
+
+      // Initialize event monitoring
+      initializeEventMonitoring();
+
+      // Initialize inline embed
+      (function() {
+        const inline = new SurfaceEmbed(
+          formSrc,
+          "inline",
+          "surface-inline-container"
+        );
+        
+        // Hide inline iframe initially (it auto-embeds, so we hide it after a short delay)
+        setTimeout(() => {
+          const inlineDiv = document.querySelector('.surface-inline-container #surface-inline-div');
+          if (inlineDiv) {
+            inlineDiv.style.display = 'none';
+          }
+        }, 500);
+        
+        // Custom handler for inline button to show/hide the iframe
+        document.querySelector('.surface-inline-button')?.addEventListener('click', function() {
+          const inlineContainer = document.querySelector('.surface-inline-container');
+          const inlineDiv = inlineContainer?.querySelector('#surface-inline-div');
+          
+          if (inlineDiv) {
+            // Toggle visibility
+            if (inlineDiv.style.display === 'none' || inlineDiv.style.display === '') {
+              inlineDiv.style.display = 'block';
+            } else {
+              inlineDiv.style.display = 'none';
+            }
+          }
+        });
+
+        console.log("✅ Inline embed initialized");
+        console.log("📊 Event monitoring active");
+      })();
+    </script>
+  </body>
+</html>
+

@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="X-UA-Compatible" content="ie=edge" />
+    <title>Surface Form Embedding Test Suite</title>
+    <link rel="stylesheet" href="common.css">
+  </head>
+  <body>
+    <div class="container">
+      <h1>🧪 Surface Form Embedding Test Suite</h1>
+      
+      <div class="config-section">
+        <strong>Configuration:</strong><br>
+        Form Source: <code>https://dev.withsurface.com/s/cmhmh2ibp000xl40b0ynyiupg</code><br>
+        Environment ID: <code>cm5e6essv0002l603lv3eeqtw</code><br>
+        Debug Mode: Add <code>?surfaceDebug=true</code> to any page URL to enable
+      </div>
+
+      <!-- Navigation Cards -->
+      <h2>📋 Test Pages</h2>
+      <div class="nav-grid">
+        <div class="nav-card">
+          <h3>1. Popup Embed</h3>
+          <p>Test popup modal embedding with different sizes (small, medium, large).</p>
+          <a href="popup.html" class="nav-link">Test Popup →</a>
+        </div>
+
+        <div class="nav-card">
+          <h3>2. Slideover Embed</h3>
+          <p>Test slideover panel embedding that slides in from the side.</p>
+          <a href="slideover.html" class="nav-link">Test Slideover →</a>
+        </div>
+
+        <div class="nav-card">
+          <h3>3. Inline Embed</h3>
+          <p>Test inline iframe embedding directly in the page content.</p>
+          <a href="inline.html" class="nav-link">Test Inline →</a>
+        </div>
+
+        <div class="nav-card">
+          <h3>4. Input Trigger Embed</h3>
+          <p>Test input trigger that opens form with pre-filled email data.</p>
+          <a href="input-trigger.html" class="nav-link">Test Input Trigger →</a>
+        </div>
+      </div>
+
+      <!-- Events Documentation -->
+      <h2>📋 Known Event Types</h2>
+      <div class="section">
+        <h3>Events Sent TO Iframe (from surface_tag.js):</h3>
+        <ul>
+          <li><strong>STORE_UPDATE</strong> - Sent when store data needs to be updated in iframe (includes cookies, URL params, partial filled data, etc.)</li>
+          <li><strong>LEAD_DATA_UPDATE</strong> - Sent when lead identification data is updated (includes leadId, leadSessionId, fingerprint)</li>
+        </ul>
+        <h3>Events Received FROM Iframe:</h3>
+        <ul>
+          <li><strong>SEND_DATA</strong> - Request from iframe to send current store data. Triggers STORE_UPDATE and LEAD_DATA_UPDATE responses</li>
+        </ul>
+        <h3>Event Payload Structure:</h3>
+        <pre style="background: #f5f5f5; padding: 15px; border-radius: 6px; overflow-x: auto;">
+{
+  "windowUrl": "Current page URL",
+  "referrer": "Page referrer",
+  "cookies": { /* Parsed cookies */ },
+  "origin": "Page origin",
+  "questionIds": [ /* Partial filled data */ ],
+  "urlParams": { /* URL search params */ },
+  "surfaceLeadData": {
+    "leadId": "...",
+    "leadSessionId": "...",
+    "fingerprint": "...",
+    "landingPageUrl": "...",
+    "expiry": timestamp
+  }
+}
+        </pre>
+      </div>
+
+      <!-- Additional Features -->
+      <div class="section">
+        <h2>🔧 Additional Features & Testing Tips</h2>
+        <h3>URL Parameters:</h3>
+        <ul>
+          <li><code>?surfaceDebug=true</code> - Enable debug mode (logs to console)</li>
+          <li><code>?showSurfaceForm=true</code> - Automatically show form on page load</li>
+          <li><code>?formSrc=URL</code> - Override default form source URL</li>
+          <li><code>?embedType=popup|slideover|inline|input-trigger</code> - Override embed type</li>
+          <li><code>?popupSize=small|medium|large</code> - Override popup size</li>
+        </ul>
+        <h3>Testing Checklist:</h3>
+        <ul>
+          <li>✅ Test all embed types (popup, slideover, inline, input-trigger)</li>
+          <li>✅ Verify postMessage events are logged correctly</li>
+          <li>✅ Test input trigger with email validation</li>
+          <li>✅ Test popup sizes (small, medium, large)</li>
+          <li>✅ Test inline iframe visibility on click</li>
+          <li>✅ Verify lead identification and fingerprinting</li>
+          <li>✅ Test cookie and URL parameter passing</li>
+          <li>✅ Test prefill data functionality</li>
+        </ul>
+      </div>
+    </div>
+  </body>
+</html>
