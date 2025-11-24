@@ -95,13 +95,19 @@ function SurfaceGenerateSessionId() {
   return SurfaceSharedSessionId;
 }
 
-function SurfaceSetLeadDataWithTTL({ leadId, leadSessionId, fingerprint }) {
+function SurfaceSetLeadDataWithTTL({
+  leadId,
+  leadSessionId,
+  fingerprint,
+  landingPageUrl,
+}) {
   const ttl = 10 * 60 * 1000; // 10 minutes in milliseconds
   const item = {
     leadId: leadId,
     leadSessionId: leadSessionId,
     fingerprint,
     expiry: new Date().getTime() + ttl,
+    landingPageUrl,
   };
   localStorage.setItem("surfaceLeadData", JSON.stringify(item));
 }
@@ -127,6 +133,7 @@ function SurfaceGetLeadDataWithTTL() {
       leadId: item?.leadId,
       leadSessionId: item?.leadSessionId,
       fingerprint: item?.fingerprint,
+      landingPageUrl: item?.landingPageUrl,
       expiry: item.expiry,
     };
   } catch (error) {
@@ -215,6 +222,7 @@ async function SurfaceIdentifyLead(environmentId) {
         leadId,
         leadSessionId,
         fingerprint: fingerprint.id,
+        landingPageUrl: window.location.href,
       });
 
       return {
