@@ -16,7 +16,7 @@
       <div class="config-section">
         <strong>Configuration:</strong><br>
         Form Source: <code id="formSrc">https://dev.withsurface.com/s/cmhmh2ibp000xl40b0ynyiupg</code><br>
-        Environment ID: <code>cm5e6essv0002l603lv3eeqtw</code><br>
+        Environment ID: <code id="environmentId">cm5e6essv0002l603lv3eeqtw</code><br>
         Debug Mode: <code id="debugMode">false</code> (add <code>?surfaceDebug=true</code> to enable)
       </div>
 
@@ -69,15 +69,13 @@
     </div>
 
     <script src="event-monitor.js"></script>
+    <script src="config.js"></script>
     <script>
-      // Get form source from URL or use default
-      const urlParams = new URLSearchParams(window.location.search);
-      const formSrc = urlParams.get("formSrc") || "https://dev.withsurface.com/s/cmhmh2ibp000xl40b0ynyiupg";
-      const debugMode = window.location.search.includes("surfaceDebug=true");
+      const { formSrc } =
+        window.surfaceTestConfig || {
+          formSrc: "https://dev.withsurface.com/s/cmhmh2ibp000xl40b0ynyiupg",
+        };
       
-      document.getElementById("formSrc").textContent = formSrc;
-      document.getElementById("debugMode").textContent = debugMode;
-
       // Initialize event monitoring
       initializeEventMonitoring();
 
