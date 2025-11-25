@@ -711,6 +711,12 @@ const SurfaceTagStore = new SurfaceStore();
 class SurfaceEmbed {
   constructor(src, surface_embed_type, target_element_class, options = {}) {
     this.src = new URL(src);
+    const isPreviewMode = this._isFormPreviewMode();
+
+    if (isPreviewMode) {
+      this.log("info", "Form is in preview mode");
+      this.src.searchParams.append("preview", "true");
+    }
 
     this._popupSize = options.popupSize || "medium";
 
@@ -1670,6 +1676,12 @@ class SurfaceEmbed {
     } else {
       this._popupSize = size;
     }
+  }
+
+  _isFormPreviewMode() {
+    const params = SurfaceTagStore.getUrlParams();
+    const previewMode = params?.preview === "true";
+    return previewMode;
   }
 }
 
