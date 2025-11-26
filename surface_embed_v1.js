@@ -716,6 +716,12 @@ class SurfaceEmbed {
     this.currentQuestionId =
       document.currentScript?.getAttribute("data-question-id");
     SurfaceEmbed._instances.push(this);
+    const isPreviewMode = this._isFormPreviewMode();
+
+    if (isPreviewMode) {
+      this.log("info", "Form is in preview mode");
+      this.src.searchParams.append("preview", "true");
+    }
 
     this._popupSize = options.popupSize || "medium";
 
@@ -1681,6 +1687,12 @@ class SurfaceEmbed {
     } else {
       this._popupSize = size;
     }
+  }
+
+  _isFormPreviewMode() {
+    const params = SurfaceTagStore.getUrlParams();
+    const previewMode = params?.surfaceDebug === "true";
+    return previewMode;
   }
 }
 
