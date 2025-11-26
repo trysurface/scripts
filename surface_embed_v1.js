@@ -709,8 +709,13 @@ class SurfaceStore {
 const SurfaceTagStore = new SurfaceStore();
 
 class SurfaceEmbed {
+  static _instances = [];
+
   constructor(src, surface_embed_type, target_element_class, options = {}) {
     this.src = new URL(src);
+    this.currentQuestionId =
+      document.currentScript?.getAttribute("data-question-id");
+    SurfaceEmbed._instances.push(this);
 
     this._popupSize = options.popupSize || "medium";
 
@@ -1566,17 +1571,26 @@ class SurfaceEmbed {
 
   // Form Input Trigger Initialization
   formInputTriggerInitialize() {
-    const e = document
-      .querySelector("[data-question-id]")
-      ?.getAttribute("data-question-id");
-    const forms = document.querySelectorAll("form.surface-form-handler");
+    const e = this.currentQuestionId;
+    let forms = [];
+
+    const allForms = document.querySelectorAll("form.surface-form-handler");
+    forms = Array.from(allForms).filter(
+      (form) => form.getAttribute("data-question-id") === e
+    );
+
+    if (forms.length === 0) {
+      forms = Array.from(allForms);
+    }
 
     const handleSubmitCallback = (t) => (n) => {
       n.preventDefault();
       const o = t.querySelector('input[type="email"]'),
         c = o?.value.trim();
       if (o && /^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/.test(c)) {
-        const options = { [`${e}_emailAddress`]: c };
+        const options = {
+          [`${e}_emailAddress`]: c,
+        };
         if (options) {
           const existingData = Array.isArray(SurfaceTagStore.partialFilledData)
             ? SurfaceTagStore.partialFilledData
@@ -1619,13 +1633,10 @@ class SurfaceEmbed {
       }
     };
 
-    if (e && forms.length > 0) {
-      forms.forEach((t) => {
-        const submitHandler = handleSubmitCallback(t);
-        const keydownHandler = handleKeyDownCallback(t);
-
-        t.addEventListener("submit", submitHandler);
-        t.addEventListener("keydown", keydownHandler);
+    if (forms.length > 0) {
+      forms.forEach((form) => {
+        form.addEventListener("submit", handleSubmitCallback(form));
+        form.addEventListener("keydown", handleKeyDownCallback(form));
       });
     }
   }
