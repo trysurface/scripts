@@ -1680,7 +1680,7 @@ class SurfaceEmbed {
 
   _isFormPreviewMode() {
     const params = SurfaceTagStore.getUrlParams();
-    const previewMode = params?.preview === "true";
+    const previewMode = params?.surfaceDebug === "true";
     return previewMode;
   }
 }
