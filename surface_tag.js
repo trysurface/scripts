@@ -724,6 +724,9 @@ class SurfaceEmbed {
     }
 
     this._popupSize = options.popupSize || "medium";
+    this.documentReferenceSelector = options.enforceIDSelector ? "#" : ".";
+
+    this.log("info", "documentReferenceSelector set to " + this.documentReferenceSelector);
 
     this.styles = {
       popup: null,
@@ -780,7 +783,7 @@ class SurfaceEmbed {
         if (this.initialized) return;
         this.surface_inline_reference = null;
         this.inline_embed_references = document.querySelectorAll(
-          "." + this.target_element_class
+          this.documentReferenceSelector + this.target_element_class
         );
         this.embedSurfaceForm = this.embedInline;
         this.shouldShowSurfaceForm = this.showSurfaceInline;
@@ -898,7 +901,7 @@ class SurfaceEmbed {
   setupClickHandlers() {
     this._clickHandler = (event) => {
       const clickedButton = event.target.closest(
-        "." + this.target_element_class
+        this.documentReferenceSelector + this.target_element_class
       );
       if (clickedButton) {
         if (!this.initialized) {
