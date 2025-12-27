@@ -728,6 +728,12 @@ class SurfaceEmbed {
 
     this.log("info", "documentReferenceSelector set to " + this.documentReferenceSelector);
 
+    this._preload = [true, false, "pageLoad"].includes(options.preload)
+      ? options.preload
+      : true;
+    
+    this.log("info", "preload set to " + this._preload);
+
     this.styles = {
       popup: null,
       widget: null,
@@ -817,6 +823,7 @@ class SurfaceEmbed {
       this.setupClickHandlers();
       this.formInputTriggerInitialize();
       this.showSurfaceFormFromUrlParameter();
+      this.preloadIframe();
     }
   }
 
@@ -925,6 +932,42 @@ class SurfaceEmbed {
     this.initialized = true;
   }
 
+  preloadIframe() {
+    if (this.initialized || this._preload === false) return;
+    
+    if (this.initializeEmbed && this._preload === true) {
+      const initWhenIdle = () => {
+        if (this.initialized) return;
+        if ("requestIdleCallback" in window) {
+          window.requestIdleCallback(
+            () => {
+              if (!this.initialized) {
+                this.initializeEmbed();
+              }
+            },
+            { timeout: 3000 }
+          );
+        } else {
+          setTimeout(() => {
+            if (!this.initialized) {
+              this.initializeEmbed();
+            }
+          }, 100);
+        }
+      };
+
+      if (document.readyState === "complete") {
+        initWhenIdle();
+      } else {
+        window.addEventListener("load", initWhenIdle, { once: true });
+      }
+    }
+
+    if (this.initializeEmbed && this._preload === "pageLoad") {
+      this.initializeEmbed();
+    }
+  }
+
   // --- Inline embedding ---
   embedInline(options = {}, fromInputTrigger = false) {
     if (this.surface_inline_reference == null) {
@@ -984,14 +1027,28 @@ class SurfaceEmbed {
     const closeBtn = iframe_reference.querySelector(".close-btn-container");
 
     const optionsKey = JSON.stringify(options);
+    
+    // If iframe is preloaded with same options, just ensure it's visible
     if (this._cachedOptionsKey === optionsKey && iframe && iframe.src) {
-      if (spinner) spinner.style.display = "none";
-      if (closeBtn) closeBtn.style.display = "flex";
-      iframe.style.opacity = "1";
+      // If iframe finished preloading, show it immediately
+      if (this._iframePreloaded) {
+        if (spinner) spinner.style.display = "none";
+        if (closeBtn) closeBtn.style.display = "flex";
+        iframe.style.opacity = "1";
+        return;
+      }
+      // If still loading (preload in progress), set up onload handler but don't reset src
+      iframe.onload = () => {
+        this._iframePreloaded = true;
+        iframe.style.opacity = "1";
+        if (spinner) spinner.style.display = "none";
+        if (closeBtn) closeBtn.style.display = "flex";
+      };
       return;
     }
 
     this._cachedOptionsKey = optionsKey;
+    this._iframePreloaded = false;
 
     if (spinner) spinner.style.display = "flex";
     if (closeBtn) closeBtn.style.display = "none";
@@ -1005,6 +1062,7 @@ class SurfaceEmbed {
           }
           iframe.src = url.toString();
           iframe.onload = () => {
+            this._iframePreloaded = true;
             iframe.style.opacity = "1";
             if (spinner) spinner.style.display = "none";
             if (closeBtn) closeBtn.style.display = "flex";
@@ -1092,6 +1150,21 @@ class SurfaceEmbed {
         style.innerHTML = this.getPopupStyles(desktopPopupDimensions);
         document.head.appendChild(style);
         this.styles.popup = style;
+      }
+
+      const iframe = surface_popup.querySelector("#surface-iframe");
+      const spinner = surface_popup.querySelector(".surface-loading-spinner");
+      const closeBtn = surface_popup.querySelector(".close-btn-container");
+
+      if (iframe) {
+        this._cachedOptionsKey = JSON.stringify({});
+
+        iframe.onload = () => {
+          this._iframePreloaded = true;
+          iframe.style.opacity = "1";
+          if (spinner) spinner.style.display = "none";
+          if (closeBtn) closeBtn.style.display = "flex";
+        };
       }
     }
 
@@ -1288,15 +1361,19 @@ class SurfaceEmbed {
     document.head.appendChild(style);
 
     const iframe = surface_slideover.querySelector("#surface-iframe");
-    iframe.onload = () => {
-      const spinner = surface_slideover.querySelector(
-        ".surface-loading-spinner"
-      );
-      const closeBtn = surface_slideover.querySelector(".close-btn-container");
-      if (spinner) spinner.style.display = "none";
-      if (closeBtn) closeBtn.style.display = "flex";
-      iframe.style.opacity = "1";
-    };
+    const spinner = surface_slideover.querySelector(".surface-loading-spinner");
+    const closeBtn = surface_slideover.querySelector(".close-btn-container");
+
+    if (iframe) {
+      this._cachedOptionsKey = JSON.stringify({});
+
+      iframe.onload = () => {
+        this._iframePreloaded = true;
+        iframe.style.opacity = "1";
+        if (spinner) spinner.style.display = "none";
+        if (closeBtn) closeBtn.style.display = "flex";
+      };
+    }
 
     surface_slideover
       .querySelector(".close-btn")
@@ -1498,7 +1575,7 @@ class SurfaceEmbed {
 
       .close-btn-container {
         position: absolute;
-        display: hidden;
+        display: none;
         justify-content: center;
         align-items: center;
         top: 6px;
