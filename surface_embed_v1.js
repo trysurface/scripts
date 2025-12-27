@@ -1700,7 +1700,6 @@ class SurfaceEmbed {
 
           SurfaceTagStore.partialFilledData = existingData;
           SurfaceTagStore.notifyIframe(null, "STORE_UPDATE");
-          this.updateIframeWithOptions(options, this.surface_popup_reference);
           if (!this.initialized) {
             this.initializeEmbed();
           }
