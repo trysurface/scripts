@@ -824,6 +824,7 @@ class SurfaceEmbed {
       this.formInputTriggerInitialize();
       this.showSurfaceFormFromUrlParameter();
       this.preloadIframe();
+      this._hideFormOnEsc();
     }
   }
 
@@ -1113,7 +1114,7 @@ class SurfaceEmbed {
     const embedClient = this;
     setTimeout(function () {
       embedClient.surface_popup_reference.style.display = "none";
-    }, 300);
+    }, 200);
   }
 
   embedPopup() {
@@ -1294,7 +1295,7 @@ class SurfaceEmbed {
         z-index: 99999;
         background-color: rgba(0,0,0,0.5);
         opacity: 0;
-        transition: opacity 0.3s ease;
+        transition: opacity 0.15s ease;
       }
 
       .surface-popup-content {
@@ -1308,7 +1309,7 @@ class SurfaceEmbed {
         padding: 0;
         box-shadow: 0px 0px 15px rgba(0,0,0,0.2);
         opacity: 0;
-        transition: transform 0.5s ease, opacity 0.5s ease;
+        transition: transform 0.2s ease, opacity 0.2s ease;
       }
 
       .surface-popup-content iframe {
@@ -1530,7 +1531,7 @@ class SurfaceEmbed {
         z-index: 99999;
         background-color: rgba(0,0,0,0.5);
         opacity: 0;
-        transition: opacity 0.3s ease;
+        transition: opacity 0.15s ease;
       }
 
       .surface-popup-content {
@@ -1543,7 +1544,7 @@ class SurfaceEmbed {
         background-color: transparent;
         border-radius: 15px;
         opacity: 0;
-        transition: transform 0.3s ease, opacity 0.3s ease;
+        transition: transform 0.15s ease, opacity 0.15s ease;
       }
 
       .surface-popup-content iframe {
@@ -1561,7 +1562,7 @@ class SurfaceEmbed {
       }
 
       #surface-iframe {
-        transition: opacity 0.3s ease-in-out;
+        transition: opacity 0.15s ease-in-out;
       }
 
       #surface-popup.active {
@@ -1655,7 +1656,6 @@ class SurfaceEmbed {
     `;
   }
 
-  // Form Input Trigger Initialization
   formInputTriggerInitialize() {
     const e = this.currentQuestionId;
     let forms = [];
@@ -1751,7 +1751,6 @@ class SurfaceEmbed {
     }
   }
 
-  // getter/setter for popupSize
   get popupSize() {
     return this._popupSize;
   }
@@ -1772,6 +1771,14 @@ class SurfaceEmbed {
     const params = SurfaceTagStore.getUrlParams();
     const previewMode = params?.surfaceDebug === "true";
     return previewMode;
+  }
+
+  _hideFormOnEsc() {
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        this.hideSurfaceForm();
+      }
+    });
   }
 }
 
