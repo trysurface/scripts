@@ -6,7 +6,7 @@
     <meta http-equiv="X-UA-Compatible" content="ie=edge" />
     <title>Input Trigger Embed Test - Surface Form</title>
     <link rel="stylesheet" href="common.css">
-    <script src="../surface_tag.js" site-id="cm5e6essv0002l603lv3eeqtw"></script>
+    <script src="../surface_tag.js" site-id="cllo318mt0003mb08hnp0f5zy"></script>
   </head>
   <body>
     <div class="container">
@@ -15,8 +15,8 @@
       
       <div class="config-section">
         <strong>Configuration:</strong><br>
-        Form Source: <code id="formSrc">https://dev.withsurface.com/s/cmhmh2ibp000xl40b0ynyiupg</code><br>
-        Environment ID: <code id="environmentId">cm5e6essv0002l603lv3eeqtw</code><br>
+        Form Source: <code id="formSrc">https://forms.withsurface.com/s/cmjren87f0022l40bqtyjvmbe</code><br>
+        Environment ID: <code id="environmentId">cllo318mt0003mb08hnp0f5zy</code><br>
         Debug Mode: <code id="debugMode">false</code> (add <code>?surfaceDebug=true</code> to enable)
       </div>
 
@@ -74,15 +74,32 @@
           </form>
         </div>
       </div>
+
+      <div class="section">
+        <h2>Stress Test: Input Trigger Embed</h2>
+        <p>Enter an email address and submit. The form will automatically open with the email pre-filled.</p>
+        <div class="form-input-trigger">
+          <form class="surface-form-handler surface-form-handler-stress-test">
+            <label for="email-input">Email Address:</label>
+            <input 
+              type="email" 
+              id="email-input" 
+              placeholder="Enter your email"
+              required
+            />
+            <button type="submit">Submit & Open Form</button>
+          </form>
+        </div>
+      </div>
     </div>
 
-    <script data-question-id="ormuNPSRZUYb"></script>
     <script src="event-monitor.js"></script>
     <script src="config.js"></script>
-    <script>
+    <script src="stressTest.js"></script>
+    <script data-question-id="NNnmMyOcCpUT">
       const { formSrc } =
         window.surfaceTestConfig || {
-          formSrc: "https://dev.withsurface.com/s/cmhmh2ibp000xl40b0ynyiupg",
+          formSrc: "https://forms.withsurface.com/s/cmjren87f0022l40bqtyjvmbe",
         };
       
       // Initialize event monitoring

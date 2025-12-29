@@ -1,7 +1,7 @@
 (() => {
   const DEFAULT_FORM_SRC =
-    "https://dev.withsurface.com/s/cmhmh2ibp000xl40b0ynyiupg";
-  const DEFAULT_ENVIRONMENT_ID = "cm5e6essv0002l603lv3eeqtw";
+    "https://forms.withsurface.com/s/cmjren87f0022l40bqtyjvmbe";
+  const DEFAULT_ENVIRONMENT_ID = "cllo318mt0003mb08hnp0f5zy";
   const searchParams = new URLSearchParams(window.location.search);
 
   const normalizeBoolean = (value) => {
