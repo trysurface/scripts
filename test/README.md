@@ -4,11 +4,6 @@ A comprehensive test suite for testing Surface Form embedding functionality, inc
 
 ## Getting Started
 
-### Prerequisites
-
-- A local development server (e.g., VS Code Live Server extension, `npx serve`, or any HTTP server)
-- Modern web browser with DevTools
-
 ### Running the Test Suite
 
 1. **Open in Live Server**
@@ -154,16 +149,3 @@ Default configuration is set in `config.js`:
 These can be overridden via URL parameters.
 
 ---
-
-## Testing Checklist
-
-- [ ] Test all embed types (popup, slideover, inline, input-trigger)
-- [ ] Verify postMessage events are logged correctly
-- [ ] Test input trigger with email validation
-- [ ] Test popup sizes (small, medium, large)
-- [ ] Test inline iframe visibility toggle
-- [ ] Verify lead identification and fingerprinting
-- [ ] Test cookie and URL parameter passing
-- [ ] Test prefill data functionality
-- [ ] Run stress tests and monitor performance
-
