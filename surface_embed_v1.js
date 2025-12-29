@@ -728,9 +728,11 @@ class SurfaceEmbed {
 
     this.log("info", "documentReferenceSelector set to " + this.documentReferenceSelector);
 
-    this._preload = [true, false, "pageLoad"].includes(options.preload)
+    const preloadOptions = ["true", "false", "pageLoad"];
+
+    this._preload = preloadOptions.includes(options.preload)
       ? options.preload
-      : true;
+      : "true";
     
     this.log("info", "preload set to " + this._preload);
 
@@ -934,9 +936,9 @@ class SurfaceEmbed {
   }
 
   preloadIframe() {
-    if (this.initialized || this._preload === false) return;
+    if (this.initialized || this._preload === "false") return;
     
-    if (this.initializeEmbed && this._preload === true) {
+    if (this.initializeEmbed && this._preload === "true") {
       const initWhenIdle = () => {
         if (this.initialized) return;
         if ("requestIdleCallback" in window) {
