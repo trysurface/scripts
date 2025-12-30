@@ -1,3 +1,4 @@
+import DOMPurify from 'dompurify';
 let SurfaceUsBrowserSpeedInitialized = false;
 let SurfaceSharedSessionId = null;
 let EnvironmentId = null;
