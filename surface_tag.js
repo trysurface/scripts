@@ -1554,8 +1554,15 @@ class SurfaceEmbed {
         height: 100%;
         border-radius: 15px;
       }
-
+      
       @media (min-width: 481px) {
+        .surface-popup-content {
+          width: 70%;
+          height: 60%;
+        }
+      }
+
+      @media (min-width: 1024px) {
         .surface-popup-content {
           width: ${desktopPopupDimensions.width};
           height: ${desktopPopupDimensions.height};
