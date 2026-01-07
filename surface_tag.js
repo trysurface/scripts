@@ -827,6 +827,101 @@ class SurfaceEmbed {
       this.showSurfaceFormFromUrlParameter();
       this.preloadIframe();
       this._hideFormOnEsc();
+      this._setupRouteChangeDetection();
+    }
+  }
+
+  _setupRouteChangeDetection() {
+    let currentUrl = window.location.href;
+
+    const handleRouteChange = () => {
+      const newUrl = window.location.href;
+      if (newUrl !== currentUrl) {
+        currentUrl = newUrl;
+        SurfaceTagStore.windowUrl = new URL(window.location.href).toString();
+        
+        this.setupClickHandlers();
+        this.formInputTriggerInitialize();
+        
+        if (SurfaceTagStore.debugMode) {
+          this.log("info", "Route changed, re-initialized handlers");
+        }
+      }
+    };
+
+    window.addEventListener("popstate", handleRouteChange);
+
+    const originalPushState = history.pushState;
+    const originalReplaceState = history.replaceState;
+
+    history.pushState = function(...args) {
+      originalPushState.apply(history, args);
+      setTimeout(handleRouteChange, 0);
+    };
+
+    history.replaceState = function(...args) {
+      originalReplaceState.apply(history, args);
+      setTimeout(handleRouteChange, 0);
+    };
+
+    if (typeof MutationObserver !== "undefined") {
+      const observer = new MutationObserver((mutations) => {
+        let shouldReinit = false;
+        
+        mutations.forEach((mutation) => {
+          mutation.addedNodes.forEach((node) => {
+            if (node.nodeType === 1) {
+              if (
+                node.matches && (
+                  node.matches("form.surface-form-handler") ||
+                  node.matches(this.documentReferenceSelector + this.target_element_class) ||
+                  node.querySelector("form.surface-form-handler") ||
+                  node.querySelector(this.documentReferenceSelector + this.target_element_class)
+                )
+              ) {
+                shouldReinit = true;
+              }
+            }
+          });
+        });
+
+        if (shouldReinit) {
+          clearTimeout(this._reinitTimeout);
+          this._reinitTimeout = setTimeout(() => {
+            const newUrl = window.location.href;
+            if (newUrl !== currentUrl) {
+              currentUrl = newUrl;
+              SurfaceTagStore.windowUrl = new URL(window.location.href).toString();
+            }
+            this.setupClickHandlers();
+            this.formInputTriggerInitialize();
+            
+            if (SurfaceTagStore.debugMode) {
+              this.log("info", "DOM changed, re-initialized handlers");
+            }
+          }, 100);
+        }
+      });
+
+      if (document.body) {
+        observer.observe(document.body, {
+          childList: true,
+          subtree: true
+        });
+      } else {
+        const bodyObserver = new MutationObserver(() => {
+          if (document.body) {
+            observer.observe(document.body, {
+              childList: true,
+              subtree: true
+            });
+            bodyObserver.disconnect();
+          }
+        });
+        bodyObserver.observe(document.documentElement, {
+          childList: true
+        });
+      }
     }
   }
 
@@ -909,6 +1004,10 @@ class SurfaceEmbed {
   }
 
   setupClickHandlers() {
+    if (this._clickHandler) {
+      document.removeEventListener("click", this._clickHandler);
+    }
+
     this._clickHandler = (event) => {
       const clickedButton = event.target.closest(
         this.documentReferenceSelector + this.target_element_class
@@ -1659,134 +1758,85 @@ class SurfaceEmbed {
   }
 
   formInputTriggerInitialize() {
-    const questionId = this.currentQuestionId;
-  
-    if (!questionId) {
-      this.log?.("warn", "Input-trigger initialized without questionId");
-      return;
-    }
-  
-    if (!this.processedForms) {
-      this.processedForms = new WeakSet();
-    }
-  
-    const EMAIL_SELECTOR = 'input[type="email"]';
-    const FORM_SELECTOR = "form.surface-form-handler";
-    const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/;
-  
-    const getPartialFilledData = () =>
-      Array.isArray(SurfaceTagStore.partialFilledData)
-        ? SurfaceTagStore.partialFilledData
-        : [];
-  
-    const upsertPartialData = (key, value) => {
-      const data = getPartialFilledData();
-      const indexMap = new Map(
-        data.map((entry, index) => [Object.keys(entry)[0], index])
-      );
-  
-      const newEntry = { [key]: value };
-  
-      if (indexMap.has(key)) {
-        data[indexMap.get(key)] = newEntry;
-      } else {
-        data.push(newEntry);
-      }
-  
-      SurfaceTagStore.partialFilledData = data;
-    };
-  
-    const handleValidEmailSubmit = (email) => {
-      upsertPartialData(`${questionId}_emailAddress`, email);
-      SurfaceTagStore.notifyIframe(null, "STORE_UPDATE");
-  
-      if (!this.initialized) {
-        this.initializeEmbed();
-      }
-  
-      this.showSurfaceForm();
-    };
-  
-    const createSubmitHandler = (form) => (event) => {
-      event.preventDefault();
-  
-      const emailInput = form.querySelector(EMAIL_SELECTOR);
-  
-      if (!emailInput) {
-        this.log?.("warn", "Email input not found in input-trigger form");
-        return;
-      }
-  
-      const emailValue = emailInput.value?.trim();
-  
-      if (!EMAIL_REGEX.test(emailValue)) {
-        emailInput.reportValidity();
-        return;
-      }
-  
-      handleValidEmailSubmit(emailValue);
-    };
-  
-    const createKeydownHandler = (form) => (event) => {
-      if (
-        event.key === "Enter" &&
-        event.target === form.querySelector(EMAIL_SELECTOR)
-      ) {
-        event.preventDefault();
-        form.dispatchEvent(new Event("submit", { cancelable: true }));
-      }
-    };
-  
-    const attachHandlersToForm = (form) => {
-      if (this.processedForms.has(form)) return;
-  
-      form.addEventListener("submit", createSubmitHandler(form));
-      form.addEventListener("keydown", createKeydownHandler(form));
-  
-      this.processedForms.add(form);
-    };
-  
-    const resolveTargetForms = (forms) => {
-      const matched = Array.from(forms).filter(
-        (form) => form.getAttribute("data-question-id") === questionId
-      );
-  
-      return matched.length > 0 ? matched : Array.from(forms);
-    };
-  
-    const processForms = (forms) => {
-      if (!forms || forms.length === 0) return;
-      resolveTargetForms(forms).forEach(attachHandlersToForm);
-    };
-  
-    processForms(document.querySelectorAll(FORM_SELECTOR));
-  
-    if (!this.formObserver && document.body) {
-      this.formObserver = new MutationObserver((mutations) => {
-        const newForms = [];
-  
-        mutations.forEach(({ addedNodes }) => {
-          addedNodes.forEach((node) => {
-            if (node.nodeType !== Node.ELEMENT_NODE) return;
-  
-            if (node.matches?.(FORM_SELECTOR)) {
-              newForms.push(node);
-            }
-  
-            node
-              .querySelectorAll?.(FORM_SELECTOR)
-              .forEach((form) => newForms.push(form));
-          });
-        });
-  
-        if (newForms.length > 0) {
-          processForms(newForms);
-        }
+    const e = this.currentQuestionId;
+    
+    if (this._formHandlers) {
+      this._formHandlers.forEach(({ form, submitHandler, keydownHandler }) => {
+        form.removeEventListener("submit", submitHandler);
+        form.removeEventListener("keydown", keydownHandler);
       });
-  
-      this.formObserver.observe(document.body, {
-        childList: true,
-        subtree: true,
+      this._formHandlers = [];
+    } else {
+      this._formHandlers = [];
+    }
+
+    let forms = [];
+
+    const allForms = document.querySelectorAll("form.surface-form-handler");
+    forms = Array.from(allForms).filter(
+      (form) => form.getAttribute("data-question-id") === e
+    );
+
+    if (forms.length === 0) {
+      forms = Array.from(allForms);
+    }
+
+    const handleSubmitCallback = (t) => (n) => {
+      n.preventDefault();
+      const o = t.querySelector('input[type="email"]'),
+        c = o?.value.trim();
+      if (o && /^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/.test(c)) {
+        const options = {
+          [`${e}_emailAddress`]: c,
+        };
+        if (options) {
+          const existingData = Array.isArray(SurfaceTagStore.partialFilledData)
+            ? SurfaceTagStore.partialFilledData
+            : [];
+
+          const dataMap = new Map();
+          existingData.forEach((entry, index) => {
+            const key = Object.keys(entry)[0];
+            dataMap.set(key, index);
+          });
+
+          Object.entries(options).forEach(([key, value]) => {
+            const newEntry = { [key]: value };
+
+            if (dataMap.has(key)) {
+              existingData[dataMap.get(key)] = newEntry;
+            } else {
+              existingData.push(newEntry);
+            }
+          });
+
+          SurfaceTagStore.partialFilledData = existingData;
+          SurfaceTagStore.notifyIframe(null, "STORE_UPDATE");
+          if (!this.initialized) {
+            this.initializeEmbed();
+          }
+          this.showSurfaceForm();
+        }
+      } else {
+        o?.reportValidity();
+      }
+    };
+
+    const handleKeyDownCallback = (t) => (n) => {
+      if (n.key === "Enter" && document.activeElement.type === "email") {
+        n.preventDefault();
+
+        t.dispatchEvent(new Event("submit", { cancelable: true }));
+      }
+    };
+
+    if (forms.length > 0) {
+      forms.forEach((form) => {
+        const submitHandler = handleSubmitCallback(form);
+        const keydownHandler = handleKeyDownCallback(form);
+        form.addEventListener("submit", submitHandler);
+        form.addEventListener("keydown", keydownHandler);
+        this._formHandlers.push({ form, submitHandler, keydownHandler });
       });
     }
   }
