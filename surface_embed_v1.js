@@ -1097,6 +1097,10 @@ class SurfaceEmbed {
       inline_iframe.frameBorder = "0";
       inline_iframe.allowFullscreen = true;
 
+      if (!this.iframe) {
+        this.iframe = inline_iframe;
+      }
+
       if (
         this.iframeInlineStyle &&
         typeof this.iframeInlineStyle === "object"
@@ -1127,6 +1131,10 @@ class SurfaceEmbed {
     const iframe = iframe_reference.querySelector("#surface-iframe");
     const spinner = iframe_reference.querySelector(".surface-loading-spinner");
     const closeBtn = iframe_reference.querySelector(".close-btn-container");
+
+    if (iframe) {
+      this.iframe = iframe;
+    }
 
     const optionsKey = JSON.stringify(options);
     
@@ -1259,6 +1267,7 @@ class SurfaceEmbed {
       const closeBtn = surface_popup.querySelector(".close-btn-container");
 
       if (iframe) {
+        this.iframe = iframe;
         this._cachedOptionsKey = JSON.stringify({});
 
         iframe.onload = () => {
@@ -1467,6 +1476,7 @@ class SurfaceEmbed {
     const closeBtn = surface_slideover.querySelector(".close-btn-container");
 
     if (iframe) {
+      this.iframe = iframe;
       this._cachedOptionsKey = JSON.stringify({});
 
       iframe.onload = () => {
@@ -1811,10 +1821,10 @@ class SurfaceEmbed {
           });
 
           SurfaceTagStore.partialFilledData = existingData;
-          SurfaceTagStore.notifyIframe(null, "STORE_UPDATE");
           if (!this.initialized) {
             this.initializeEmbed();
           }
+          SurfaceTagStore.notifyIframe(this.iframe, "STORE_UPDATE");
           this.showSurfaceForm();
         }
       } else {
