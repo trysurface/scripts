@@ -827,6 +827,101 @@ class SurfaceEmbed {
       this.showSurfaceFormFromUrlParameter();
       this.preloadIframe();
       this._hideFormOnEsc();
+      this._setupRouteChangeDetection();
+    }
+  }
+
+  _setupRouteChangeDetection() {
+    let currentUrl = window.location.href;
+
+    const handleRouteChange = () => {
+      const newUrl = window.location.href;
+      if (newUrl !== currentUrl) {
+        currentUrl = newUrl;
+        SurfaceTagStore.windowUrl = new URL(window.location.href).toString();
+        
+        this.setupClickHandlers();
+        this.formInputTriggerInitialize();
+        
+        if (SurfaceTagStore.debugMode) {
+          this.log("info", "Route changed, re-initialized handlers");
+        }
+      }
+    };
+
+    window.addEventListener("popstate", handleRouteChange);
+
+    const originalPushState = history.pushState;
+    const originalReplaceState = history.replaceState;
+
+    history.pushState = function(...args) {
+      originalPushState.apply(history, args);
+      setTimeout(handleRouteChange, 0);
+    };
+
+    history.replaceState = function(...args) {
+      originalReplaceState.apply(history, args);
+      setTimeout(handleRouteChange, 0);
+    };
+
+    if (typeof MutationObserver !== "undefined") {
+      const observer = new MutationObserver((mutations) => {
+        let shouldReinit = false;
+        
+        mutations.forEach((mutation) => {
+          mutation.addedNodes.forEach((node) => {
+            if (node.nodeType === 1) {
+              if (
+                node.matches && (
+                  node.matches("form.surface-form-handler") ||
+                  node.matches(this.documentReferenceSelector + this.target_element_class) ||
+                  node.querySelector("form.surface-form-handler") ||
+                  node.querySelector(this.documentReferenceSelector + this.target_element_class)
+                )
+              ) {
+                shouldReinit = true;
+              }
+            }
+          });
+        });
+
+        if (shouldReinit) {
+          clearTimeout(this._reinitTimeout);
+          this._reinitTimeout = setTimeout(() => {
+            const newUrl = window.location.href;
+            if (newUrl !== currentUrl) {
+              currentUrl = newUrl;
+              SurfaceTagStore.windowUrl = new URL(window.location.href).toString();
+            }
+            this.setupClickHandlers();
+            this.formInputTriggerInitialize();
+            
+            if (SurfaceTagStore.debugMode) {
+              this.log("info", "DOM changed, re-initialized handlers");
+            }
+          }, 100);
+        }
+      });
+
+      if (document.body) {
+        observer.observe(document.body, {
+          childList: true,
+          subtree: true
+        });
+      } else {
+        const bodyObserver = new MutationObserver(() => {
+          if (document.body) {
+            observer.observe(document.body, {
+              childList: true,
+              subtree: true
+            });
+            bodyObserver.disconnect();
+          }
+        });
+        bodyObserver.observe(document.documentElement, {
+          childList: true
+        });
+      }
     }
   }
 
@@ -909,6 +1004,10 @@ class SurfaceEmbed {
   }
 
   setupClickHandlers() {
+    if (this._clickHandler) {
+      document.removeEventListener("click", this._clickHandler);
+    }
+
     this._clickHandler = (event) => {
       const clickedButton = event.target.closest(
         this.documentReferenceSelector + this.target_element_class
@@ -998,6 +1097,10 @@ class SurfaceEmbed {
       inline_iframe.frameBorder = "0";
       inline_iframe.allowFullscreen = true;
 
+      if (!this.iframe) {
+        this.iframe = inline_iframe;
+      }
+
       if (
         this.iframeInlineStyle &&
         typeof this.iframeInlineStyle === "object"
@@ -1028,6 +1131,10 @@ class SurfaceEmbed {
     const iframe = iframe_reference.querySelector("#surface-iframe");
     const spinner = iframe_reference.querySelector(".surface-loading-spinner");
     const closeBtn = iframe_reference.querySelector(".close-btn-container");
+
+    if (iframe) {
+      this.iframe = iframe;
+    }
 
     const optionsKey = JSON.stringify(options);
     
@@ -1160,6 +1267,7 @@ class SurfaceEmbed {
       const closeBtn = surface_popup.querySelector(".close-btn-container");
 
       if (iframe) {
+        this.iframe = iframe;
         this._cachedOptionsKey = JSON.stringify({});
 
         iframe.onload = () => {
@@ -1368,6 +1476,7 @@ class SurfaceEmbed {
     const closeBtn = surface_slideover.querySelector(".close-btn-container");
 
     if (iframe) {
+      this.iframe = iframe;
       this._cachedOptionsKey = JSON.stringify({});
 
       iframe.onload = () => {
@@ -1660,6 +1769,17 @@ class SurfaceEmbed {
 
   formInputTriggerInitialize() {
     const e = this.currentQuestionId;
+    
+    if (this._formHandlers) {
+      this._formHandlers.forEach(({ form, submitHandler, keydownHandler }) => {
+        form.removeEventListener("submit", submitHandler);
+        form.removeEventListener("keydown", keydownHandler);
+      });
+      this._formHandlers = [];
+    } else {
+      this._formHandlers = [];
+    }
+
     let forms = [];
 
     const allForms = document.querySelectorAll("form.surface-form-handler");
@@ -1701,10 +1821,10 @@ class SurfaceEmbed {
           });
 
           SurfaceTagStore.partialFilledData = existingData;
-          SurfaceTagStore.notifyIframe(null, "STORE_UPDATE");
           if (!this.initialized) {
             this.initializeEmbed();
           }
+          SurfaceTagStore.notifyIframe(this.iframe, "STORE_UPDATE");
           this.showSurfaceForm();
         }
       } else {
@@ -1722,8 +1842,11 @@ class SurfaceEmbed {
 
     if (forms.length > 0) {
       forms.forEach((form) => {
-        form.addEventListener("submit", handleSubmitCallback(form));
-        form.addEventListener("keydown", handleKeyDownCallback(form));
+        const submitHandler = handleSubmitCallback(form);
+        const keydownHandler = handleKeyDownCallback(form);
+        form.addEventListener("submit", submitHandler);
+        form.addEventListener("keydown", keydownHandler);
+        this._formHandlers.push({ form, submitHandler, keydownHandler });
       });
     }
   }
