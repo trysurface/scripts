@@ -590,9 +590,11 @@ class SurfaceStore {
       "https://forms.withsurface.com",
       "https://app.withsurface.com",
       "https://dev.withsurface.com",
+      "http://localhost:3000",
     ];
 
     this._initializeMessageListener();
+    this._initializeUserJourneyTracking();
   }
 
   _initializeMessageListener = () => {
@@ -612,6 +614,10 @@ class SurfaceStore {
         } else {
           this.sendPayloadToIframes("LEAD_DATA_UPDATE");
         }
+      }
+      if (event.data.event === "CLEAR_USER_JOURNEY_DATA") {
+        this.log("info", "Clearing user journey");
+        this._clearUserJourney();
       }
     };
 
@@ -702,7 +708,108 @@ class SurfaceStore {
       questionIds: this.partialFilledData,
       urlParams: this.urlParams,
       surfaceLeadData: SurfaceGetLeadDataWithTTL(),
+      userJourney: this.userJourney,
     };
+  }
+
+  log(level, message) {
+    const prefix = "Surface Store :: ";
+    const fullMessage = prefix + message;
+    if (level == "info" && this.debugMode) {
+      console.log(fullMessage);
+    }
+    if (level == "warn") {
+      console.warn(fullMessage);
+    }
+    if (level == "error") {
+      console.error(fullMessage);
+    }
+  }
+
+  _initializeUserJourneyTracking() {
+    try {
+      const cookies =
+        Object.keys(this.cookies).length === 0
+          ? this.parseCookies()
+          : this.cookies;
+
+      const userJourneyCookie = cookies.userJourney;
+
+      if (userJourneyCookie) {
+        let userJourneyObject;
+        try {
+          userJourneyObject = JSON.parse(userJourneyCookie);
+          if (!Array.isArray(userJourneyObject)) {
+            userJourneyObject = [];
+          }
+        } catch (parseError) {
+          this.log(
+            "warn",
+            "Failed to parse userJourney cookie, starting fresh:",
+            parseError
+          );
+          userJourneyObject = [];
+        }
+
+        const currentUrl = window.location.href;
+        const lastEntry = userJourneyObject[userJourneyObject.length - 1];
+        const isDuplicatePageView =
+          lastEntry &&
+          lastEntry.type === "PAGE_VIEW" &&
+          lastEntry.payload &&
+          lastEntry.payload.url === currentUrl;
+
+        if (!isDuplicatePageView) {
+          userJourneyObject.push({
+            type: "PAGE_VIEW",
+            payload: {
+              url: currentUrl,
+              timestamp: new Date().toISOString(),
+            },
+          });
+
+          const userJourneyString = JSON.stringify(userJourneyObject);
+          document.cookie = `userJourney=${userJourneyString}; path=/; max-age=31536000; samesite=lax`;
+
+          cookies.userJourney = userJourneyString;
+          this.cookies = cookies;
+        } else {
+          this.cookies = cookies;
+        }
+
+        this.userJourney = userJourneyObject;
+      } else {
+        this.userJourney = [
+          {
+            type: "PAGE_VIEW",
+            payload: {
+              url: window.location.href,
+              timestamp: new Date().toISOString(),
+            },
+          },
+        ];
+
+        const userJourneyString = JSON.stringify(this.userJourney);
+        document.cookie = `userJourney=${userJourneyString}; path=/; max-age=31536000; samesite=lax`;
+
+        cookies.userJourney = userJourneyString;
+        this.cookies = cookies;
+      }
+
+      this.log("info", "User journey created: " + JSON.stringify(this.userJourney, null, 2));
+      this.log("info", "Cookies: " + JSON.stringify(this.cookies, null, 2));
+    } catch (error) {
+      this.log("error", "Error initializing user journey tracking:", error);
+      this.userJourney = [];
+    }
+  }
+
+  _clearUserJourney() {
+    document.cookie = "userJourney=; path=/; max-age=0; samesite=lax";
+    this.cookies.userJourney = null;
+    this.userJourney = [];
+    this.log("info", "User journey cleared");
+    this.log("info", "Cookies: " + JSON.stringify(this.cookies, null, 2));
   }
 }
 
@@ -726,14 +833,17 @@ class SurfaceEmbed {
     this._popupSize = options.popupSize || "medium";
     this.documentReferenceSelector = options.enforceIDSelector ? "#" : ".";
 
-    this.log("info", "documentReferenceSelector set to " + this.documentReferenceSelector);
+    this.log(
+      "info",
+      "documentReferenceSelector set to " + this.documentReferenceSelector
+    );
 
     const preloadOptions = ["true", "false", "pageLoad"];
 
     this._preload = preloadOptions.includes(options.preload)
       ? options.preload
       : "true";
-    
+
     this.log("info", "preload set to " + this._preload);
 
     this.styles = {
@@ -839,10 +949,10 @@ class SurfaceEmbed {
       if (newUrl !== currentUrl) {
         currentUrl = newUrl;
         SurfaceTagStore.windowUrl = new URL(window.location.href).toString();
-        
+
         this.setupClickHandlers();
         this.formInputTriggerInitialize();
-        
+
         if (SurfaceTagStore.debugMode) {
           this.log("info", "Route changed, re-initialized handlers");
         }
@@ -854,12 +964,12 @@ class SurfaceEmbed {
     const originalPushState = history.pushState;
     const originalReplaceState = history.replaceState;
 
-    history.pushState = function(...args) {
+    history.pushState = function (...args) {
       originalPushState.apply(history, args);
       setTimeout(handleRouteChange, 0);
     };
 
-    history.replaceState = function(...args) {
+    history.replaceState = function (...args) {
       originalReplaceState.apply(history, args);
       setTimeout(handleRouteChange, 0);
     };
@@ -867,17 +977,20 @@ class SurfaceEmbed {
     if (typeof MutationObserver !== "undefined") {
       const observer = new MutationObserver((mutations) => {
         let shouldReinit = false;
-        
+
         mutations.forEach((mutation) => {
           mutation.addedNodes.forEach((node) => {
             if (node.nodeType === 1) {
               if (
-                node.matches && (
-                  node.matches("form.surface-form-handler") ||
-                  node.matches(this.documentReferenceSelector + this.target_element_class) ||
+                node.matches &&
+                (node.matches("form.surface-form-handler") ||
+                  node.matches(
+                    this.documentReferenceSelector + this.target_element_class
+                  ) ||
                   node.querySelector("form.surface-form-handler") ||
-                  node.querySelector(this.documentReferenceSelector + this.target_element_class)
-                )
+                  node.querySelector(
+                    this.documentReferenceSelector + this.target_element_class
+                  ))
               ) {
                 shouldReinit = true;
               }
@@ -891,11 +1004,13 @@ class SurfaceEmbed {
             const newUrl = window.location.href;
             if (newUrl !== currentUrl) {
               currentUrl = newUrl;
-              SurfaceTagStore.windowUrl = new URL(window.location.href).toString();
+              SurfaceTagStore.windowUrl = new URL(
+                window.location.href
+              ).toString();
             }
             this.setupClickHandlers();
             this.formInputTriggerInitialize();
-            
+
             if (SurfaceTagStore.debugMode) {
               this.log("info", "DOM changed, re-initialized handlers");
             }
@@ -906,20 +1021,20 @@ class SurfaceEmbed {
       if (document.body) {
         observer.observe(document.body, {
           childList: true,
-          subtree: true
+          subtree: true,
         });
       } else {
         const bodyObserver = new MutationObserver(() => {
           if (document.body) {
             observer.observe(document.body, {
               childList: true,
-              subtree: true
+              subtree: true,
             });
             bodyObserver.disconnect();
           }
         });
         bodyObserver.observe(document.documentElement, {
-          childList: true
+          childList: true,
         });
       }
     }
@@ -1036,7 +1151,7 @@ class SurfaceEmbed {
 
   preloadIframe() {
     if (this.initialized || this._preload === "false") return;
-    
+
     if (this.initializeEmbed && this._preload === "true") {
       const initWhenIdle = () => {
         if (this.initialized) return;
@@ -1137,7 +1252,7 @@ class SurfaceEmbed {
     }
 
     const optionsKey = JSON.stringify(options);
-    
+
     // If iframe is preloaded with same options, just ensure it's visible
     if (this._cachedOptionsKey === optionsKey && iframe && iframe.src) {
       // If iframe finished preloading, show it immediately
@@ -1769,7 +1884,6 @@ class SurfaceEmbed {
 
   formInputTriggerInitialize() {
     const e = this.currentQuestionId;
-    
     if (this._formHandlers) {
       this._formHandlers.forEach(({ form, submitHandler, keydownHandler }) => {
         form.removeEventListener("submit", submitHandler);
