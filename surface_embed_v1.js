@@ -1006,11 +1006,12 @@ class SurfaceStore {
         currentUrl = newUrl;
         this.windowUrl = new URL(window.location.href).toString();
 
-        // Update user journey on route change
         this._updateUserJourneyOnRouteChange(newUrl);
 
+        this._initializeMessageListener();
+
         if (this.debugMode) {
-          this.log("info", "Route changed, updated user journey");
+          this.log("info", "Route changed, updated user journey and re-initialized message listener");
         }
       }
     };
