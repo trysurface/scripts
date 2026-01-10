@@ -598,6 +598,7 @@ class SurfaceStore {
 
     this._initializeMessageListener();
     this._initializeUserJourneyTracking();
+    this._setupRouteChangeDetection();
   }
 
   _initializeMessageListener = () => {
@@ -952,6 +953,82 @@ class SurfaceStore {
       this.log("error", "Error initializing user journey tracking:", error);
       this.userJourney = [];
     }
+  }
+
+  _updateUserJourneyOnRouteChange(newUrl) {
+    try {
+      if (!this.userJourney || !Array.isArray(this.userJourney)) {
+        // If user journey is not initialized, initialize it first
+        this._initializeUserJourneyTracking();
+        return;
+      }
+
+      const currentUrl = newUrl || window.location.href;
+      const lastEntry = this.userJourney[this.userJourney.length - 1];
+      const isDuplicatePageView =
+        lastEntry &&
+        lastEntry.type === "PAGE_VIEW" &&
+        lastEntry.payload &&
+        lastEntry.payload.url === currentUrl;
+
+      if (!isDuplicatePageView) {
+        this.userJourney.push({
+          type: "PAGE_VIEW",
+          payload: {
+            url: currentUrl,
+            timestamp: new Date().toISOString(),
+          },
+        });
+
+        const userJourneyString = JSON.stringify(this.userJourney);
+        this._setChunkedCookie(this.userJourneyCookieName, userJourneyString);
+
+        const cookies =
+          Object.keys(this.cookies).length === 0
+            ? this.parseCookies()
+            : this.cookies;
+        cookies.userJourney = userJourneyString;
+        this.cookies = cookies;
+
+        this.log("info", "User journey updated on route change: " + currentUrl);
+      }
+    } catch (error) {
+      this.log("error", "Error updating user journey on route change:", error);
+    }
+  }
+
+  _setupRouteChangeDetection() {
+    let currentUrl = window.location.href;
+
+    const handleRouteChange = () => {
+      const newUrl = window.location.href;
+      if (newUrl !== currentUrl) {
+        currentUrl = newUrl;
+        this.windowUrl = new URL(window.location.href).toString();
+
+        // Update user journey on route change
+        this._updateUserJourneyOnRouteChange(newUrl);
+
+        if (this.debugMode) {
+          this.log("info", "Route changed, updated user journey");
+        }
+      }
+    };
+
+    window.addEventListener("popstate", handleRouteChange);
+
+    const originalPushState = history.pushState;
+    const originalReplaceState = history.replaceState;
+
+    history.pushState = function (...args) {
+      originalPushState.apply(history, args);
+      setTimeout(handleRouteChange, 0);
+    };
+
+    history.replaceState = function (...args) {
+      originalReplaceState.apply(history, args);
+      setTimeout(handleRouteChange, 0);
+    };
   }
 
   _clearUserJourney() {
