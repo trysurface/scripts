@@ -591,6 +591,7 @@ class SurfaceStore {
       "https://app.withsurface.com",
       "https://dev.withsurface.com",
       "http://localhost:3000",
+      "https://surfaceforms-git-add-user-journey-tracking-surface.vercel.app"
     ];
     this.userJourneyMaxChunkSize = 3500; // 3.5KB
     this.userJourneyCookieName = "surface_user_journey";
