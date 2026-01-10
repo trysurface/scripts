@@ -592,6 +592,8 @@ class SurfaceStore {
       "https://dev.withsurface.com",
       "http://localhost:3000",
     ];
+    this.userJourneyMaxChunkSize = 3500; // 3.5KB
+    this.userJourneyCookieName = "surface_user_journey";
 
     this._initializeMessageListener();
     this._initializeUserJourneyTracking();
@@ -690,10 +692,156 @@ class SurfaceStore {
       if (firstEqualIndex !== -1) {
         const key = trimmedCookie.substring(0, firstEqualIndex);
         const value = trimmedCookie.substring(firstEqualIndex + 1);
-        if (key && value !== undefined) cookies[key] = value;
+        if (key && value !== undefined) {
+          try {
+            cookies[key] = decodeURIComponent(value);
+          } catch (e) {
+            cookies[key] = value;
+          }
+        }
       }
     });
     return cookies;
+  }
+
+  _setCookie(name, value, options = {}) {
+    const encodedValue = encodeURIComponent(value);
+    const path = options.path || "/";
+    const maxAge = options.maxAge || 31536000;
+    const sameSite = options.sameSite || "lax";
+    document.cookie = `${name}=${encodedValue}; path=${path}; max-age=${maxAge}; samesite=${sameSite}`;
+  }
+
+  _getCookie(name) {
+    const cookies = this.parseCookies();
+    return cookies[name] || null;
+  }
+
+  _deleteCookie(name) {
+    document.cookie = `${name}=; path=/; max-age=0; samesite=lax`;
+  }
+
+  _setChunkedCookie(baseName, value) {
+    const MAX_COOKIE_SIZE = this.userJourneyMaxChunkSize;
+    const encodedValue = encodeURIComponent(value);
+    const cookieNames = [];
+
+    if (encodedValue.length <= MAX_COOKIE_SIZE) {
+      this._setCookie(baseName, value);
+      cookieNames.push(baseName);
+      
+      this._cleanupOldChunks(baseName, 1);
+      
+      return cookieNames;
+    }
+
+    let chunkIndex = 0;
+    let offset = 0;
+
+    while (offset < encodedValue.length) {
+      let chunkEnd = Math.min(offset + MAX_COOKIE_SIZE, encodedValue.length);
+      
+      if (chunkEnd < encodedValue.length) {
+        for (let i = 0; i < 3 && chunkEnd > offset; i++) {
+          const char = encodedValue[chunkEnd - i];
+          if (char === "%") {
+            chunkEnd = chunkEnd - i - 1;
+            break;
+          }
+        }
+        
+        if (chunkEnd < encodedValue.length - 2) {
+          const nextChar = encodedValue[chunkEnd];
+          if (nextChar === "%") {
+          } else if (encodedValue[chunkEnd - 1] === "%") {
+            chunkEnd--;
+          }
+        }
+      }
+
+      const chunkEncoded = encodedValue.substring(offset, chunkEnd);
+      const chunkName = chunkIndex === 0 ? baseName : `${baseName}_${chunkIndex}`;
+      
+      document.cookie = `${chunkName}=${chunkEncoded}; path=/; max-age=31536000; samesite=lax`;
+      cookieNames.push(chunkName);
+
+      offset = chunkEnd;
+      chunkIndex++;
+    }
+
+    this._cleanupOldChunks(baseName, chunkIndex);
+
+    return cookieNames;
+  }
+
+  _cleanupOldChunks(baseName, startIndex) {
+    let oldChunkIndex = startIndex;
+    while (true) {
+      const oldChunkName = `${baseName}_${oldChunkIndex}`;
+      const oldValue = this._getCookieRaw(oldChunkName);
+      if (oldValue === null) {
+        break;
+      }
+      this._deleteCookie(oldChunkName);
+      oldChunkIndex++;
+    }
+  }
+
+  _getCookieRaw(name) {
+    const allCookies = document.cookie.split(";");
+    for (const cookie of allCookies) {
+      const trimmedCookie = cookie.trim();
+      const firstEqualIndex = trimmedCookie.indexOf("=");
+      if (firstEqualIndex !== -1) {
+        const key = trimmedCookie.substring(0, firstEqualIndex);
+        if (key === name) {
+          return trimmedCookie.substring(firstEqualIndex + 1);
+        }
+      }
+    }
+    return null;
+  }
+
+  _getChunkedCookie(baseName) {
+    const singleValueRaw = this._getCookieRaw(baseName);
+    if (singleValueRaw !== null) {
+      const chunk1Raw = this._getCookieRaw(`${baseName}_1`);
+      if (chunk1Raw === null) {
+        try {
+          return decodeURIComponent(singleValueRaw);
+        } catch (e) {
+          this.log("warn", `Failed to decode single cookie ${baseName}`);
+          return null;
+        }
+      }
+    }
+
+    const chunks = [];
+    let chunkIndex = 0;
+
+    while (true) {
+      const chunkName = chunkIndex === 0 ? baseName : `${baseName}_${chunkIndex}`;
+      const chunkValueRaw = this._getCookieRaw(chunkName);
+      
+      if (chunkValueRaw === null) {
+        break;
+      }
+
+      chunks.push(chunkValueRaw);
+      chunkIndex++;
+    }
+
+    if (chunks.length === 0) {
+      return null;
+    }
+
+    const mergedEncoded = chunks.join("");
+    try {
+      return decodeURIComponent(mergedEncoded);
+    } catch (e) {
+      this.log("warn", `Failed to decode merged cookie chunks for ${baseName}`);
+      return null;
+    }
   }
 
   getPayload() {
@@ -733,12 +881,12 @@ class SurfaceStore {
           ? this.parseCookies()
           : this.cookies;
 
-      const userJourneyCookie = cookies.userJourney;
+      const userJourneyCookieValue = this._getChunkedCookie(this.userJourneyCookieName);
 
-      if (userJourneyCookie) {
+      if (userJourneyCookieValue) {
         let userJourneyObject;
         try {
-          userJourneyObject = JSON.parse(userJourneyCookie);
+          userJourneyObject = JSON.parse(userJourneyCookieValue);
           if (!Array.isArray(userJourneyObject)) {
             userJourneyObject = [];
           }
@@ -769,11 +917,12 @@ class SurfaceStore {
           });
 
           const userJourneyString = JSON.stringify(userJourneyObject);
-          document.cookie = `userJourney=${userJourneyString}; path=/; max-age=31536000; samesite=lax`;
+          this._setChunkedCookie(this.userJourneyCookieName, userJourneyString);
 
           cookies.userJourney = userJourneyString;
           this.cookies = cookies;
         } else {
+          cookies.userJourney = userJourneyCookieValue;
           this.cookies = cookies;
         }
 
@@ -790,7 +939,7 @@ class SurfaceStore {
         ];
 
         const userJourneyString = JSON.stringify(this.userJourney);
-        document.cookie = `userJourney=${userJourneyString}; path=/; max-age=31536000; samesite=lax`;
+        this._setChunkedCookie(this.userJourneyCookieName, userJourneyString);
 
         cookies.userJourney = userJourneyString;
         this.cookies = cookies;
@@ -805,7 +954,19 @@ class SurfaceStore {
   }
 
   _clearUserJourney() {
-    document.cookie = "userJourney=; path=/; max-age=0; samesite=lax";
+    this._deleteCookie(this.userJourneyCookieName);
+    
+    let chunkIndex = 1;
+    while (true) {
+      const chunkName = `${this.userJourneyCookieName}_${chunkIndex}`;
+      const chunkValue = this._getCookie(chunkName);
+      if (chunkValue === null) {
+        break;
+      }
+      this._deleteCookie(chunkName);
+      chunkIndex++;
+    }
+
     this.cookies.userJourney = null;
     this.userJourney = [];
     this.log("info", "User journey cleared");
