@@ -709,7 +709,7 @@ class SurfaceStore {
   _setCookie(name, value, options = {}) {
     const encodedValue = encodeURIComponent(value);
     const path = options.path || "/";
-    const maxAge = options.maxAge || 31536000;
+    const maxAge = options.maxAge || 604800;
     const sameSite = options.sameSite || "lax";
     document.cookie = `${name}=${encodedValue}; path=${path}; max-age=${maxAge}; samesite=${sameSite}`;
   }
@@ -764,7 +764,7 @@ class SurfaceStore {
       const chunkEncoded = encodedValue.substring(offset, chunkEnd);
       const chunkName = chunkIndex === 0 ? baseName : `${baseName}_${chunkIndex}`;
       
-      document.cookie = `${chunkName}=${chunkEncoded}; path=/; max-age=31536000; samesite=lax`;
+      document.cookie = `${chunkName}=${chunkEncoded}; path=/; max-age=604800; samesite=lax`;
       cookieNames.push(chunkName);
 
       offset = chunkEnd;
