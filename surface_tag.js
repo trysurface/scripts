@@ -1008,6 +1008,7 @@ class SurfaceStore {
 
         this._updateUserJourneyOnRouteChange(newUrl);
 
+        this.sendPayloadToIframes("STORE_UPDATE");
         this._initializeMessageListener();
 
         if (this.debugMode) {
