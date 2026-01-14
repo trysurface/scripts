@@ -590,8 +590,6 @@ class SurfaceStore {
       "https://forms.withsurface.com",
       "https://app.withsurface.com",
       "https://dev.withsurface.com",
-      "http://localhost:3000",
-      "https://surfaceforms-git-add-user-journey-tracking-surface.vercel.app"
     ];
     this.userJourneyMaxChunkSize = 3500; // 3.5KB
     this.userJourneyCookieName = "surface_user_journey";
@@ -723,8 +721,7 @@ class SurfaceStore {
     document.cookie = `${name}=; path=/; max-age=0; samesite=lax`;
   }
 
-  _setChunkedCookie(baseName, value) {
-    const MAX_COOKIE_SIZE = this.userJourneyMaxChunkSize;
+  _setChunkedCookie(baseName, value, MAX_COOKIE_SIZE = this.userJourneyMaxChunkSize) {
     const encodedValue = encodeURIComponent(value);
     const cookieNames = [];
 
@@ -919,7 +916,7 @@ class SurfaceStore {
           });
 
           const userJourneyString = JSON.stringify(userJourneyObject);
-          this._setChunkedCookie(this.userJourneyCookieName, userJourneyString);
+          this._setChunkedCookie(this.userJourneyCookieName, userJourneyString, this.userJourneyMaxChunkSize);
 
           cookies.userJourney = userJourneyString;
           this.cookies = cookies;
@@ -941,7 +938,7 @@ class SurfaceStore {
         ];
 
         const userJourneyString = JSON.stringify(this.userJourney);
-        this._setChunkedCookie(this.userJourneyCookieName, userJourneyString);
+        this._setChunkedCookie(this.userJourneyCookieName, userJourneyString, this.userJourneyMaxChunkSize);
 
         cookies.userJourney = userJourneyString;
         this.cookies = cookies;
@@ -981,7 +978,7 @@ class SurfaceStore {
         });
 
         const userJourneyString = JSON.stringify(this.userJourney);
-        this._setChunkedCookie(this.userJourneyCookieName, userJourneyString);
+        this._setChunkedCookie(this.userJourneyCookieName, userJourneyString, this.userJourneyMaxChunkSize);
 
         const cookies =
           Object.keys(this.cookies).length === 0
