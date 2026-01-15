@@ -593,6 +593,10 @@ class SurfaceStore {
     ];
     this.userJourneyMaxChunkSize = 3500; // 3.5KB
     this.userJourneyCookieName = "surface_user_journey";
+    this.userDefinedMaxPageVisits = document.currentScript?.getAttribute("data-max-page-visits") || null;
+    this.userJourneyMaxPageVisits = this.userDefinedMaxPageVisits ? parseInt(this.userDefinedMaxPageVisits) : 15;
+
+    this.log("info", `User journey max page visits: ${this.userJourneyMaxPageVisits}`);
 
     this._initializeMessageListener();
     this._initializeUserJourneyTracking();
@@ -915,6 +919,9 @@ class SurfaceStore {
             },
           });
 
+          // Enforce the max page visits limit (sliding window, preserving first visit)
+          userJourneyObject = this._enforceUserJourneyLimit(userJourneyObject);
+
           const userJourneyString = JSON.stringify(userJourneyObject);
           this._setChunkedCookie(this.userJourneyCookieName, userJourneyString, this.userJourneyMaxChunkSize);
 
@@ -976,6 +983,8 @@ class SurfaceStore {
             timestamp: new Date().toISOString(),
           },
         });
+
+        this.userJourney = this._enforceUserJourneyLimit(this.userJourney);
 
         const userJourneyString = JSON.stringify(this.userJourney);
         this._setChunkedCookie(this.userJourneyCookieName, userJourneyString, this.userJourneyMaxChunkSize);
@@ -1048,6 +1057,30 @@ class SurfaceStore {
     this.userJourney = [];
     this.log("info", "User journey cleared");
     this.log("info", "Cookies: " + JSON.stringify(this.cookies, null, 2));
+  }
+
+  /**
+   * Enforces the max page visits limit using a sliding window approach.
+   * - First visit (position 0) is always preserved
+   * - When limit is exceeded, removes the oldest entry after the first one (position 1)
+   * @param {Array} userJourneyArray - The user journey array to enforce limit on
+   * @returns {Array} - The trimmed user journey array
+   */
+  _enforceUserJourneyLimit(userJourneyArray) {
+    if (!Array.isArray(userJourneyArray)) {
+      return userJourneyArray;
+    }
+
+    if (userJourneyArray.length <= this.userJourneyMaxPageVisits) {
+      return userJourneyArray;
+    }
+
+    while (userJourneyArray.length > this.userJourneyMaxPageVisits) {
+      userJourneyArray.splice(1, 1);
+    }
+
+    this.log("info", `User journey trimmed to ${this.userJourneyMaxPageVisits} entries (first visit preserved)`);
+    return userJourneyArray;
   }
 }
 
