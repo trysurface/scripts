@@ -593,6 +593,9 @@ class SurfaceStore {
     ];
     this.userJourneyMaxChunkSize = 3500; // 3.5KB
     this.userJourneyCookieName = "surface_user_journey";
+    this.userJourneyLocalStorageKey = "surface_user_journey";
+    this.userJourneyMaxEntries = 100;
+    this.userJourneyMaxCookieChunks = 2;
 
     this._initializeMessageListener();
     this._initializeUserJourneyTracking();
@@ -704,6 +707,98 @@ class SurfaceStore {
     return cookies;
   }
 
+  async _compressString(str) {
+    try {
+      if (typeof CompressionStream !== 'undefined') {
+        const encoder = new TextEncoder();
+        const stream = new CompressionStream('gzip');
+        const writer = stream.writable.getWriter();
+        const reader = stream.readable.getReader();
+        
+        writer.write(encoder.encode(str));
+        writer.close();
+        
+        const chunks = [];
+        let done = false;
+        while (!done) {
+          const { value, done: doneReading } = await reader.read();
+          done = doneReading;
+          if (value) chunks.push(value);
+        }
+        
+        const compressed = new Uint8Array(chunks.reduce((acc, chunk) => acc + chunk.length, 0));
+        let offset = 0;
+        for (const chunk of chunks) {
+          compressed.set(chunk, offset);
+          offset += chunk.length;
+        }
+        
+        let binaryString = '';
+        for (let i = 0; i < compressed.length; i++) {
+          binaryString += String.fromCharCode(compressed[i]);
+        }
+        return btoa(binaryString);
+      }
+    } catch (e) {
+      this.log("warn", "CompressionStream not available, using minified JSON");
+    }
+    
+    try {
+      const parsed = JSON.parse(str);
+      const minified = JSON.stringify(parsed);
+      return btoa(unescape(encodeURIComponent(minified)));
+    } catch (e) {
+      return btoa(unescape(encodeURIComponent(str)));
+    }
+  }
+
+  async _decompressString(compressedStr) {
+    try {
+      const binaryString = atob(compressedStr);
+      
+      if (typeof DecompressionStream !== 'undefined') {
+        try {
+          const bytes = new Uint8Array(binaryString.length);
+          for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+          }
+          
+          const stream = new DecompressionStream('gzip');
+          const writer = stream.writable.getWriter();
+          const reader = stream.readable.getReader();
+          
+          writer.write(bytes);
+          writer.close();
+          
+          const chunks = [];
+          let done = false;
+          while (!done) {
+            const { value, done: doneReading } = await reader.read();
+            done = doneReading;
+            if (value) chunks.push(value);
+          }
+          
+          const decompressed = new Uint8Array(chunks.reduce((acc, chunk) => acc + chunk.length, 0));
+          let offset = 0;
+          for (const chunk of chunks) {
+            decompressed.set(chunk, offset);
+            offset += chunk.length;
+          }
+          
+          const decoder = new TextDecoder();
+          return decoder.decode(decompressed);
+        } catch (e) {
+          return decodeURIComponent(escape(binaryString));
+        }
+      } else {
+        return decodeURIComponent(escape(binaryString));
+      }
+    } catch (e) {
+      this.log("warn", "Failed to decode base64, treating as uncompressed data");
+      return compressedStr;
+    }
+  }
+
   _setCookie(name, value, options = {}) {
     const encodedValue = encodeURIComponent(value);
     const path = options.path || "/";
@@ -721,12 +816,32 @@ class SurfaceStore {
     document.cookie = `${name}=; path=/; max-age=0; samesite=lax`;
   }
 
-  _setChunkedCookie(baseName, value, MAX_COOKIE_SIZE = this.userJourneyMaxChunkSize) {
-    const encodedValue = encodeURIComponent(value);
+  async _setChunkedCookie(baseName, value, MAX_COOKIE_SIZE = this.userJourneyMaxChunkSize) {
+    const compressedValue = await this._compressString(value);
+    const encodedValue = encodeURIComponent(compressedValue);
     const cookieNames = [];
 
+    let localStorageSuccess = false;
+    try {
+      localStorage.setItem(this.userJourneyLocalStorageKey, compressedValue);
+      localStorageSuccess = true;
+    } catch (e) {
+      if (e.name === 'QuotaExceededError' || e.code === 22) {
+        this.log("warn", "localStorage quota exceeded, clearing and retrying...");
+        try {
+          localStorage.removeItem(this.userJourneyLocalStorageKey);
+          localStorage.setItem(this.userJourneyLocalStorageKey, compressedValue);
+          localStorageSuccess = true;
+        } catch (retryError) {
+          this.log("warn", "localStorage retry failed, using cookies only:", retryError);
+        }
+      } else {
+        this.log("warn", "Failed to store in localStorage, using cookies only:", e);
+      }
+    }
+
     if (encodedValue.length <= MAX_COOKIE_SIZE) {
-      this._setCookie(baseName, value);
+      this._setCookie(baseName, compressedValue);
       cookieNames.push(baseName);
       
       this._cleanupOldChunks(baseName, 1);
@@ -737,7 +852,7 @@ class SurfaceStore {
     let chunkIndex = 0;
     let offset = 0;
 
-    while (offset < encodedValue.length) {
+    while (offset < encodedValue.length && chunkIndex < this.userJourneyMaxCookieChunks) {
       let chunkEnd = Math.min(offset + MAX_COOKIE_SIZE, encodedValue.length);
       
       if (chunkEnd < encodedValue.length) {
@@ -766,6 +881,10 @@ class SurfaceStore {
 
       offset = chunkEnd;
       chunkIndex++;
+    }
+
+    if (offset < encodedValue.length) {
+      this.log("info", "Cookie storage truncated due to chunk limit, full data in localStorage");
     }
 
     this._cleanupOldChunks(baseName, chunkIndex);
@@ -801,13 +920,40 @@ class SurfaceStore {
     return null;
   }
 
-  _getChunkedCookie(baseName) {
+  async _getChunkedCookie(baseName) {
+    try {
+      const localStorageValue = localStorage.getItem(this.userJourneyLocalStorageKey);
+      if (localStorageValue !== null) {
+        try {
+          const decompressed = await this._decompressString(localStorageValue);
+          return decompressed;
+        } catch (e) {
+          this.log("warn", "Failed to decompress localStorage value, treating as uncompressed");
+          return localStorageValue;
+        }
+      }
+    } catch (e) {
+      this.log("warn", "Failed to read from localStorage, falling back to cookies:", e);
+    }
+
     const singleValueRaw = this._getCookieRaw(baseName);
     if (singleValueRaw !== null) {
       const chunk1Raw = this._getCookieRaw(`${baseName}_1`);
       if (chunk1Raw === null) {
         try {
-          return decodeURIComponent(singleValueRaw);
+          const decoded = decodeURIComponent(singleValueRaw);
+          let decompressed;
+          try {
+            decompressed = await this._decompressString(decoded);
+          } catch (e) {
+            this.log("warn", "Cookie data appears uncompressed, using as-is");
+            decompressed = decoded;
+          }
+          try {
+            localStorage.setItem(this.userJourneyLocalStorageKey, decoded);
+          } catch (e) {
+          }
+          return decompressed;
         } catch (e) {
           this.log("warn", `Failed to decode single cookie ${baseName}`);
           return null;
@@ -836,7 +982,21 @@ class SurfaceStore {
 
     const mergedEncoded = chunks.join("");
     try {
-      return decodeURIComponent(mergedEncoded);
+      const decoded = decodeURIComponent(mergedEncoded);
+      let decompressed;
+      try {
+        decompressed = await this._decompressString(decoded);
+      } catch (e) {
+        this.log("warn", "Cookie chunks appear uncompressed, using as-is");
+        decompressed = decoded;
+      }
+      try {
+        localStorage.setItem(this.userJourneyLocalStorageKey, decoded);
+        this._deleteCookie(baseName);
+        this._cleanupOldChunks(baseName, 1);
+      } catch (e) {
+      }
+      return decompressed;
     } catch (e) {
       this.log("warn", `Failed to decode merged cookie chunks for ${baseName}`);
       return null;
@@ -873,14 +1033,14 @@ class SurfaceStore {
     }
   }
 
-  _initializeUserJourneyTracking() {
+  async _initializeUserJourneyTracking() {
     try {
       const cookies =
         Object.keys(this.cookies).length === 0
           ? this.parseCookies()
           : this.cookies;
 
-      const userJourneyCookieValue = this._getChunkedCookie(this.userJourneyCookieName);
+      const userJourneyCookieValue = await this._getChunkedCookie(this.userJourneyCookieName);
 
       if (userJourneyCookieValue) {
         let userJourneyObject;
@@ -915,8 +1075,12 @@ class SurfaceStore {
             },
           });
 
+          if (userJourneyObject.length > this.userJourneyMaxEntries) {
+            userJourneyObject = userJourneyObject.slice(-this.userJourneyMaxEntries);
+          }
+
           const userJourneyString = JSON.stringify(userJourneyObject);
-          this._setChunkedCookie(this.userJourneyCookieName, userJourneyString, this.userJourneyMaxChunkSize);
+          await this._setChunkedCookie(this.userJourneyCookieName, userJourneyString, this.userJourneyMaxChunkSize);
 
           cookies.userJourney = userJourneyString;
           this.cookies = cookies;
@@ -938,7 +1102,7 @@ class SurfaceStore {
         ];
 
         const userJourneyString = JSON.stringify(this.userJourney);
-        this._setChunkedCookie(this.userJourneyCookieName, userJourneyString, this.userJourneyMaxChunkSize);
+        await this._setChunkedCookie(this.userJourneyCookieName, userJourneyString, this.userJourneyMaxChunkSize);
 
         cookies.userJourney = userJourneyString;
         this.cookies = cookies;
@@ -952,11 +1116,10 @@ class SurfaceStore {
     }
   }
 
-  _updateUserJourneyOnRouteChange(newUrl) {
+  async _updateUserJourneyOnRouteChange(newUrl) {
     try {
       if (!this.userJourney || !Array.isArray(this.userJourney)) {
-        // If user journey is not initialized, initialize it first
-        this._initializeUserJourneyTracking();
+        await this._initializeUserJourneyTracking();
         return;
       }
 
@@ -977,8 +1140,12 @@ class SurfaceStore {
           },
         });
 
+        if (this.userJourney.length > this.userJourneyMaxEntries) {
+          this.userJourney = this.userJourney.slice(-this.userJourneyMaxEntries);
+        }
+
         const userJourneyString = JSON.stringify(this.userJourney);
-        this._setChunkedCookie(this.userJourneyCookieName, userJourneyString, this.userJourneyMaxChunkSize);
+        await this._setChunkedCookie(this.userJourneyCookieName, userJourneyString, this.userJourneyMaxChunkSize);
 
         const cookies =
           Object.keys(this.cookies).length === 0
@@ -1031,6 +1198,11 @@ class SurfaceStore {
   }
 
   _clearUserJourney() {
+    try {
+      localStorage.removeItem(this.userJourneyLocalStorageKey);
+    } catch (e) {
+    }
+
     this._deleteCookie(this.userJourneyCookieName);
     
     let chunkIndex = 1;
