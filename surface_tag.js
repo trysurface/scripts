@@ -599,8 +599,8 @@ class SurfaceStore {
     this.log("info", `User journey max page visits: ${this.userJourneyMaxPageVisits}`);
 
     this._initializeMessageListener();
-    this._initializeUserJourneyTracking();
-    this._setupRouteChangeDetection();
+    // this._initializeUserJourneyTracking(); // disabled for now
+    // this._setupRouteChangeDetection(); // disabled for now
   }
 
   _initializeMessageListener = () => {
