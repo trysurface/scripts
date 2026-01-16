@@ -590,17 +590,21 @@ class SurfaceStore {
       "https://forms.withsurface.com",
       "https://app.withsurface.com",
       "https://dev.withsurface.com",
+      "http://localhost:3000",
     ];
-    this.userJourneyMaxChunkSize = 3500; // 3.5KB
-    this.userJourneyCookieName = "surface_user_journey";
-    this.userDefinedMaxPageVisits = document.currentScript?.getAttribute("data-max-page-visits") || null;
-    this.userJourneyMaxPageVisits = this.userDefinedMaxPageVisits ? parseInt(this.userDefinedMaxPageVisits) : 15;
+    
+    // User journey Redis tracking configuration
+    this.userJourneyIdCookieName = "surface_journey_id";
+    this.userJourneyRecentVisitCookieName = "surface_recent_visit";
+    this.userJourneyTrackingApiUrl = "http://localhost:3000/api/v1/lead/track";
+    this.userJourneyId = null;
+    this.userJourney = [];
 
-    this.log("info", `User journey max page visits: ${this.userJourneyMaxPageVisits}`);
+    this.log("info", `User journey tracking API: ${this.userJourneyTrackingApiUrl}`);
 
     this._initializeMessageListener();
-    // this._initializeUserJourneyTracking(); // disabled for now
-    // this._setupRouteChangeDetection(); // disabled for now
+    this._initializeUserJourneyTracking();
+    this._setupRouteChangeDetection();
   }
 
   _initializeMessageListener = () => {
@@ -725,128 +729,6 @@ class SurfaceStore {
     document.cookie = `${name}=; path=/; max-age=0; samesite=lax`;
   }
 
-  _setChunkedCookie(baseName, value, MAX_COOKIE_SIZE = this.userJourneyMaxChunkSize) {
-    const encodedValue = encodeURIComponent(value);
-    const cookieNames = [];
-
-    if (encodedValue.length <= MAX_COOKIE_SIZE) {
-      this._setCookie(baseName, value);
-      cookieNames.push(baseName);
-      
-      this._cleanupOldChunks(baseName, 1);
-      
-      return cookieNames;
-    }
-
-    let chunkIndex = 0;
-    let offset = 0;
-
-    while (offset < encodedValue.length) {
-      let chunkEnd = Math.min(offset + MAX_COOKIE_SIZE, encodedValue.length);
-      
-      if (chunkEnd < encodedValue.length) {
-        for (let i = 0; i < 3 && chunkEnd > offset; i++) {
-          const char = encodedValue[chunkEnd - i];
-          if (char === "%") {
-            chunkEnd = chunkEnd - i - 1;
-            break;
-          }
-        }
-        
-        if (chunkEnd < encodedValue.length - 2) {
-          const nextChar = encodedValue[chunkEnd];
-          if (nextChar === "%") {
-          } else if (encodedValue[chunkEnd - 1] === "%") {
-            chunkEnd--;
-          }
-        }
-      }
-
-      const chunkEncoded = encodedValue.substring(offset, chunkEnd);
-      const chunkName = chunkIndex === 0 ? baseName : `${baseName}_${chunkIndex}`;
-      
-      document.cookie = `${chunkName}=${chunkEncoded}; path=/; max-age=604800; samesite=lax`;
-      cookieNames.push(chunkName);
-
-      offset = chunkEnd;
-      chunkIndex++;
-    }
-
-    this._cleanupOldChunks(baseName, chunkIndex);
-
-    return cookieNames;
-  }
-
-  _cleanupOldChunks(baseName, startIndex) {
-    let oldChunkIndex = startIndex;
-    while (true) {
-      const oldChunkName = `${baseName}_${oldChunkIndex}`;
-      const oldValue = this._getCookieRaw(oldChunkName);
-      if (oldValue === null) {
-        break;
-      }
-      this._deleteCookie(oldChunkName);
-      oldChunkIndex++;
-    }
-  }
-
-  _getCookieRaw(name) {
-    const allCookies = document.cookie.split(";");
-    for (const cookie of allCookies) {
-      const trimmedCookie = cookie.trim();
-      const firstEqualIndex = trimmedCookie.indexOf("=");
-      if (firstEqualIndex !== -1) {
-        const key = trimmedCookie.substring(0, firstEqualIndex);
-        if (key === name) {
-          return trimmedCookie.substring(firstEqualIndex + 1);
-        }
-      }
-    }
-    return null;
-  }
-
-  _getChunkedCookie(baseName) {
-    const singleValueRaw = this._getCookieRaw(baseName);
-    if (singleValueRaw !== null) {
-      const chunk1Raw = this._getCookieRaw(`${baseName}_1`);
-      if (chunk1Raw === null) {
-        try {
-          return decodeURIComponent(singleValueRaw);
-        } catch (e) {
-          this.log("warn", `Failed to decode single cookie ${baseName}`);
-          return null;
-        }
-      }
-    }
-
-    const chunks = [];
-    let chunkIndex = 0;
-
-    while (true) {
-      const chunkName = chunkIndex === 0 ? baseName : `${baseName}_${chunkIndex}`;
-      const chunkValueRaw = this._getCookieRaw(chunkName);
-      
-      if (chunkValueRaw === null) {
-        break;
-      }
-
-      chunks.push(chunkValueRaw);
-      chunkIndex++;
-    }
-
-    if (chunks.length === 0) {
-      return null;
-    }
-
-    const mergedEncoded = chunks.join("");
-    try {
-      return decodeURIComponent(mergedEncoded);
-    } catch (e) {
-      this.log("warn", `Failed to decode merged cookie chunks for ${baseName}`);
-      return null;
-    }
-  }
-
   getPayload() {
     return {
       windowUrl: this.windowUrl,
@@ -859,7 +741,7 @@ class SurfaceStore {
       questionIds: this.partialFilledData,
       urlParams: this.urlParams,
       surfaceLeadData: SurfaceGetLeadDataWithTTL(),
-      userJourney: this.userJourney,
+      userJourneyId: this.userJourneyId,
     };
   }
 
@@ -879,127 +761,154 @@ class SurfaceStore {
 
   _initializeUserJourneyTracking() {
     try {
-      const cookies =
-        Object.keys(this.cookies).length === 0
-          ? this.parseCookies()
-          : this.cookies;
+      const existingJourneyId = this._getCookie(this.userJourneyIdCookieName);
+      this.userJourneyId = existingJourneyId;
 
-      const userJourneyCookieValue = this._getChunkedCookie(this.userJourneyCookieName);
+      this.log("info", `Existing journey ID: ${existingJourneyId || "none"}`);
 
-      if (userJourneyCookieValue) {
-        let userJourneyObject;
-        try {
-          userJourneyObject = JSON.parse(userJourneyCookieValue);
-          if (!Array.isArray(userJourneyObject)) {
-            userJourneyObject = [];
-          }
-        } catch (parseError) {
-          this.log(
-            "warn",
-            "Failed to parse userJourney cookie, starting fresh:",
-            parseError
-          );
-          userJourneyObject = [];
-        }
+      const currentUrl = window.location.href;
+      const recentVisitUrl = this._getCookie(this.userJourneyRecentVisitCookieName);
 
-        const currentUrl = window.location.href;
-        const lastEntry = userJourneyObject[userJourneyObject.length - 1];
-        const isDuplicatePageView =
-          lastEntry &&
-          lastEntry.type === "PAGE_VIEW" &&
-          lastEntry.payload &&
-          lastEntry.payload.url === currentUrl;
-
-        if (!isDuplicatePageView) {
-          userJourneyObject.push({
-            type: "PAGE_VIEW",
-            payload: {
-              url: currentUrl,
-              timestamp: new Date().toISOString(),
-            },
-          });
-
-          // Enforce the max page visits limit (sliding window, preserving first visit)
-          userJourneyObject = this._enforceUserJourneyLimit(userJourneyObject);
-
-          const userJourneyString = JSON.stringify(userJourneyObject);
-          this._setChunkedCookie(this.userJourneyCookieName, userJourneyString, this.userJourneyMaxChunkSize);
-
-          cookies.userJourney = userJourneyString;
-          this.cookies = cookies;
-        } else {
-          cookies.userJourney = userJourneyCookieValue;
-          this.cookies = cookies;
-        }
-
-        this.userJourney = userJourneyObject;
-      } else {
-        this.userJourney = [
-          {
-            type: "PAGE_VIEW",
-            payload: {
-              url: window.location.href,
-              timestamp: new Date().toISOString(),
-            },
-          },
-        ];
-
-        const userJourneyString = JSON.stringify(this.userJourney);
-        this._setChunkedCookie(this.userJourneyCookieName, userJourneyString, this.userJourneyMaxChunkSize);
-
-        cookies.userJourney = userJourneyString;
-        this.cookies = cookies;
+      if (recentVisitUrl === currentUrl) {
+        this.log("info", "Skipping duplicate page view (same as recent visit)");
+        return;
       }
 
-      this.log("info", "User journey created: " + JSON.stringify(this.userJourney, null, 2));
-      this.log("info", "Cookies: " + JSON.stringify(this.cookies, null, 2));
+      this._trackToRedis({
+        type: "page_view",
+        payload: {
+          url: currentUrl,
+          timestamp: new Date().toISOString(),
+          referrer: this.referrer,
+        },
+      });
+
+      this._setCookie(this.userJourneyRecentVisitCookieName, currentUrl, {
+        maxAge: 86400, // 1 day
+        sameSite: "lax",
+      });
+
+      this.log("info", "User journey tracking initialized");
     } catch (error) {
-      this.log("error", "Error initializing user journey tracking:", error);
+      this.log("error", "Error initializing user journey tracking: " + error);
       this.userJourney = [];
+    }
+  }
+
+  /**
+   * Sends a tracking event to Redis via the API
+   * @param {Object} event - The event to track
+   * @param {string} event.type - The event type (e.g., "page_view")
+   * @param {Object} event.payload - The event payload
+   * @returns {Promise<Object|null>} - The response data or null on error
+   */
+  async _trackToRedis(event) {
+    try {
+      const payload = {
+        type: event.type,
+        payload: event.payload,
+      };
+
+      if (this.userJourneyId) {
+        payload.id = this.userJourneyId;
+      }
+
+      this.log("info", "Tracking to Redis: " + JSON.stringify(payload, null, 2));
+
+      const response = await fetch(this.userJourneyTrackingApiUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        this.log("warn", `Redis tracking API returned status ${response.status}`);
+        return null;
+      }
+
+      const data = await response.json();
+
+      if (data && data.data && data.data.id) {
+        this.userJourneyId = data.data.id;
+        this._setCookie(this.userJourneyIdCookieName, data.data.id, {
+          maxAge: 604800, // 7 days
+          sameSite: "lax",
+        });
+        this.log("info", `Journey ID stored: ${data.data.id}`);
+      }
+
+      return data;
+    } catch (error) {
+      this.log("error", "Error tracking to Redis: " + error);
+      return null;
+    }
+  }
+
+  /**
+   * Sends a tracking event using sendBeacon for reliable delivery (e.g., on page unload)
+   * @param {Object} event - The event to track
+   */
+  _trackToRedisBeacon(event) {
+    try {
+      const payload = {
+        type: event.type,
+        payload: event.payload,
+      };
+
+      if (this.userJourneyId) {
+        payload.id = this.userJourneyId;
+      }
+
+      const blob = new Blob([JSON.stringify(payload)], {
+        type: "application/json",
+      });
+
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon(this.userJourneyTrackingApiUrl, blob);
+        this.log("info", "Beacon sent for tracking: " + event.type);
+      } else {
+        fetch(this.userJourneyTrackingApiUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(payload),
+          keepalive: true,
+        }).catch(() => {});
+      }
+    } catch (error) {
+      this.log("error", "Error sending tracking beacon: " + error);
     }
   }
 
   _updateUserJourneyOnRouteChange(newUrl) {
     try {
-      if (!this.userJourney || !Array.isArray(this.userJourney)) {
-        // If user journey is not initialized, initialize it first
-        this._initializeUserJourneyTracking();
+      const currentUrl = newUrl || window.location.href;
+      const recentVisitUrl = this._getCookie(this.userJourneyRecentVisitCookieName);
+      
+      if (recentVisitUrl === currentUrl) {
+        this.log("info", "Skipping duplicate page view on route change (same as recent visit)");
         return;
       }
 
-      const currentUrl = newUrl || window.location.href;
-      const lastEntry = this.userJourney[this.userJourney.length - 1];
-      const isDuplicatePageView =
-        lastEntry &&
-        lastEntry.type === "PAGE_VIEW" &&
-        lastEntry.payload &&
-        lastEntry.payload.url === currentUrl;
+      this._trackToRedis({
+        type: "page_view",
+        payload: {
+          url: currentUrl,
+          timestamp: new Date().toISOString(),
+        },
+      });
 
-      if (!isDuplicatePageView) {
-        this.userJourney.push({
-          type: "PAGE_VIEW",
-          payload: {
-            url: currentUrl,
-            timestamp: new Date().toISOString(),
-          },
-        });
+      this._setCookie(this.userJourneyRecentVisitCookieName, currentUrl, {
+        maxAge: 86400, // 1 day
+        sameSite: "lax",
+      });
 
-        this.userJourney = this._enforceUserJourneyLimit(this.userJourney);
-
-        const userJourneyString = JSON.stringify(this.userJourney);
-        this._setChunkedCookie(this.userJourneyCookieName, userJourneyString, this.userJourneyMaxChunkSize);
-
-        const cookies =
-          Object.keys(this.cookies).length === 0
-            ? this.parseCookies()
-            : this.cookies;
-        cookies.userJourney = userJourneyString;
-        this.cookies = cookies;
-
-        this.log("info", "User journey updated on route change: " + currentUrl);
-      }
+      this.log("info", "User journey updated on route change: " + currentUrl);
     } catch (error) {
-      this.log("error", "Error updating user journey on route change:", error);
+      this.log("error", "Error updating user journey on route change: " + error);
     }
   }
 
@@ -1040,47 +949,40 @@ class SurfaceStore {
   }
 
   _clearUserJourney() {
-    this._deleteCookie(this.userJourneyCookieName);
+    this._deleteCookie(this.userJourneyIdCookieName);
+    this._deleteCookie(this.userJourneyRecentVisitCookieName);
     
-    let chunkIndex = 1;
-    while (true) {
-      const chunkName = `${this.userJourneyCookieName}_${chunkIndex}`;
-      const chunkValue = this._getCookie(chunkName);
-      if (chunkValue === null) {
-        break;
-      }
-      this._deleteCookie(chunkName);
-      chunkIndex++;
-    }
-
-    this.cookies.userJourney = null;
+    this.userJourneyId = null;
     this.userJourney = [];
+    
     this.log("info", "User journey cleared");
-    this.log("info", "Cookies: " + JSON.stringify(this.cookies, null, 2));
   }
 
   /**
-   * Enforces the max page visits limit using a sliding window approach.
-   * - First visit (position 0) is always preserved
-   * - When limit is exceeded, removes the oldest entry after the first one (position 1)
-   * @param {Array} userJourneyArray - The user journey array to enforce limit on
-   * @returns {Array} - The trimmed user journey array
+   * Get the current journey ID
+   * @returns {string|null} - The journey ID or null
    */
-  _enforceUserJourneyLimit(userJourneyArray) {
-    if (!Array.isArray(userJourneyArray)) {
-      return userJourneyArray;
-    }
+  getJourneyId() {
+    return this.userJourneyId;
+  }
 
-    if (userJourneyArray.length <= this.userJourneyMaxPageVisits) {
-      return userJourneyArray;
-    }
-
-    while (userJourneyArray.length > this.userJourneyMaxPageVisits) {
-      userJourneyArray.splice(1, 1);
-    }
-
-    this.log("info", `User journey trimmed to ${this.userJourneyMaxPageVisits} entries (first visit preserved)`);
-    return userJourneyArray;
+  /**
+   * Track a custom event to the user journey
+   * @param {string} type - The event type
+   * @param {Object} payload - The event payload
+   * @returns {Promise<Object|null>} - The response data or null
+   */
+  async trackEvent(type, payload = {}) {
+    const userJourneyIdFromCookie = this._getCookie(this.userJourneyIdCookieName);
+    console.log("userJourneyIdFromCookie", userJourneyIdFromCookie);
+    return this._trackToRedis({
+      type,
+      payload: {
+        ...payload,
+        ...(userJourneyIdFromCookie ? { id: userJourneyIdFromCookie } : {}),
+        timestamp: payload.timestamp || new Date().toISOString(),
+      },
+    });
   }
 }
 
