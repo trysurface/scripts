@@ -187,7 +187,7 @@ async function SurfaceIdentifyLead(environmentId) {
   LeadIdentifyInProgress = true;
 
   const fingerprint = await getBrowserFingerprint(environmentId);
-  const apiUrl = "https://forms.withsurface.com/api/v1/lead/identify";
+  const apiUrl = "http://localhost:3000/api/v1/lead/identify";
   const parentUrl = new URL(window.location.href);
 
   const payload = {
@@ -592,7 +592,7 @@ class SurfaceStore {
       "https://dev.withsurface.com",
       "http://localhost:3000",
     ];
-    
+
     // User journey Redis tracking configuration
     this.userJourneyIdCookieName = "surface_journey_id";
     this.userJourneyRecentVisitCookieName = "surface_recent_visit";
@@ -600,11 +600,12 @@ class SurfaceStore {
     this.userJourneyId = null;
     this.userJourney = [];
 
-    this.log("info", `User journey tracking API: ${this.userJourneyTrackingApiUrl}`);
-
     this._initializeMessageListener();
-    this._initializeUserJourneyTracking();
-    this._setupRouteChangeDetection();
+    this.cachedIdentifyData = SurfaceGetLeadDataWithTTL();
+    if (this.cachedIdentifyData || LeadIdentifyInProgress !== true) {
+      this._initializeUserJourneyTracking();
+      this._setupRouteChangeDetection();
+    }
   }
 
   _initializeMessageListener = () => {
@@ -767,19 +768,28 @@ class SurfaceStore {
       this.log("info", `Existing journey ID: ${existingJourneyId || "none"}`);
 
       const currentUrl = window.location.href;
-      const recentVisitUrl = this._getCookie(this.userJourneyRecentVisitCookieName);
+      const recentVisitUrl = this._getCookie(
+        this.userJourneyRecentVisitCookieName
+      );
 
       if (recentVisitUrl === currentUrl) {
         this.log("info", "Skipping duplicate page view (same as recent visit)");
         return;
       }
 
+      const surfaceLeadData = SurfaceGetLeadDataWithTTL();
+
       this._trackToRedis({
-        type: "page_view",
-        payload: {
-          url: currentUrl,
-          timestamp: new Date().toISOString(),
-          referrer: this.referrer,
+        data: {
+          type: "page_view",
+          payload: {
+            url: currentUrl,
+            timestamp: new Date().toISOString(),
+            referrer: this.referrer,
+          },
+        },
+        metadata: {
+          ...(surfaceLeadData ? surfaceLeadData : null),
         },
       });
 
@@ -805,15 +815,31 @@ class SurfaceStore {
   async _trackToRedis(event) {
     try {
       const payload = {
-        type: event.type,
-        payload: event.payload,
+        ...event,
       };
 
       if (this.userJourneyId) {
         payload.id = this.userJourneyId;
       }
 
-      this.log("info", "Tracking to Redis: " + JSON.stringify(payload, null, 2));
+      this.log(
+        "info",
+        "Tracking to Redis: " + JSON.stringify(payload, null, 2)
+      );
+
+      if (this.userJourneyId && navigator.sendBeacon) {
+        const blob = new Blob([JSON.stringify(payload)], {
+          type: "application/json",
+        });
+        const sent = navigator.sendBeacon(this.userJourneyTrackingApiUrl, blob);
+        
+        if (sent) {
+          this.log("info", "Tracking sent via sendBeacon");
+          return { success: true };
+        } else {
+          this.log("warn", "sendBeacon failed, falling back to fetch");
+        }
+      }
 
       const response = await fetch(this.userJourneyTrackingApiUrl, {
         method: "POST",
@@ -824,7 +850,7 @@ class SurfaceStore {
       });
 
       if (!response.ok) {
-        this.log("warn", `Redis tracking API returned status ${response.status}`);
+        this.log("warn", `Tracking API returned status ${response.status}`);
         return null;
       }
 
@@ -846,58 +872,33 @@ class SurfaceStore {
     }
   }
 
-  /**
-   * Sends a tracking event using sendBeacon for reliable delivery (e.g., on page unload)
-   * @param {Object} event - The event to track
-   */
-  _trackToRedisBeacon(event) {
-    try {
-      const payload = {
-        type: event.type,
-        payload: event.payload,
-      };
-
-      if (this.userJourneyId) {
-        payload.id = this.userJourneyId;
-      }
-
-      const blob = new Blob([JSON.stringify(payload)], {
-        type: "application/json",
-      });
-
-      if (navigator.sendBeacon) {
-        navigator.sendBeacon(this.userJourneyTrackingApiUrl, blob);
-        this.log("info", "Beacon sent for tracking: " + event.type);
-      } else {
-        fetch(this.userJourneyTrackingApiUrl, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(payload),
-          keepalive: true,
-        }).catch(() => {});
-      }
-    } catch (error) {
-      this.log("error", "Error sending tracking beacon: " + error);
-    }
-  }
-
   _updateUserJourneyOnRouteChange(newUrl) {
     try {
       const currentUrl = newUrl || window.location.href;
-      const recentVisitUrl = this._getCookie(this.userJourneyRecentVisitCookieName);
-      
+      const recentVisitUrl = this._getCookie(
+        this.userJourneyRecentVisitCookieName
+      );
+
       if (recentVisitUrl === currentUrl) {
-        this.log("info", "Skipping duplicate page view on route change (same as recent visit)");
+        this.log(
+          "info",
+          "Skipping duplicate page view on route change (same as recent visit)"
+        );
         return;
       }
 
+      const surfaceLeadData = SurfaceGetLeadDataWithTTL();
+
       this._trackToRedis({
-        type: "page_view",
-        payload: {
-          url: currentUrl,
-          timestamp: new Date().toISOString(),
+        data: {
+          type: "page_view",
+          payload: {
+            url: currentUrl,
+            timestamp: new Date().toISOString(),
+          },
+        },
+        metadata: {
+          ...(surfaceLeadData ? surfaceLeadData : null),
         },
       });
 
@@ -908,7 +909,10 @@ class SurfaceStore {
 
       this.log("info", "User journey updated on route change: " + currentUrl);
     } catch (error) {
-      this.log("error", "Error updating user journey on route change: " + error);
+      this.log(
+        "error",
+        "Error updating user journey on route change: " + error
+      );
     }
   }
 
@@ -954,38 +958,11 @@ class SurfaceStore {
   _clearUserJourney() {
     this._deleteCookie(this.userJourneyIdCookieName);
     this._deleteCookie(this.userJourneyRecentVisitCookieName);
-    
+
     this.userJourneyId = null;
     this.userJourney = [];
-    
+
     this.log("info", "User journey cleared");
-  }
-
-  /**
-   * Get the current journey ID
-   * @returns {string|null} - The journey ID or null
-   */
-  getJourneyId() {
-    return this.userJourneyId;
-  }
-
-  /**
-   * Track a custom event to the user journey
-   * @param {string} type - The event type
-   * @param {Object} payload - The event payload
-   * @returns {Promise<Object|null>} - The response data or null
-   */
-  async trackEvent(type, payload = {}) {
-    const userJourneyIdFromCookie = this._getCookie(this.userJourneyIdCookieName);
-    console.log("userJourneyIdFromCookie", userJourneyIdFromCookie);
-    return this._trackToRedis({
-      type,
-      payload: {
-        ...payload,
-        ...(userJourneyIdFromCookie ? { id: userJourneyIdFromCookie } : {}),
-        timestamp: payload.timestamp || new Date().toISOString(),
-      },
-    });
   }
 }
 
@@ -2184,7 +2161,11 @@ class SurfaceEmbed {
 
       const findFormField = (element) => {
         const tagName = element.tagName.toLowerCase();
-        if (tagName === "input" || tagName === "select" || tagName === "textarea") {
+        if (
+          tagName === "input" ||
+          tagName === "select" ||
+          tagName === "textarea"
+        ) {
           return element;
         }
         return element.querySelector("input, select, textarea");
@@ -2201,7 +2182,8 @@ class SurfaceEmbed {
         if (fieldType === "email") {
           fieldName = "emailAddress";
         } else {
-          fieldName = fieldNameFromParent || field.getAttribute("data-field-name") || "";
+          fieldName =
+            fieldNameFromParent || field.getAttribute("data-field-name") || "";
         }
 
         if (field.type === "radio") {
@@ -2224,7 +2206,8 @@ class SurfaceEmbed {
         processedFields.add(field);
       };
 
-      const elementsWithDataQuestionId = form.querySelectorAll("[data-question-id]");
+      const elementsWithDataQuestionId =
+        form.querySelectorAll("[data-question-id]");
 
       elementsWithDataQuestionId.forEach((element) => {
         const fieldQuestionId = element.getAttribute("data-question-id");
@@ -2236,7 +2219,8 @@ class SurfaceEmbed {
         }
       });
 
-      const elementsWithDataFieldName = form.querySelectorAll("[data-field-name]");
+      const elementsWithDataFieldName =
+        form.querySelectorAll("[data-field-name]");
 
       elementsWithDataFieldName.forEach((element) => {
         if (!element.hasAttribute("data-question-id")) {
