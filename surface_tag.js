@@ -927,7 +927,10 @@ class SurfaceStore {
         this._initializeMessageListener();
 
         if (this.debugMode) {
-          this.log("info", "Route changed, updated user journey and re-initialized message listener");
+          this.log(
+            "info",
+            "Route changed, updated user journey and re-initialized message listener"
+          );
         }
       }
     };
@@ -2078,52 +2081,277 @@ class SurfaceEmbed {
       forms = Array.from(allForms);
     }
 
+    const getFieldValue = (field) => {
+      const tagName = field.tagName.toLowerCase();
+      const type = field.type?.toLowerCase();
+
+      if (tagName === "select") {
+        if (field.multiple) {
+          return Array.from(field.selectedOptions).map(
+            (option) => option.value
+          );
+        }
+        return field.value;
+      }
+
+      if (tagName === "textarea") {
+        return field.value.trim();
+      }
+
+      if (tagName === "input") {
+        if (type === "checkbox") {
+          return field.checked ? field.value || "true" : null;
+        }
+        if (type === "radio") {
+          const radioGroup = document.querySelectorAll(
+            `input[type="radio"][name="${field.name}"]`
+          );
+          const checkedRadio = Array.from(radioGroup).find((r) => r.checked);
+          return checkedRadio ? checkedRadio.value : null;
+        }
+        return field.value.trim();
+      }
+
+      return null;
+    };
+
+    const validateField = (field, value) => {
+      const isArray = Array.isArray(value);
+      const isEmpty = isArray
+        ? value.length === 0
+        : value === null || value === "";
+
+      if (isEmpty) {
+        if (field.hasAttribute("required") || field.required) {
+          return { valid: false, field };
+        }
+        return { valid: true, field: null };
+      }
+
+      const type = field.type?.toLowerCase();
+
+      if (type === "email") {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/;
+        if (isArray) {
+          if (!value.every((email) => emailRegex.test(email))) {
+            return { valid: false, field };
+          }
+        } else {
+          if (!emailRegex.test(value)) {
+            return { valid: false, field };
+          }
+        }
+      }
+
+      if (field.hasAttribute("pattern")) {
+        const pattern = new RegExp(field.getAttribute("pattern"));
+        if (isArray) {
+          if (!value.every((item) => pattern.test(item))) {
+            return { valid: false, field };
+          }
+        } else {
+          if (!pattern.test(value)) {
+            return { valid: false, field };
+          }
+        }
+      }
+
+      if (field.hasAttribute("minlength")) {
+        const minLength = parseInt(field.getAttribute("minlength"));
+        if (value.length < minLength) {
+          return { valid: false, field };
+        }
+      }
+
+      if (field.hasAttribute("maxlength")) {
+        const maxLength = parseInt(field.getAttribute("maxlength"));
+        if (value.length > maxLength) {
+          return { valid: false, field };
+        }
+      }
+
+      if (!field.checkValidity()) {
+        return { valid: false, field };
+      }
+
+      return { valid: true, field: null };
+    };
+
+    const collectFormFields = (form) => {
+      const fields = [];
+      const formQuestionId = form.getAttribute("data-question-id") || e;
+      const processedFields = new Set();
+
+      const findFormField = (element) => {
+        const tagName = element.tagName.toLowerCase();
+        if (tagName === "input" || tagName === "select" || tagName === "textarea") {
+          return element;
+        }
+        return element.querySelector("input, select, textarea");
+      };
+
+      const processField = (field, questionId, fieldNameFromParent = null) => {
+        if (processedFields.has(field)) {
+          return;
+        }
+
+        const fieldType = field.type?.toLowerCase();
+
+        let fieldName;
+        if (fieldType === "email") {
+          fieldName = "emailAddress";
+        } else {
+          fieldName = fieldNameFromParent || field.getAttribute("data-field-name") || "";
+        }
+
+        if (field.type === "radio") {
+          const radioGroupName = field.name;
+          const alreadyProcessed = fields.some(
+            (f) => f.field.type === "radio" && f.field.name === radioGroupName
+          );
+          if (alreadyProcessed) {
+            return;
+          }
+        }
+
+        const value = getFieldValue(field);
+        fields.push({
+          field,
+          questionId,
+          fieldName,
+          value,
+        });
+        processedFields.add(field);
+      };
+
+      const elementsWithDataQuestionId = form.querySelectorAll("[data-question-id]");
+
+      elementsWithDataQuestionId.forEach((element) => {
+        const fieldQuestionId = element.getAttribute("data-question-id");
+        const formField = findFormField(element);
+
+        if (formField) {
+          const fieldNameFromParent = element.getAttribute("data-field-name");
+          processField(formField, fieldQuestionId, fieldNameFromParent);
+        }
+      });
+
+      const elementsWithDataFieldName = form.querySelectorAll("[data-field-name]");
+
+      elementsWithDataFieldName.forEach((element) => {
+        if (!element.hasAttribute("data-question-id")) {
+          const formField = findFormField(element);
+
+          if (formField && !processedFields.has(formField)) {
+            const fieldNameFromParent = element.getAttribute("data-field-name");
+            processField(formField, formQuestionId, fieldNameFromParent);
+          }
+        }
+      });
+
+      const emailInput = form.querySelector('input[type="email"]');
+      if (emailInput && !processedFields.has(emailInput)) {
+        processField(emailInput, formQuestionId, "emailAddress");
+      }
+
+      return fields;
+    };
+
     const handleSubmitCallback = (t) => (n) => {
       n.preventDefault();
-      const o = t.querySelector('input[type="email"]'),
-        c = o?.value.trim();
-      if (o && /^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/.test(c)) {
-        const options = {
-          [`${e}_emailAddress`]: c,
-        };
-        if (options) {
-          const existingData = Array.isArray(SurfaceTagStore.partialFilledData)
-            ? SurfaceTagStore.partialFilledData
-            : [];
 
-          const dataMap = new Map();
-          existingData.forEach((entry, index) => {
-            const key = Object.keys(entry)[0];
-            dataMap.set(key, index);
-          });
+      const formFields = collectFormFields(t);
+      const options = {};
+      let hasValidationError = false;
+      let firstInvalidField = null;
 
-          Object.entries(options).forEach(([key, value]) => {
-            const newEntry = { [key]: value };
+      formFields.forEach(({ field, questionId, fieldName, value }) => {
+        const isArray = Array.isArray(value);
+        const isEmpty = isArray
+          ? value.length === 0
+          : value === null || value === "";
 
-            if (dataMap.has(key)) {
-              existingData[dataMap.get(key)] = newEntry;
-            } else {
-              existingData.push(newEntry);
-            }
-          });
-
-          SurfaceTagStore.partialFilledData = existingData;
-          if (!this.initialized) {
-            this.initializeEmbed();
-          }
-          SurfaceTagStore.notifyIframe(this.iframe, "STORE_UPDATE");
-          this.showSurfaceForm();
+        if (isEmpty && !field.hasAttribute("required") && !field.required) {
+          return;
         }
+
+        const validation = validateField(field, value);
+        if (!validation.valid) {
+          hasValidationError = true;
+          if (!firstInvalidField) {
+            firstInvalidField = validation.field || field;
+          }
+          return;
+        }
+
+        if (!isEmpty) {
+          const fieldNameKey = fieldName ? `_${fieldName}` : "";
+          const key = `${questionId}${fieldNameKey}`;
+          options[key] = value;
+        }
+      });
+
+      if (hasValidationError && firstInvalidField) {
+        firstInvalidField.reportValidity();
+        return;
+      }
+
+      if (Object.keys(options).length > 0) {
+        const existingData = Array.isArray(SurfaceTagStore.partialFilledData)
+          ? SurfaceTagStore.partialFilledData
+          : [];
+
+        const dataMap = new Map();
+        existingData.forEach((entry, index) => {
+          const key = Object.keys(entry)[0];
+          dataMap.set(key, index);
+        });
+
+        Object.entries(options).forEach(([key, value]) => {
+          const newEntry = { [key]: value };
+
+          if (dataMap.has(key)) {
+            existingData[dataMap.get(key)] = newEntry;
+          } else {
+            existingData.push(newEntry);
+          }
+        });
+
+        SurfaceTagStore.partialFilledData = existingData;
+        if (!this.initialized) {
+          this.initializeEmbed();
+        }
+        SurfaceTagStore.notifyIframe(this.iframe, "STORE_UPDATE");
+        this.showSurfaceForm();
       } else {
-        o?.reportValidity();
+        const emailInput = t.querySelector('input[type="email"]');
+        if (emailInput) {
+          emailInput.reportValidity();
+        }
       }
     };
 
     const handleKeyDownCallback = (t) => (n) => {
-      if (n.key === "Enter" && document.activeElement.type === "email") {
-        n.preventDefault();
+      if (n.key === "Enter") {
+        const activeElement = document.activeElement;
+        const tagName = activeElement.tagName.toLowerCase();
+        const type = activeElement.type?.toLowerCase();
 
-        t.dispatchEvent(new Event("submit", { cancelable: true }));
+        if (tagName === "textarea") {
+          return;
+        }
+
+        if (type === "checkbox" || type === "radio") {
+          return;
+        }
+
+        if (
+          (tagName === "input" && type !== "checkbox" && type !== "radio") ||
+          tagName === "select"
+        ) {
+          n.preventDefault();
+          t.dispatchEvent(new Event("submit", { cancelable: true }));
+        }
       }
     };
 
