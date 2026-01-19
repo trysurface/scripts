@@ -590,7 +590,6 @@ class SurfaceStore {
       "https://forms.withsurface.com",
       "https://app.withsurface.com",
       "https://dev.withsurface.com",
-      "https://surfaceforms-git-prefilling-enhancements-surface.vercel.app",
     ];
     this.userJourneyMaxChunkSize = 3500; // 3.5KB
     this.userJourneyCookieName = "surface_user_journey";
