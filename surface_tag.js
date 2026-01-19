@@ -2382,16 +2382,7 @@ class SurfaceEmbed {
 
       const emailInput = form.querySelector('input[type="email"]');
       if (emailInput && !processedFields.has(emailInput)) {
-        const emailValue = emailInput.value.trim();
-        if (emailValue) {
-          fields.push({
-            field: emailInput,
-            questionId: formQuestionId,
-            fieldName: "emailAddress",
-            value: emailValue,
-          });
-          processedFields.add(emailInput);
-        }
+        processField(emailInput, formQuestionId, "emailAddress");
       }
 
       return fields;
