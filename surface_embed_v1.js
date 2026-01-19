@@ -590,6 +590,7 @@ class SurfaceStore {
       "https://forms.withsurface.com",
       "https://app.withsurface.com",
       "https://dev.withsurface.com",
+      "https://surfaceforms-git-prefilling-enhancements-surface.vercel.app",
     ];
     this.userJourneyMaxChunkSize = 3500; // 3.5KB
     this.userJourneyCookieName = "surface_user_journey";
@@ -2260,7 +2261,7 @@ class SurfaceEmbed {
 
       const type = field.type?.toLowerCase();
 
-      if (type === "email" || field.getAttribute("type") === "email") {
+      if (type === "email") {
         const emailRegex = /^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/;
         if (isArray) {
           if (!value.every((email) => emailRegex.test(email))) {
@@ -2288,16 +2289,14 @@ class SurfaceEmbed {
 
       if (field.hasAttribute("minlength")) {
         const minLength = parseInt(field.getAttribute("minlength"));
-        const valueLength = isArray ? value.length : value.length;
-        if (valueLength < minLength) {
+        if (value.length < minLength) {
           return { valid: false, field };
         }
       }
 
       if (field.hasAttribute("maxlength")) {
         const maxLength = parseInt(field.getAttribute("maxlength"));
-        const valueLength = isArray ? value.length : value.length;
-        if (valueLength > maxLength) {
+        if (value.length > maxLength) {
           return { valid: false, field };
         }
       }
@@ -2319,8 +2318,7 @@ class SurfaceEmbed {
         if (tagName === "input" || tagName === "select" || tagName === "textarea") {
           return element;
         }
-        const formField = element.querySelector("input, select, textarea");
-        return formField || null;
+        return element.querySelector("input, select, textarea");
       };
 
       const processField = (field, questionId, fieldNameFromParent = null) => {
@@ -2362,7 +2360,7 @@ class SurfaceEmbed {
       elementsWithDataQuestionId.forEach((element) => {
         const fieldQuestionId = element.getAttribute("data-question-id");
         const formField = findFormField(element);
-        
+
         if (formField) {
           const fieldNameFromParent = element.getAttribute("data-field-name");
           processField(formField, fieldQuestionId, fieldNameFromParent);
@@ -2374,7 +2372,7 @@ class SurfaceEmbed {
       elementsWithDataFieldName.forEach((element) => {
         if (!element.hasAttribute("data-question-id")) {
           const formField = findFormField(element);
-          
+
           if (formField && !processedFields.has(formField)) {
             const fieldNameFromParent = element.getAttribute("data-field-name");
             processField(formField, formQuestionId, fieldNameFromParent);
@@ -2427,12 +2425,7 @@ class SurfaceEmbed {
         }
 
         if (!isEmpty) {
-          let fieldNameKey = null;
-          if (fieldName === "") {
-            fieldNameKey = "";
-          } else {
-            fieldNameKey = `_${fieldName}`;
-          }
+          const fieldNameKey = fieldName ? `_${fieldName}` : "";
           const key = `${questionId}${fieldNameKey}`;
           options[key] = value;
         }
