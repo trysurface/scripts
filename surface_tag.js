@@ -2314,7 +2314,16 @@ class SurfaceEmbed {
       const formQuestionId = form.getAttribute("data-question-id") || e;
       const processedFields = new Set();
 
-      const processField = (field, questionId) => {
+      const findFormField = (element) => {
+        const tagName = element.tagName.toLowerCase();
+        if (tagName === "input" || tagName === "select" || tagName === "textarea") {
+          return element;
+        }
+        const formField = element.querySelector("input, select, textarea");
+        return formField || null;
+      };
+
+      const processField = (field, questionId, fieldNameFromParent = null) => {
         if (processedFields.has(field)) {
           return;
         }
@@ -2325,7 +2334,7 @@ class SurfaceEmbed {
         if (fieldType === "email") {
           fieldName = "emailAddress";
         } else {
-          fieldName = field.getAttribute("data-field-name") || "";
+          fieldName = fieldNameFromParent || field.getAttribute("data-field-name") || "";
         }
 
         if (field.type === "radio") {
@@ -2348,22 +2357,28 @@ class SurfaceEmbed {
         processedFields.add(field);
       };
 
-      const fieldsWithDataQuestionId = form.querySelectorAll(
-        "input[data-question-id], select[data-question-id], textarea[data-question-id]"
-      );
+      const elementsWithDataQuestionId = form.querySelectorAll("[data-question-id]");
 
-      fieldsWithDataQuestionId.forEach((field) => {
-        const fieldQuestionId = field.getAttribute("data-question-id");
-        processField(field, fieldQuestionId);
+      elementsWithDataQuestionId.forEach((element) => {
+        const fieldQuestionId = element.getAttribute("data-question-id");
+        const formField = findFormField(element);
+        
+        if (formField) {
+          const fieldNameFromParent = element.getAttribute("data-field-name");
+          processField(formField, fieldQuestionId, fieldNameFromParent);
+        }
       });
 
-      const fieldsWithDataFieldName = form.querySelectorAll(
-        "input[data-field-name], select[data-field-name], textarea[data-field-name]"
-      );
+      const elementsWithDataFieldName = form.querySelectorAll("[data-field-name]");
 
-      fieldsWithDataFieldName.forEach((field) => {
-        if (!field.hasAttribute("data-question-id")) {
-          processField(field, formQuestionId);
+      elementsWithDataFieldName.forEach((element) => {
+        if (!element.hasAttribute("data-question-id")) {
+          const formField = findFormField(element);
+          
+          if (formField && !processedFields.has(formField)) {
+            const fieldNameFromParent = element.getAttribute("data-field-name");
+            processField(formField, formQuestionId, fieldNameFromParent);
+          }
         }
       });
 
