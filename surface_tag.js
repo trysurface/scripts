@@ -1,3 +1,6 @@
+const SURFACE_USER_JOURNEY_COOKIE_NAME = "surface_journey_id";
+const SURFACE_USER_JOURNEY_RECENT_VISIT_COOKIE_NAME = "surface_recent_visit";
+
 let SurfaceUsBrowserSpeedInitialized = false;
 let SurfaceSharedSessionId = null;
 let EnvironmentId = null;
@@ -590,13 +593,9 @@ class SurfaceStore {
       "https://forms.withsurface.com",
       "https://app.withsurface.com",
       "https://dev.withsurface.com",
-      "https://surfaceforms-git-improve-user-journey-tracking-surface.vercel.app",
     ];
 
-    // User journey Redis tracking configuration
-    this.userJourneyIdCookieName = "surface_journey_id";
-    this.userJourneyRecentVisitCookieName = "surface_recent_visit";
-    this.userJourneyTrackingApiUrl = "https://surfaceforms-git-improve-user-journey-tracking-surface.vercel.app/api/v1/lead/track";
+    this.userJourneyTrackingApiUrl = "https://forms.withsurface.com/api/v1/lead/track";
     this.userJourneyId = null;
     this.userJourney = [];
 
@@ -762,14 +761,14 @@ class SurfaceStore {
 
   _initializeUserJourneyTracking() {
     try {
-      const existingJourneyId = this._getCookie(this.userJourneyIdCookieName);
+      const existingJourneyId = this._getCookie(SURFACE_USER_JOURNEY_COOKIE_NAME);
       this.userJourneyId = existingJourneyId;
 
       this.log("info", `Existing journey ID: ${existingJourneyId || "none"}`);
 
       const currentUrl = window.location.href;
       const recentVisitUrl = this._getCookie(
-        this.userJourneyRecentVisitCookieName
+        SURFACE_USER_JOURNEY_RECENT_VISIT_COOKIE_NAME
       );
 
       if (recentVisitUrl === currentUrl) {
@@ -793,7 +792,7 @@ class SurfaceStore {
         },
       });
 
-      this._setCookie(this.userJourneyRecentVisitCookieName, currentUrl, {
+      this._setCookie(SURFACE_USER_JOURNEY_RECENT_VISIT_COOKIE_NAME, currentUrl, {
         maxAge: 86400, // 1 day
         sameSite: "lax",
       });
@@ -858,7 +857,7 @@ class SurfaceStore {
 
       if (data && data.data && data.data.id) {
         this.userJourneyId = data.data.id;
-        this._setCookie(this.userJourneyIdCookieName, data.data.id, {
+        this._setCookie(SURFACE_USER_JOURNEY_COOKIE_NAME, data.data.id, {
           maxAge: 604800, // 7 days
           sameSite: "lax",
         });
@@ -876,7 +875,7 @@ class SurfaceStore {
     try {
       const currentUrl = newUrl || window.location.href;
       const recentVisitUrl = this._getCookie(
-        this.userJourneyRecentVisitCookieName
+        SURFACE_USER_JOURNEY_RECENT_VISIT_COOKIE_NAME
       );
 
       if (recentVisitUrl === currentUrl) {
@@ -902,7 +901,7 @@ class SurfaceStore {
         },
       });
 
-      this._setCookie(this.userJourneyRecentVisitCookieName, currentUrl, {
+      this._setCookie(SURFACE_USER_JOURNEY_RECENT_VISIT_COOKIE_NAME, currentUrl, {
         maxAge: 86400, // 1 day
         sameSite: "lax",
       });
@@ -956,8 +955,8 @@ class SurfaceStore {
   }
 
   _clearUserJourney() {
-    this._deleteCookie(this.userJourneyIdCookieName);
-    this._deleteCookie(this.userJourneyRecentVisitCookieName);
+    this._deleteCookie(SURFACE_USER_JOURNEY_COOKIE_NAME);
+    this._deleteCookie(SURFACE_USER_JOURNEY_RECENT_VISIT_COOKIE_NAME);
 
     this.userJourneyId = null;
     this.userJourney = [];
