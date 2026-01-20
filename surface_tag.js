@@ -1,3 +1,4 @@
+import DOMPurify from 'dompurify';
 const SURFACE_USER_JOURNEY_COOKIE_NAME = "surface_journey_id";
 const SURFACE_USER_JOURNEY_RECENT_VISIT_COOKIE_NAME = "surface_recent_visit";
 
