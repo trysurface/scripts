@@ -187,7 +187,7 @@ async function SurfaceIdentifyLead(environmentId) {
   LeadIdentifyInProgress = true;
 
   const fingerprint = await getBrowserFingerprint(environmentId);
-  const apiUrl = "http://localhost:3000/api/v1/lead/identify";
+  const apiUrl = "https://forms.withsurface.com/api/v1/lead/identify";
   const parentUrl = new URL(window.location.href);
 
   const payload = {
@@ -590,13 +590,13 @@ class SurfaceStore {
       "https://forms.withsurface.com",
       "https://app.withsurface.com",
       "https://dev.withsurface.com",
-      "http://localhost:3000",
+      "https://surfaceforms-git-improve-user-journey-tracking-surface.vercel.app",
     ];
 
     // User journey Redis tracking configuration
     this.userJourneyIdCookieName = "surface_journey_id";
     this.userJourneyRecentVisitCookieName = "surface_recent_visit";
-    this.userJourneyTrackingApiUrl = "http://localhost:3000/api/v1/lead/track";
+    this.userJourneyTrackingApiUrl = "https://surfaceforms-git-improve-user-journey-tracking-surface.vercel.app/api/v1/lead/track";
     this.userJourneyId = null;
     this.userJourney = [];
 
