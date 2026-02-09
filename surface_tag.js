@@ -601,10 +601,23 @@ class SurfaceStore {
 
     this._initializeMessageListener();
     this.cachedIdentifyData = SurfaceGetLeadDataWithTTL();
-    if (this.cachedIdentifyData || LeadIdentifyInProgress !== true) {
+    if (
+      (this.cachedIdentifyData || LeadIdentifyInProgress !== true) &&
+      !this._isCurrentOriginSurfaceDomain()
+    ) {
       this._initializeUserJourneyTracking();
       this._setupRouteChangeDetection();
     }
+  }
+
+  _isCurrentOriginSurfaceDomain() {
+    const hostname =
+      typeof window !== "undefined" && window.location
+        ? window.location.hostname
+        : "";
+    return this.surfaceDomains.some(
+      (url) => new URL(url).hostname === hostname
+    );
   }
 
   _initializeMessageListener = () => {
@@ -712,12 +725,26 @@ class SurfaceStore {
     return cookies;
   }
 
+  _getUserJourneyCookieDomain() {
+    const hostname =
+      typeof window !== "undefined" && window.location
+        ? window.location.hostname
+        : "";
+    if (!hostname || !hostname.includes(".")) {
+      return undefined;
+    }
+    const parts = hostname.split(".");
+    return "." + (parts.length === 2 ? hostname : parts.slice(1).join("."));
+  }
+
   _setCookie(name, value, options = {}) {
     const encodedValue = encodeURIComponent(value);
     const path = options.path || "/";
     const maxAge = options.maxAge || 604800;
     const sameSite = options.sameSite || "lax";
-    document.cookie = `${name}=${encodedValue}; path=${path}; max-age=${maxAge}; samesite=${sameSite}`;
+    const domain = options.domain;
+    const domainAttr = domain ? `; domain=${domain}` : "";
+    document.cookie = `${name}=${encodedValue}; path=${path}; max-age=${maxAge}; samesite=${sameSite}${domainAttr}`;
   }
 
   _getCookie(name) {
@@ -725,8 +752,10 @@ class SurfaceStore {
     return cookies[name] || null;
   }
 
-  _deleteCookie(name) {
-    document.cookie = `${name}=; path=/; max-age=0; samesite=lax`;
+  _deleteCookie(name, options = {}) {
+    const domain = options.domain;
+    const domainAttr = domain ? `; domain=${domain}` : "";
+    document.cookie = `${name}=; path=/; max-age=0; samesite=lax${domainAttr}`;
   }
 
   getPayload() {
@@ -795,6 +824,7 @@ class SurfaceStore {
       this._setCookie(SURFACE_USER_JOURNEY_RECENT_VISIT_COOKIE_NAME, currentUrl, {
         maxAge: 86400, // 1 day
         sameSite: "lax",
+        domain: this._getUserJourneyCookieDomain(),
       });
 
       this.log("info", "User journey tracking initialized");
@@ -860,6 +890,7 @@ class SurfaceStore {
         this._setCookie(SURFACE_USER_JOURNEY_COOKIE_NAME, data.data.id, {
           maxAge: 604800, // 7 days
           sameSite: "lax",
+          domain: this._getUserJourneyCookieDomain(),
         });
         this.log("info", `Journey ID stored: ${data.data.id}`);
       }
@@ -904,6 +935,7 @@ class SurfaceStore {
       this._setCookie(SURFACE_USER_JOURNEY_RECENT_VISIT_COOKIE_NAME, currentUrl, {
         maxAge: 86400, // 1 day
         sameSite: "lax",
+        domain: this._getUserJourneyCookieDomain(),
       });
 
       this.log("info", "User journey updated on route change: " + currentUrl);
@@ -955,8 +987,11 @@ class SurfaceStore {
   }
 
   _clearUserJourney() {
-    this._deleteCookie(SURFACE_USER_JOURNEY_COOKIE_NAME);
-    this._deleteCookie(SURFACE_USER_JOURNEY_RECENT_VISIT_COOKIE_NAME);
+    const domain = this._getUserJourneyCookieDomain();
+    this._deleteCookie(SURFACE_USER_JOURNEY_COOKIE_NAME, { domain });
+    this._deleteCookie(SURFACE_USER_JOURNEY_RECENT_VISIT_COOKIE_NAME, {
+      domain,
+    });
 
     this.userJourneyId = null;
     this.userJourney = [];
