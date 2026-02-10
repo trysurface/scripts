@@ -2089,7 +2089,12 @@ class SurfaceEmbed {
     );
 
     if (forms.length === 0) {
-      forms = Array.from(allForms);
+      const formsWithQuestionId = Array.from(allForms).filter(
+        (form) => form.hasAttribute("data-question-id")
+      );
+      if (formsWithQuestionId.length === 0) {
+        forms = Array.from(allForms);
+      }
     }
 
     const getFieldValue = (field) => {
