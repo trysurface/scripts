@@ -2092,7 +2092,7 @@ class SurfaceEmbed {
       const formsWithQuestionId = Array.from(allForms).filter(
         (form) => form.hasAttribute("data-question-id")
       );
-      if (formsWithQuestionId.length === 0) {
+      if (!formsWithQuestionId.length) {
         forms = Array.from(allForms);
       }
     }
