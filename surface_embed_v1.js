@@ -752,6 +752,16 @@ class SurfaceStore {
     return cookies[name] || null;
   }
 
+  _refreshJourneyCookie() {
+    if (this.userJourneyId) {
+      this._setCookie(SURFACE_USER_JOURNEY_COOKIE_NAME, this.userJourneyId, {
+        maxAge: 5184000, // 60 days - sliding window, refreshed on each use
+        sameSite: "lax",
+        domain: this._getUserJourneyCookieDomain(),
+      });
+    }
+  }
+
   _deleteCookie(name, options = {}) {
     const domain = options.domain;
     const domainAttr = domain ? `; domain=${domain}` : "";
@@ -863,6 +873,7 @@ class SurfaceStore {
         const sent = navigator.sendBeacon(this.userJourneyTrackingApiUrl, blob);
         
         if (sent) {
+          this._refreshJourneyCookie();
           this.log("info", "Tracking sent via sendBeacon");
           return { success: true };
         } else {
@@ -887,14 +898,10 @@ class SurfaceStore {
 
       if (data && data.data && data.data.id) {
         this.userJourneyId = data.data.id;
-        this._setCookie(SURFACE_USER_JOURNEY_COOKIE_NAME, data.data.id, {
-          maxAge: 604800, // 7 days
-          sameSite: "lax",
-          domain: this._getUserJourneyCookieDomain(),
-        });
         this.log("info", `Journey ID stored: ${data.data.id}`);
       }
 
+      this._refreshJourneyCookie();
       return data;
     } catch (error) {
       this.log("error", "Error tracking to Redis: " + error);
