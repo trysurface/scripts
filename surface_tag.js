@@ -888,7 +888,7 @@ class SurfaceStore {
       if (data && data.data && data.data.id) {
         this.userJourneyId = data.data.id;
         this._setCookie(SURFACE_USER_JOURNEY_COOKIE_NAME, data.data.id, {
-          maxAge: 604800, // 7 days
+          maxAge: 5184000, // 60 days
           sameSite: "lax",
           domain: this._getUserJourneyCookieDomain(),
         });
