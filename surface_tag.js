@@ -1498,49 +1498,6 @@ class SurfaceEmbed {
     }
   }
 
-  _enableFocusTrap() {
-    this._previouslyFocusedElement = document.activeElement;
-
-    const embedClient = this;
-
-    if (!this._focusTrapHandler) {
-      this._focusTrapHandler = (e) => {
-        if (e.key !== "Tab") return;
-        if (!embedClient.surface_popup_reference || embedClient.surface_popup_reference.style.display === "none") return;
-
-        const popup = embedClient.surface_popup_reference;
-        const focusableEls = popup.querySelectorAll('iframe, [tabindex]:not([tabindex="-1"]), button, a[href]');
-        const firstEl = focusableEls[0];
-        const lastEl = focusableEls[focusableEls.length - 1];
-
-        if (e.shiftKey) {
-          if (document.activeElement === firstEl || !popup.contains(document.activeElement)) {
-            e.preventDefault();
-            lastEl.focus();
-          }
-        } else {
-          if (document.activeElement === lastEl || !popup.contains(document.activeElement)) {
-            e.preventDefault();
-            firstEl.focus();
-          }
-        }
-      };
-      document.addEventListener("keydown", this._focusTrapHandler);
-    }
-  }
-
-  _disableFocusTrap() {
-    if (this._focusTrapHandler) {
-      document.removeEventListener("keydown", this._focusTrapHandler);
-      this._focusTrapHandler = null;
-    }
-
-    if (this._previouslyFocusedElement) {
-      this._previouslyFocusedElement.focus();
-      this._previouslyFocusedElement = null;
-    }
-  }
-
   showSurfacePopup(options = {}, fromInputTrigger = false) {
     if (this.surface_popup_reference == null) {
       this.log(
@@ -1550,12 +1507,12 @@ class SurfaceEmbed {
       return;
     }
 
+    this._previouslyFocusedElement = document.activeElement;
+
     this.updateIframeWithOptions(options, this.surface_popup_reference);
 
     this.surface_popup_reference.style.display = "flex";
     document.body.style.overflow = "hidden";
-
-    this._enableFocusTrap();
 
     const embedClient = this;
     setTimeout(function () {
@@ -1577,7 +1534,10 @@ class SurfaceEmbed {
     this.surface_popup_reference.classList.remove("active");
     document.body.style.overflow = "auto";
 
-    this._disableFocusTrap();
+    if (this._previouslyFocusedElement) {
+      this._previouslyFocusedElement.focus();
+      this._previouslyFocusedElement = null;
+    }
 
     const embedClient = this;
     setTimeout(function () {
@@ -1697,12 +1657,12 @@ class SurfaceEmbed {
       return;
     }
 
+    this._previouslyFocusedElement = document.activeElement;
+
     this.updateIframeWithOptions(options, this.surface_popup_reference);
 
     this.surface_popup_reference.style.display = "block";
     document.body.style.overflow = "hidden";
-
-    this._enableFocusTrap();
 
     const embedClient = this;
     setTimeout(function () {
@@ -1724,7 +1684,10 @@ class SurfaceEmbed {
     this.surface_popup_reference.classList.remove("active");
     document.body.style.overflow = "auto";
 
-    this._disableFocusTrap();
+    if (this._previouslyFocusedElement) {
+      this._previouslyFocusedElement.focus();
+      this._previouslyFocusedElement = null;
+    }
 
     const embedClient = this;
     setTimeout(function () {
