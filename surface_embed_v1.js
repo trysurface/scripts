@@ -1,7 +1,6 @@
 const SURFACE_USER_JOURNEY_COOKIE_NAME = "surface_journey_id";
 const SURFACE_USER_JOURNEY_RECENT_VISIT_COOKIE_NAME = "surface_recent_visit";
 
-let SurfaceUsBrowserSpeedInitialized = false;
 let SurfaceSharedSessionId = null;
 let EnvironmentId = null;
 let LeadIdentifyInProgress = null;
@@ -84,19 +83,8 @@ function SurfaceGetSiteIdFromScript(scriptElement) {
 }
 
 // ========================================
-// START OF DE-ANONYMIZATION CODE
+// START OF LEAD IDENTIFICATION CODE
 // ========================================
-
-// Generate a unique session ID for comparison between services
-function SurfaceGenerateSessionId() {
-  if (!SurfaceSharedSessionId) {
-    SurfaceSharedSessionId =
-      "session_" +
-      Math.random().toString(36).substring(2, 15) +
-      Math.random().toString(36).substring(2, 15);
-  }
-  return SurfaceSharedSessionId;
-}
 
 function SurfaceSetLeadDataWithTTL({
   leadId,
@@ -245,43 +233,8 @@ async function SurfaceIdentifyLead(environmentId) {
   return null;
 }
 
-// Send payload to 5x5
-function SurfaceSendToFiveByFive(payload) {
-  const endpoint = new URL("https://a.usbrowserspeed.com/cs");
-  var pid = "b3752b5f7f17d773b265c2847b23ffa444cac7db2af8a040c341973a6704a819";
-  endpoint.searchParams.append("pid", pid);
-  endpoint.searchParams.append("puid", JSON.stringify(payload));
-
-  fetch(endpoint.href, {
-    mode: "no-cors",
-    credentials: "include",
-  });
-  SurfaceUsBrowserSpeedInitialized = true;
-}
-
-async function SurfaceSyncCookie(payload) {
-  const sessionId = SurfaceGenerateSessionId();
-
-  // Add session ID to payload for both services
-  const enhancedPayload = Object.assign({}, payload, {
-    type: "LogAnonLeadEnvIdPayload",
-    sessionId: sessionId,
-  });
-
-  if (SurfaceUsBrowserSpeedInitialized == false) {
-    // Call identify first to get lead data
-    const leadData = await SurfaceIdentifyLead(payload.environmentId);
-    SurfaceTagStore.sendPayloadToIframes("LEAD_DATA_UPDATE");
-
-    // Send to usbrowserspeed with lead data
-    SurfaceSendToFiveByFive({
-      ...enhancedPayload,
-      ...(leadData ? leadData : {}),
-    });
-  }
-}
 // ========================================
-// END OF DE-ANONYMIZATION CODE
+// END OF LEAD IDENTIFICATION CODE
 // ========================================
 
 class SurfaceExternalForm {
@@ -2476,11 +2429,4 @@ class SurfaceEmbed {
   const scriptTag = document.currentScript;
   const environmentId = SurfaceGetSiteIdFromScript(scriptTag);
   EnvironmentId = environmentId;
-
-  if (environmentId != null) {
-    const syncCookiePayload = {
-      environmentId: environmentId,
-    };
-    SurfaceSyncCookie(syncCookiePayload);
-  }
 })();
