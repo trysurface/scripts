@@ -220,7 +220,6 @@ button.secondary:hover {
 .inline-container #surface-inline-div {
   width: 100%;
   height: 100%;
-  display: none;
   position: absolute;
   top: 0;
   left: 0;
@@ -252,4 +251,26 @@ button.secondary:hover {
 .form-input-trigger button {
   width: 100%;
 }
+
+/* Embed config panel */
+#formUrlInput {
+  width: 100%;
+  padding: 8px;
+  border: 2px solid #e0e0e0;
+  border-radius: 6px;
+  font-size: 14px;
+  font-family: monospace;
+  margin: 6px 0 12px;
+}
+#refreshEmbed { background: #e67e22; margin-top: 8px; }
+#refreshStatus { margin-left: 10px; font-weight: 600; }
+.status-dirty { color: #e67e22; }
+.status-ok { color: #27ae60; }
+.size-btn { background: #6b7280; padding: 6px 16px; font-size: 13px; }
+.size-btn:hover { background: #4b5563; }
+.size-btn.active { background: #1a56db; }
+.size-options { display: flex; gap: 8px; margin: 6px 0 12px; }
+.custom-sliders { display: none; }
+.custom-sliders label { font-weight: 600; }
+.custom-sliders input[type="range"] { width: 100%; margin: 4px 0 12px; }
 
