@@ -2424,3 +2424,9 @@ class SurfaceEmbed {
     });
   }
 }
+
+(function () {
+  const scriptTag = document.currentScript;
+  const environmentId = SurfaceGetSiteIdFromScript(scriptTag);
+  EnvironmentId = environmentId;
+})();
