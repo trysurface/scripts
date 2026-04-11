@@ -1,606 +1,291 @@
-const SURFACE_USER_JOURNEY_COOKIE_NAME = "surface_journey_id";
-const SURFACE_USER_JOURNEY_RECENT_VISIT_COOKIE_NAME = "surface_recent_visit";
-
-let SurfaceSharedSessionId = null;
-let EnvironmentId = null;
-let LeadIdentifyInProgress = null;
-
-async function getHash(input) {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(input);
-  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  const hashHex = hashArray
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-  return hashHex;
-}
-
-//To generate fingerprint for the lead
-const getBrowserFingerprint = async (environmentId) => {
-  let fingerprint = {};
-
-  // Device Type
-  fingerprint.deviceType = /Mobi|Android/i.test(navigator.userAgent)
-    ? "Mobile"
-    : "Desktop";
-
-  // Screen Properties
-  fingerprint.screen = {
-    width: screen.width,
-    height: screen.height,
-    colorDepth: screen.colorDepth,
-  };
-
-  // Browser, OS, and Version
-  fingerprint.userAgent = navigator.userAgent;
-
-  //@ts-ignore
-  let userAgentData = navigator.userAgentData || {};
-
-  fingerprint.browser = userAgentData.brands ||
-    userAgentData.uaList || [{ brand: "unknown", version: "unknown" }];
-  fingerprint.os = userAgentData.platform || "unknown";
-
-  // Browser Language
-  fingerprint.language = navigator.language;
-
-  // Installed Plugins
-  if (navigator.plugins != null) {
-    fingerprint.plugins = Array.from(navigator.plugins).map(
-      (plugin) => plugin.name
-    );
-  }
-
-  // Time Zone
-  fingerprint.timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-
-  fingerprint.environmentId = environmentId;
-
-  // Combine all fingerprint data into a single string
-  let fingerprintString = JSON.stringify(fingerprint);
-
-  // Generate a unique ID using a hash function
-  fingerprint.id = await getHash(fingerprintString);
-
-  return fingerprint;
-};
-
-// Helper function to get site ID from script tag with multiple attribute name variations
-function SurfaceGetSiteIdFromScript(scriptElement) {
-  if (!scriptElement) return null;
-
-  const attributeVariations = ["siteId", "siteid", "site-id", "data-site-id"];
-
-  for (const attr of attributeVariations) {
-    const value = scriptElement.getAttribute(attr);
-    if (value) {
-      return value;
+"use strict";
+(() => {
+  // src/lead/site-id.ts
+  var ATTRIBUTE_VARIATIONS = [
+    "siteId",
+    "siteid",
+    "site-id",
+    "data-site-id"
+  ];
+  function getSiteIdFromScript(scriptElement) {
+    if (!scriptElement) return null;
+    for (const attr of ATTRIBUTE_VARIATIONS) {
+      const value = scriptElement.getAttribute(attr);
+      if (value) return value;
     }
-  }
-
-  return null;
-}
-
-// ========================================
-// START OF LEAD IDENTIFICATION CODE
-// ========================================
-
-function SurfaceSetLeadDataWithTTL({
-  leadId,
-  leadSessionId,
-  fingerprint,
-  landingPageUrl,
-}) {
-  const ttl = 10 * 60 * 1000; // 10 minutes in milliseconds
-  const item = {
-    leadId: leadId,
-    leadSessionId: leadSessionId,
-    fingerprint,
-    expiry: new Date().getTime() + ttl,
-    landingPageUrl,
-  };
-  localStorage.setItem("surfaceLeadData", JSON.stringify(item));
-}
-
-function SurfaceGetLeadDataWithTTL() {
-  const itemStr = localStorage.getItem("surfaceLeadData");
-
-  if (!itemStr) {
     return null;
   }
 
-  try {
-    const item = JSON.parse(itemStr);
-    const now = new Date().getTime();
+  // src/constants.ts
+  var SURFACE_USER_JOURNEY_COOKIE_NAME = "surface_journey_id";
+  var SURFACE_USER_JOURNEY_RECENT_VISIT_COOKIE_NAME = "surface_recent_visit";
+  var SURFACE_DOMAINS = [
+    "https://forms.withsurface.com",
+    "https://app.withsurface.com",
+    "https://dev.withsurface.com"
+  ];
+  var LEAD_IDENTIFY_API = "https://forms.withsurface.com/api/v1/lead/identify";
+  var USER_JOURNEY_TRACKING_API = "https://forms.withsurface.com/api/v1/lead/track";
+  var EXTERNAL_FORM_API = "https://forms.withsurface.com/api/v1";
+  var VALID_EMBED_TYPES = [
+    "popup",
+    "slideover",
+    "widget",
+    "inline",
+    "input-trigger"
+  ];
+  var LEAD_DATA_TTL = 10 * 60 * 1e3;
+  var JOURNEY_COOKIE_MAX_AGE = 5184e3;
+  var RECENT_VISIT_COOKIE_MAX_AGE = 86400;
 
-    // Check if expired
-    if (now > item.expiry) {
-      localStorage.removeItem("surfaceLeadData");
+  // src/utils/hash.ts
+  async function getHash(input) {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(input);
+    const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+  }
+
+  // src/lead/fingerprint.ts
+  async function getBrowserFingerprint(environmentId2) {
+    const fingerprint = {};
+    fingerprint.deviceType = /Mobi|Android/i.test(navigator.userAgent) ? "Mobile" : "Desktop";
+    fingerprint.screen = {
+      width: screen.width,
+      height: screen.height,
+      colorDepth: screen.colorDepth
+    };
+    fingerprint.userAgent = navigator.userAgent;
+    const userAgentData = navigator.userAgentData;
+    fingerprint.browser = userAgentData?.brands || userAgentData?.uaList || [{ brand: "unknown", version: "unknown" }];
+    fingerprint.os = userAgentData?.platform || "unknown";
+    fingerprint.language = navigator.language;
+    if (navigator.plugins != null) {
+      fingerprint.plugins = Array.from(navigator.plugins).map((p) => p.name);
+    }
+    fingerprint.timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    fingerprint.environmentId = environmentId2;
+    const fingerprintString = JSON.stringify(fingerprint);
+    const id = await getHash(fingerprintString);
+    return { ...fingerprint, id };
+  }
+
+  // src/lead/identify.ts
+  var environmentId = null;
+  var identifyInProgress = false;
+  function setEnvironmentId(id) {
+    environmentId = id;
+  }
+  function getEnvironmentId() {
+    return environmentId;
+  }
+  function setLeadDataWithTTL(data) {
+    const item = {
+      ...data,
+      expiry: (/* @__PURE__ */ new Date()).getTime() + LEAD_DATA_TTL
+    };
+    localStorage.setItem("surfaceLeadData", JSON.stringify(item));
+  }
+  function getLeadDataWithTTL() {
+    const itemStr = localStorage.getItem("surfaceLeadData");
+    if (!itemStr) return null;
+    try {
+      const item = JSON.parse(itemStr);
+      if ((/* @__PURE__ */ new Date()).getTime() > (item.expiry ?? 0)) {
+        localStorage.removeItem("surfaceLeadData");
+        return null;
+      }
+      return {
+        leadId: item.leadId,
+        leadSessionId: item.leadSessionId,
+        fingerprint: item.fingerprint,
+        landingPageUrl: item.landingPageUrl,
+        expiry: item.expiry
+      };
+    } catch (error) {
+      console.error("Error parsing lead data from localStorage:", error);
       return null;
     }
-
-    return {
-      leadId: item?.leadId,
-      leadSessionId: item?.leadSessionId,
-      fingerprint: item?.fingerprint,
-      landingPageUrl: item?.landingPageUrl,
-      expiry: item.expiry,
-    };
-  } catch (error) {
-    console.error("Error parsing lead data from localStorage:", error);
+  }
+  async function identifyLead(envId) {
+    if (identifyInProgress) {
+      return waitForCachedData();
+    }
+    const cached2 = getLeadDataWithTTL();
+    if (cached2?.leadSessionId && cached2?.fingerprint) {
+      return cached2;
+    }
+    identifyInProgress = true;
+    try {
+      const fingerprint = await getBrowserFingerprint(envId);
+      const parentUrl = new URL(window.location.href);
+      const response = await fetch(LEAD_IDENTIFY_API, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fingerprint: fingerprint.id,
+          environmentId: envId,
+          source: "website",
+          sourceURL: parentUrl.href,
+          sourceURLDomain: parentUrl.hostname,
+          sourceURLPath: parentUrl.pathname,
+          sourceUrlSearchParams: parentUrl.search,
+          leadId: cached2?.leadId,
+          sessionIdFromParams: cached2?.leadSessionId
+        })
+      });
+      const jsonData = await response.json();
+      if (response.ok && jsonData.data?.data) {
+        const leadId = jsonData.data.data.leadId || null;
+        const leadSessionId = jsonData.data.data.sessionId || null;
+        setLeadDataWithTTL({
+          leadId,
+          leadSessionId,
+          fingerprint: fingerprint.id,
+          landingPageUrl: window.location.href
+        });
+        return { leadId, leadSessionId, fingerprint: fingerprint.id };
+      }
+    } catch (error) {
+      console.error("Error identifying lead:", error);
+    } finally {
+      identifyInProgress = false;
+    }
     return null;
   }
-}
-
-// Identify function to get lead information
-async function SurfaceIdentifyLead(environmentId) {
-  // If a call is already in progress, wait for it to complete
-  if (LeadIdentifyInProgress) {
-    // Poll for cached data with timeout
-    const maxWaitTime = 5000; // 5 seconds max wait
-    const pollInterval = 100; // Check every 100ms
-    const startTime = Date.now();
-
-    while (LeadIdentifyInProgress && Date.now() - startTime < maxWaitTime) {
-      await new Promise((resolve) => setTimeout(resolve, pollInterval));
-
-      // Check if data is now available in cache
-      const cachedData = SurfaceGetLeadDataWithTTL();
-      if (cachedData && cachedData.leadSessionId && cachedData.fingerprint) {
-        return {
-          leadId: cachedData.leadId,
-          leadSessionId: cachedData.leadSessionId,
-          fingerprint: cachedData.fingerprint,
-        };
+  async function waitForCachedData() {
+    const maxWait = 5e3;
+    const interval = 100;
+    const start = Date.now();
+    while (identifyInProgress && Date.now() - start < maxWait) {
+      await new Promise((r) => setTimeout(r, interval));
+      const cached2 = getLeadDataWithTTL();
+      if (cached2?.leadSessionId && cached2?.fingerprint) {
+        return cached2;
       }
     }
+    return null;
   }
 
-  // Check if we have valid cached data first
-  const cachedData = SurfaceGetLeadDataWithTTL();
-  const now = new Date().getTime();
+  // src/utils/debug.ts
+  var cached = null;
+  function isDebugMode() {
+    if (cached !== null) return cached;
+    cached = window.location.search.includes("surfaceDebug=true");
+    return cached;
+  }
 
-  if (
-    cachedData &&
-    cachedData.leadSessionId &&
-    cachedData.fingerprint &&
-    now < cachedData.expiry
-  ) {
+  // src/utils/logger.ts
+  function createLogger(prefix) {
+    const fmt = (msg) => `${prefix} :: ${msg}`;
     return {
-      leadId: cachedData.leadId,
-      leadSessionId: cachedData.leadSessionId,
-      fingerprint: cachedData.fingerprint,
-    };
-  }
-
-  // Set flag before making API call
-  LeadIdentifyInProgress = true;
-
-  const fingerprint = await getBrowserFingerprint(environmentId);
-  const apiUrl = "https://forms.withsurface.com/api/v1/lead/identify";
-  const parentUrl = new URL(window.location.href);
-
-  const payload = {
-    fingerprint: fingerprint.id,
-    environmentId: environmentId,
-    source: "website",
-    sourceURL: parentUrl.href,
-    sourceURLDomain: parentUrl.hostname,
-    sourceURLPath: parentUrl.pathname,
-    sourceUrlSearchParams: parentUrl.search,
-    leadId: cachedData?.leadId,
-    sessionIdFromParams: cachedData?.leadSessionId,
-  };
-
-  try {
-    const identifyResponse = await fetch(apiUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
+      info: (msg) => {
+        if (isDebugMode()) console.log(fmt(msg));
       },
-      body: JSON.stringify(payload),
+      warn: (msg) => console.warn(fmt(msg)),
+      error: (msg) => console.error(fmt(msg))
+    };
+  }
+
+  // src/utils/cookies.ts
+  function parseCookies() {
+    const cookies = {};
+    document.cookie.split(";").forEach((cookie) => {
+      const trimmed = cookie.trim();
+      const eqIndex = trimmed.indexOf("=");
+      if (eqIndex === -1) return;
+      const key = trimmed.substring(0, eqIndex);
+      const value = trimmed.substring(eqIndex + 1);
+      if (!key || value === void 0) return;
+      try {
+        cookies[key] = decodeURIComponent(value);
+      } catch {
+        cookies[key] = value;
+      }
     });
-
-    const jsonData = await identifyResponse.json();
-
-    if (identifyResponse.ok && jsonData.data && jsonData.data.data) {
-      const leadId = jsonData.data.data.leadId || null;
-      const leadSessionId = jsonData.data.data.sessionId || null;
-
-      // Store in localStorage with TTL
-      SurfaceSetLeadDataWithTTL({
-        leadId,
-        leadSessionId,
-        fingerprint: fingerprint.id,
-        landingPageUrl: window.location.href,
-      });
-
-      return {
-        leadId: leadId,
-        leadSessionId: leadSessionId,
-        fingerprint: fingerprint.id,
-      };
-    }
-  } catch (error) {
-    console.error("Error identifying lead:", error);
-  } finally {
-    LeadIdentifyInProgress = false;
+    return cookies;
+  }
+  function setCookie(name, value, options = {}) {
+    const encoded = encodeURIComponent(value);
+    const path = options.path || "/";
+    const maxAge = options.maxAge || 604800;
+    const sameSite = options.sameSite || "lax";
+    const domainAttr = options.domain ? `; domain=${options.domain}` : "";
+    document.cookie = `${name}=${encoded}; path=${path}; max-age=${maxAge}; samesite=${sameSite}${domainAttr}`;
+  }
+  function getCookie(name) {
+    const cookies = parseCookies();
+    return cookies[name] || null;
+  }
+  function deleteCookie(name, options = {}) {
+    const domainAttr = options.domain ? `; domain=${options.domain}` : "";
+    document.cookie = `${name}=; path=/; max-age=0; samesite=lax${domainAttr}`;
   }
 
-  // Reset flag on failure too
-  LeadIdentifyInProgress = false;
-  return null;
-}
+  // src/utils/url.ts
+  function getUrlParams() {
+    const params = {};
+    const searchParams = new URLSearchParams(window.location.search);
+    for (const [key, value] of searchParams) {
+      params[key] = value;
+    }
+    return params;
+  }
 
-// ========================================
-// END OF LEAD IDENTIFICATION CODE
-// ========================================
-
-class SurfaceExternalForm {
-  constructor(props) {
-    this.initialRenderTime = new Date();
-    this.formStates = {};
-    this.responseIds = {};
-    this.windowUrl = new URL(window.location.href).toString();
-    this.formSessions = {};
-    this.formInitializationStatus = {};
-    this.formStarted = {};
-
-    this.config = {
-      serverBaseUrl:
-        props && props.serverBaseUrl
-          ? props.serverBaseUrl
-          : "https://forms.withsurface.com/api/v1",
-      debugMode: window.location.search.includes("surfaceDebug=true"),
+  // src/utils/route-observer.ts
+  var callbacks = [];
+  var installed = false;
+  var currentUrl = "";
+  function onRouteChange(callback) {
+    callbacks.push(callback);
+    if (!installed) {
+      install();
+      installed = true;
+    }
+  }
+  function notify() {
+    const newUrl = window.location.href;
+    if (newUrl === currentUrl) return;
+    currentUrl = newUrl;
+    callbacks.forEach((cb) => cb(newUrl));
+  }
+  function install() {
+    currentUrl = window.location.href;
+    window.addEventListener("popstate", notify);
+    const origPush = history.pushState;
+    const origReplace = history.replaceState;
+    history.pushState = function(...args) {
+      origPush.apply(history, args);
+      setTimeout(notify, 0);
     };
-
-    this.environmentId =
-      props && props.siteId
-        ? props.siteId
-        : SurfaceGetSiteIdFromScript(document.currentScript);
-
-    this.forms = Array.from(document.querySelectorAll("form")).filter((form) =>
-      Boolean(form.getAttribute("data-id"))
-    );
-  }
-
-  getLeadSessionId(formId) {
-    return this.formSessions[formId] && this.formSessions[formId].sessionId
-      ? this.formSessions[formId].sessionId
-      : null;
-  }
-
-  async sendBeacon(url, payload) {
-    try {
-      const blob = new Blob([JSON.stringify(payload)], {
-        type: "application/json",
-      });
-      if (navigator.sendBeacon) {
-        navigator.sendBeacon(url, blob);
-      } else {
-        // Fallback to fetch if sendBeacon is not supported
-        const response = await fetch(url, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(payload),
-          keepalive: true,
-        });
-        if (!response.ok) {
-          throw new Error("Network response was not ok");
-        }
-      }
-    } catch (error) {
-      console.error("Push event API failed: ", error);
-    }
-  }
-
-  callFormViewApi(formId) {
-    const apiUrl = `${this.config.serverBaseUrl}/externalForm/initialize`;
-    const payload = {
-      formId,
-      environmentId: this.environmentId,
-      leadSessionId: this.getLeadSessionId(formId),
+    history.replaceState = function(...args) {
+      origReplace.apply(history, args);
+      setTimeout(notify, 0);
     };
-    this.sendBeacon(apiUrl, payload);
   }
 
-  callFormStartedApi(formId) {
-    const apiUrl = `${this.config.serverBaseUrl}/externalForm/formStarted`;
-    const payload = {
-      formId,
-      environmentId: this.environmentId,
-      leadSessionId: this.getLeadSessionId(formId),
-    };
-    this.sendBeacon(apiUrl, payload);
-  }
-
-  async identify(formId) {
-    const apiUrl = `${this.config.serverBaseUrl}/lead/identify`;
-    const parentUrl = new URL(this.windowUrl);
-    const payload = {
-      formId,
-      environmentId: this.environmentId,
-      source: "surfaceForm",
-      sourceURL: parentUrl.href,
-      sourceURLDomain: parentUrl.hostname,
-      sourceURLPath: parentUrl.pathname,
-      sourceUrlSearchParams: parentUrl.search,
-      leadId: null,
-      sessionIdFromParams: null,
-    };
-    try {
-      const identifyResponse = await fetch(apiUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      });
-      const jsonData = await identifyResponse.json();
-      if (
-        identifyResponse.ok &&
-        jsonData.data &&
-        jsonData.data.data &&
-        jsonData.data.data.sessionId
-      ) {
-        this.formSessions[formId] = jsonData.data.data;
-      }
-    } catch (error) {
-      this.log("Error identifying lead:", error, "error");
-    }
-  }
-
-  async initializeForm(formId) {
-    if (this.formInitializationStatus[formId]) {
-      return;
-    }
-    this.formInitializationStatus[formId] = true;
-    await this.identify(formId);
-    this.callFormViewApi(formId);
-  }
-
-  log(message, level = "log") {
-    if (this.config.debugMode) {
-      switch (level) {
-        case "log":
-          console.log(message);
-          break;
-        case "warn":
-          console.warn(message);
-          break;
-        case "error":
-          console.error(message);
-          break;
-        default:
-          console.log(message);
-          break;
-      }
-    }
-  }
-
-  storeQuestionData({ formId, questionId, variableName = "value", value }) {
-    if (!this.formStates[formId]) {
-      this.formStates[formId] = {};
-    }
-    if (!this.formStates[formId][questionId]) {
-      this.formStates[formId][questionId] = {};
-    }
-    this.formStates[formId][questionId][variableName] = value;
-  }
-
-  submitForm(form, finished = false) {
-    const formId = form.getAttribute("data-id");
-
-    const responses = Object.entries(this.formStates[formId] || {}).map(
-      ([questionId, data]) => ({
-        questionId,
-        response: data,
-      })
-    );
-    const payload = {
-      id: this.responseIds[formId],
-      formId,
-      responses: responses,
-      finished,
-      environmentId: this.environmentId,
-      leadSessionId: this.getLeadSessionId(formId),
-      initialRenderTime: this.initialRenderTime.toISOString(),
-    };
-
-    this.log("Submitting form data:", payload);
-
-    if (this.environmentId == null) {
-      this.log(
-        "Skipping form submission as the environmentId is not configured.",
-        "error"
-      );
-      return;
-    }
-
-    fetch(`${this.config.serverBaseUrl}/externalForm/submit`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    })
-      .then((response) => response.json())
-      .then((data) => {
-        if (data && data.data && data.data.response && data.data.response.id) {
-          this.responseIds[formId] = data.data.response.id;
-          this.log("Response ID stored:", data.data.response.id);
-        }
-      })
-      .catch((error) => {
-        this.log("Error submitting form:", error, "error");
-      });
-  }
-
-  handleInputChange(formId, event) {
-    if (!this.formStarted[formId]) {
-      this.callFormStartedApi(formId);
-      this.formStarted[formId] = true;
-    }
-
-    const elementId = event.target.getAttribute("data-id");
-    const [questionId, variableName] = elementId.includes("_")
-      ? elementId.split("_")
-      : [elementId, null];
-    const value = event.target.value;
-
-    this.log(
-      `Form ${formId} element changed - Question ID: ${questionId}, Variable Name: ${variableName}, Value: ${value}`
-    );
-    this.storeQuestionData({
-      formId,
-      questionId,
-      variableName: variableName ?? "value",
-      value,
-    });
-  }
-
-  attachFormHandlers() {
-    if (!this.environmentId) {
-      this.log("No environment id configured", "warn");
-      return;
-    }
-
-    if (this.forms.length === 0) {
-      this.log("No forms with data-id attribute found", "warn");
-      return;
-    }
-
-    this.forms.forEach((form) => {
-      const formId = form.getAttribute("data-id");
-
-      this.log(`Attaching handlers to form: ${formId}`);
-
-      form
-        .querySelectorAll(
-          "input[data-id], select[data-id], textarea[data-id], fieldset[data-id]"
-        )
-        .forEach((element) =>
-          element.addEventListener("change", (e) =>
-            this.handleInputChange(formId, e)
-          )
-        );
-
-      const surfaceNextButtonElements = form.getElementsByClassName(
-        "surface-next-button"
-      );
-
-      const surfaceSubmitButtonElements = form.getElementsByClassName(
-        "surface-submit-button"
-      );
-
-      if (surfaceNextButtonElements.length > 0) {
-        Array.from(surfaceNextButtonElements).forEach((button) => {
-          button.addEventListener("click", (event) => {
-            this.submitForm(form, false);
-          });
-        });
-      }
-      if (surfaceSubmitButtonElements.length > 0) {
-        Array.from(surfaceSubmitButtonElements).forEach((button) => {
-          button.addEventListener("click", (event) => {
-            event.preventDefault();
-            this.submitForm(form, true);
-          });
-        });
-      } else {
-        form.addEventListener("submit", (event) => {
-          event.preventDefault();
-          this.log(`Form ${formId} submitted`);
-          this.submitForm(form, true);
-        });
-      }
-
-      // initialize the form state
-      this.formStates[formId] = {};
-      this.formStarted[formId] = false;
-
-      this.initializeForm(formId);
-    });
-  }
-}
-
-class SurfaceStore {
-  constructor() {
-    this.windowUrl = new URL(window.location.href).toString();
-    this.origin = new URL(window.location.href).origin.toString();
-    this.referrer = document.referrer || "";
-    this.cookies = {};
-    this.metadata = {};
-    this.urlParams = {};
-    this.partialFilledData = {};
-    this.validEmbedTypes = [
-      "popup",
-      "slideover",
-      "widget",
-      "inline",
-      "input-trigger",
-    ];
-    this.debugMode = window.location.search.includes("surfaceDebug=true");
-    this.surfaceDomains = [
-      "https://forms.withsurface.com",
-      "https://app.withsurface.com",
-      "https://dev.withsurface.com",
-    ];
-
-    this.userJourneyTrackingApiUrl = "https://forms.withsurface.com/api/v1/lead/track";
-    this.userJourneyId = null;
-    this.userJourney = [];
-
-    this._initializeMessageListener();
-    this.cachedIdentifyData = SurfaceGetLeadDataWithTTL();
-    if (
-      (this.cachedIdentifyData || LeadIdentifyInProgress !== true) &&
-      !this._isCurrentOriginSurfaceDomain()
-    ) {
-      this._initializeUserJourneyTracking();
-      this._setupRouteChangeDetection();
-    }
-  }
-
-  _isCurrentOriginSurfaceDomain() {
-    const hostname =
-      typeof window !== "undefined" && window.location
-        ? window.location.hostname
-        : "";
-    return this.surfaceDomains.some(
-      (url) => new URL(url).hostname === hostname
-    );
-  }
-
-  _initializeMessageListener = () => {
+  // src/store/message-listener.ts
+  function initializeMessageListener(store) {
     const handleMessage = (event) => {
-      if (!event.origin || !this.surfaceDomains.includes(event.origin)) {
+      if (!event.origin || !SURFACE_DOMAINS.includes(event.origin)) {
         return;
       }
-
       if (event.data.type === "SEND_DATA") {
-        this.sendPayloadToIframes("STORE_UPDATE");
-        if (EnvironmentId) {
-          SurfaceIdentifyLead(EnvironmentId)
-            .then(() => {
-              this.sendPayloadToIframes("LEAD_DATA_UPDATE");
-            })
-            .catch((e) => console.log("Failed identify", e));
+        store.sendPayloadToIframes("STORE_UPDATE");
+        const envId = getEnvironmentId();
+        if (envId) {
+          identifyLead(envId).then(() => store.sendPayloadToIframes("LEAD_DATA_UPDATE")).catch((e) => console.log("Failed identify", e));
         } else {
-          this.sendPayloadToIframes("LEAD_DATA_UPDATE");
+          store.sendPayloadToIframes("LEAD_DATA_UPDATE");
         }
       }
       if (event.data.event === "CLEAR_USER_JOURNEY_DATA") {
-        this.log("info", "Clearing user journey");
-        this._clearUserJourney();
+        store.log.info("Clearing user journey");
+        store.clearUserJourney();
       }
     };
-
-    if (typeof document === "undefined") {
-      return;
-    }
-
+    if (typeof document === "undefined") return;
     if (document.readyState === "loading") {
       document.addEventListener("DOMContentLoaded", () => {
         window.addEventListener("message", handleMessage);
@@ -608,808 +293,491 @@ class SurfaceStore {
     } else {
       window.addEventListener("message", handleMessage);
     }
-  };
-
-  getUrlParams() {
-    const params = {};
-    const searchParams = new URLSearchParams(window.location.search);
-
-    for (const [key, value] of searchParams) {
-      params[key] = value;
-    }
-
-    return params;
   }
 
-  sendPayloadToIframes = (type) => {
-    const iframes = document.querySelectorAll("iframe");
-
-    if (iframes.length === 0) {
-      return;
-    }
-
-    this.urlParams = this.getUrlParams();
-    this.urlParams.url = window.location.href;
-
-    if (this.debugMode) {
-      console.log("Updating iframe params", this.urlParams);
-    }
-
-    iframes.forEach((iframe) => {
-      this.notifyIframe(iframe, type);
+  // src/store/journey-cookies.ts
+  function getJourneyCookieDomain() {
+    const hostname = window.location?.hostname ?? "";
+    if (!hostname || !hostname.includes(".")) return void 0;
+    const parts = hostname.split(".");
+    return "." + (parts.length === 2 ? hostname : parts.slice(1).join("."));
+  }
+  function refreshJourneyCookie(journeyId) {
+    if (!journeyId) return;
+    setCookie(SURFACE_USER_JOURNEY_COOKIE_NAME, journeyId, {
+      maxAge: JOURNEY_COOKIE_MAX_AGE,
+      sameSite: "lax",
+      domain: getJourneyCookieDomain()
     });
-  };
+  }
+  function getExistingJourneyId() {
+    return getCookie(SURFACE_USER_JOURNEY_COOKIE_NAME);
+  }
 
-  notifyIframe(iframe, type) {
-    const surfaceIframe = iframe || document.querySelector("#surface-iframe");
-    if (surfaceIframe) {
-      this.surfaceDomains.forEach((domain) => {
-        if (surfaceIframe.src.includes(domain)) {
-          surfaceIframe.contentWindow.postMessage(
-            {
-              type,
-              payload: this.getPayload(),
-              sender: "surface_tag",
-            },
+  // src/store/user-journey.ts
+  function initializeUserJourneyTracking(log, getJourneyId, setJourneyId) {
+    try {
+      const existingId = getExistingJourneyId();
+      setJourneyId(existingId);
+      log.info(`Existing journey ID: ${existingId || "none"}`);
+      const currentUrl2 = window.location.href;
+      const recentVisit = getCookie(SURFACE_USER_JOURNEY_RECENT_VISIT_COOKIE_NAME);
+      if (recentVisit === currentUrl2) {
+        log.info("Skipping duplicate page view (same as recent visit)");
+        return;
+      }
+      const surfaceLeadData = getLeadDataWithTTL();
+      trackToRedis(
+        {
+          data: {
+            type: "page_view",
+            payload: {
+              url: currentUrl2,
+              timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+              referrer: document.referrer || ""
+            }
+          },
+          metadata: { ...surfaceLeadData ?? {} }
+        },
+        log,
+        getJourneyId,
+        setJourneyId
+      );
+      setCookie(SURFACE_USER_JOURNEY_RECENT_VISIT_COOKIE_NAME, currentUrl2, {
+        maxAge: RECENT_VISIT_COOKIE_MAX_AGE,
+        sameSite: "lax",
+        domain: getJourneyCookieDomain()
+      });
+      log.info("User journey tracking initialized");
+    } catch (error) {
+      log.error("Error initializing user journey tracking: " + error);
+    }
+  }
+  async function trackToRedis(event, log, getJourneyId, setJourneyId) {
+    try {
+      const journeyId = getJourneyId();
+      const payload = { ...event };
+      if (journeyId) payload.id = journeyId;
+      log.info("Tracking to Redis: " + JSON.stringify(payload, null, 2));
+      if (journeyId && navigator.sendBeacon) {
+        const blob = new Blob([JSON.stringify(payload)], {
+          type: "application/json"
+        });
+        const sent = navigator.sendBeacon(USER_JOURNEY_TRACKING_API, blob);
+        if (sent) {
+          refreshJourneyCookie(journeyId);
+          log.info("Tracking sent via sendBeacon");
+          return { success: true };
+        }
+        log.warn("sendBeacon failed, falling back to fetch");
+      }
+      const response = await fetch(USER_JOURNEY_TRACKING_API, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      if (!response.ok) {
+        log.warn(`Tracking API returned status ${response.status}`);
+        return null;
+      }
+      const data = await response.json();
+      if (data?.data?.id) {
+        setJourneyId(data.data.id);
+        log.info(`Journey ID stored: ${data.data.id}`);
+      }
+      refreshJourneyCookie(getJourneyId());
+      return data;
+    } catch (error) {
+      log.error("Error tracking to Redis: " + error);
+      return null;
+    }
+  }
+  function updateUserJourneyOnRouteChange(newUrl, log, getJourneyId, setJourneyId) {
+    try {
+      const currentUrl2 = newUrl || window.location.href;
+      const recentVisit = getCookie(SURFACE_USER_JOURNEY_RECENT_VISIT_COOKIE_NAME);
+      if (recentVisit === currentUrl2) {
+        log.info("Skipping duplicate page view on route change");
+        return;
+      }
+      const surfaceLeadData = getLeadDataWithTTL();
+      trackToRedis(
+        {
+          data: {
+            type: "page_view",
+            payload: {
+              url: currentUrl2,
+              timestamp: (/* @__PURE__ */ new Date()).toISOString()
+            }
+          },
+          metadata: { ...surfaceLeadData ?? {} }
+        },
+        log,
+        getJourneyId,
+        setJourneyId
+      );
+      setCookie(SURFACE_USER_JOURNEY_RECENT_VISIT_COOKIE_NAME, currentUrl2, {
+        maxAge: RECENT_VISIT_COOKIE_MAX_AGE,
+        sameSite: "lax",
+        domain: getJourneyCookieDomain()
+      });
+      log.info("User journey updated on route change: " + currentUrl2);
+    } catch (error) {
+      log.error("Error updating user journey on route change: " + error);
+    }
+  }
+  function clearUserJourney(log, setJourneyId) {
+    const domain = getJourneyCookieDomain();
+    deleteCookie(SURFACE_USER_JOURNEY_COOKIE_NAME, { domain });
+    deleteCookie(SURFACE_USER_JOURNEY_RECENT_VISIT_COOKIE_NAME, { domain });
+    setJourneyId(null);
+    log.info("User journey cleared");
+  }
+
+  // src/store/store.ts
+  var SurfaceStore = class {
+    constructor() {
+      this.windowUrl = new URL(window.location.href).toString();
+      this.origin = new URL(window.location.href).origin.toString();
+      this.referrer = document.referrer || "";
+      this.cookies = {};
+      this.urlParams = {};
+      this.partialFilledData = {};
+      this.userJourneyId = null;
+      this.log = createLogger("Surface Store");
+      initializeMessageListener(this);
+      if (!this.isCurrentOriginSurfaceDomain()) {
+        initializeUserJourneyTracking(
+          this.log,
+          () => this.userJourneyId,
+          (id) => {
+            this.userJourneyId = id;
+          }
+        );
+        this.setupRouteChangeDetection();
+      }
+    }
+    isCurrentOriginSurfaceDomain() {
+      const hostname = window.location?.hostname ?? "";
+      return SURFACE_DOMAINS.some((url) => new URL(url).hostname === hostname);
+    }
+    setupRouteChangeDetection() {
+      onRouteChange((newUrl) => {
+        this.windowUrl = new URL(newUrl).toString();
+        updateUserJourneyOnRouteChange(
+          newUrl,
+          this.log,
+          () => this.userJourneyId,
+          (id) => {
+            this.userJourneyId = id;
+          }
+        );
+        this.sendPayloadToIframes("STORE_UPDATE");
+        initializeMessageListener(this);
+        this.log.info("Route changed, updated journey and re-initialized listener");
+      });
+    }
+    sendPayloadToIframes(type) {
+      const iframes = document.querySelectorAll("iframe");
+      if (iframes.length === 0) return;
+      this.urlParams = getUrlParams();
+      this.urlParams.url = window.location.href;
+      this.log.info("Updating iframe params");
+      iframes.forEach((iframe) => this.notifyIframe(iframe, type));
+    }
+    notifyIframe(iframe, type) {
+      const target = iframe || document.querySelector("#surface-iframe");
+      if (!target) return;
+      SURFACE_DOMAINS.forEach((domain) => {
+        if (target.src.includes(domain)) {
+          target.contentWindow?.postMessage(
+            { type, payload: this.getPayload(), sender: "surface_tag" },
             domain
           );
         }
       });
     }
-  }
-
-  parseCookies() {
-    const cookies = {};
-    document.cookie.split(";").forEach((cookie) => {
-      const trimmedCookie = cookie.trim();
-      const firstEqualIndex = trimmedCookie.indexOf("=");
-      if (firstEqualIndex !== -1) {
-        const key = trimmedCookie.substring(0, firstEqualIndex);
-        const value = trimmedCookie.substring(firstEqualIndex + 1);
-        if (key && value !== undefined) {
-          try {
-            cookies[key] = decodeURIComponent(value);
-          } catch (e) {
-            cookies[key] = value;
-          }
-        }
-      }
-    });
-    return cookies;
-  }
-
-  _getUserJourneyCookieDomain() {
-    const hostname =
-      typeof window !== "undefined" && window.location
-        ? window.location.hostname
-        : "";
-    if (!hostname || !hostname.includes(".")) {
-      return undefined;
+    getUrlParams() {
+      return getUrlParams();
     }
-    const parts = hostname.split(".");
-    return "." + (parts.length === 2 ? hostname : parts.slice(1).join("."));
-  }
-
-  _setCookie(name, value, options = {}) {
-    const encodedValue = encodeURIComponent(value);
-    const path = options.path || "/";
-    const maxAge = options.maxAge || 604800;
-    const sameSite = options.sameSite || "lax";
-    const domain = options.domain;
-    const domainAttr = domain ? `; domain=${domain}` : "";
-    document.cookie = `${name}=${encodedValue}; path=${path}; max-age=${maxAge}; samesite=${sameSite}${domainAttr}`;
-  }
-
-  _getCookie(name) {
-    const cookies = this.parseCookies();
-    return cookies[name] || null;
-  }
-
-  _refreshJourneyCookie() {
-    if (this.userJourneyId) {
-      this._setCookie(SURFACE_USER_JOURNEY_COOKIE_NAME, this.userJourneyId, {
-        maxAge: 5184000, // 60 days - sliding window, refreshed on each use
-        sameSite: "lax",
-        domain: this._getUserJourneyCookieDomain(),
-      });
-    }
-  }
-
-  _deleteCookie(name, options = {}) {
-    const domain = options.domain;
-    const domainAttr = domain ? `; domain=${domain}` : "";
-    document.cookie = `${name}=; path=/; max-age=0; samesite=lax${domainAttr}`;
-  }
-
-  getPayload() {
-    return {
-      windowUrl: this.windowUrl,
-      referrer: this.referrer,
-      cookies:
-        Object.keys(this.cookies).length === 0
-          ? this.parseCookies()
-          : this.cookies,
-      origin: this.origin,
-      questionIds: this.partialFilledData,
-      urlParams: this.urlParams,
-      surfaceLeadData: SurfaceGetLeadDataWithTTL(),
-      userJourneyId: this.userJourneyId,
-    };
-  }
-
-  log(level, message) {
-    const prefix = "Surface Store :: ";
-    const fullMessage = prefix + message;
-    if (level == "info" && this.debugMode) {
-      console.log(fullMessage);
-    }
-    if (level == "warn") {
-      console.warn(fullMessage);
-    }
-    if (level == "error") {
-      console.error(fullMessage);
-    }
-  }
-
-  _initializeUserJourneyTracking() {
-    try {
-      const existingJourneyId = this._getCookie(SURFACE_USER_JOURNEY_COOKIE_NAME);
-      this.userJourneyId = existingJourneyId;
-
-      this.log("info", `Existing journey ID: ${existingJourneyId || "none"}`);
-
-      const currentUrl = window.location.href;
-      const recentVisitUrl = this._getCookie(
-        SURFACE_USER_JOURNEY_RECENT_VISIT_COOKIE_NAME
-      );
-
-      if (recentVisitUrl === currentUrl) {
-        this.log("info", "Skipping duplicate page view (same as recent visit)");
-        return;
-      }
-
-      const surfaceLeadData = SurfaceGetLeadDataWithTTL();
-
-      this._trackToRedis({
-        data: {
-          type: "page_view",
-          payload: {
-            url: currentUrl,
-            timestamp: new Date().toISOString(),
-            referrer: this.referrer,
-          },
-        },
-        metadata: {
-          ...(surfaceLeadData ? surfaceLeadData : null),
-        },
-      });
-
-      this._setCookie(SURFACE_USER_JOURNEY_RECENT_VISIT_COOKIE_NAME, currentUrl, {
-        maxAge: 86400, // 1 day
-        sameSite: "lax",
-        domain: this._getUserJourneyCookieDomain(),
-      });
-
-      this.log("info", "User journey tracking initialized");
-    } catch (error) {
-      this.log("error", "Error initializing user journey tracking: " + error);
-      this.userJourney = [];
-    }
-  }
-
-  /**
-   * Sends a tracking event to Redis via the API
-   * @param {Object} event - The event to track
-   * @param {string} event.type - The event type (e.g., "page_view")
-   * @param {Object} event.payload - The event payload
-   * @returns {Promise<Object|null>} - The response data or null on error
-   */
-  async _trackToRedis(event) {
-    try {
-      const payload = {
-        ...event,
+    getPayload() {
+      return {
+        windowUrl: this.windowUrl,
+        referrer: this.referrer,
+        cookies: Object.keys(this.cookies).length === 0 ? parseCookies() : this.cookies,
+        origin: this.origin,
+        questionIds: this.partialFilledData,
+        urlParams: this.urlParams,
+        surfaceLeadData: getLeadDataWithTTL(),
+        userJourneyId: this.userJourneyId
       };
-
-      if (this.userJourneyId) {
-        payload.id = this.userJourneyId;
-      }
-
-      this.log(
-        "info",
-        "Tracking to Redis: " + JSON.stringify(payload, null, 2)
-      );
-
-      if (this.userJourneyId && navigator.sendBeacon) {
-        const blob = new Blob([JSON.stringify(payload)], {
-          type: "application/json",
-        });
-        const sent = navigator.sendBeacon(this.userJourneyTrackingApiUrl, blob);
-        
-        if (sent) {
-          this._refreshJourneyCookie();
-          this.log("info", "Tracking sent via sendBeacon");
-          return { success: true };
-        } else {
-          this.log("warn", "sendBeacon failed, falling back to fetch");
-        }
-      }
-
-      const response = await fetch(this.userJourneyTrackingApiUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      });
-
-      if (!response.ok) {
-        this.log("warn", `Tracking API returned status ${response.status}`);
-        return null;
-      }
-
-      const data = await response.json();
-
-      if (data && data.data && data.data.id) {
-        this.userJourneyId = data.data.id;
-        this.log("info", `Journey ID stored: ${data.data.id}`);
-      }
-
-      this._refreshJourneyCookie();
-      return data;
-    } catch (error) {
-      this.log("error", "Error tracking to Redis: " + error);
-      return null;
     }
-  }
+    clearUserJourney() {
+      clearUserJourney(this.log, (id) => {
+        this.userJourneyId = id;
+      });
+    }
+  };
 
-  _updateUserJourneyOnRouteChange(newUrl) {
+  // src/utils/beacon.ts
+  async function sendBeacon(url, payload) {
     try {
-      const currentUrl = newUrl || window.location.href;
-      const recentVisitUrl = this._getCookie(
-        SURFACE_USER_JOURNEY_RECENT_VISIT_COOKIE_NAME
-      );
-
-      if (recentVisitUrl === currentUrl) {
-        this.log(
-          "info",
-          "Skipping duplicate page view on route change (same as recent visit)"
-        );
-        return;
+      const blob = new Blob([JSON.stringify(payload)], {
+        type: "application/json"
+      });
+      if (navigator.sendBeacon) {
+        const sent = navigator.sendBeacon(url, blob);
+        if (sent) return true;
       }
-
-      const surfaceLeadData = SurfaceGetLeadDataWithTTL();
-
-      this._trackToRedis({
-        data: {
-          type: "page_view",
-          payload: {
-            url: currentUrl,
-            timestamp: new Date().toISOString(),
-          },
-        },
-        metadata: {
-          ...(surfaceLeadData ? surfaceLeadData : null),
-        },
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        keepalive: true
       });
-
-      this._setCookie(SURFACE_USER_JOURNEY_RECENT_VISIT_COOKIE_NAME, currentUrl, {
-        maxAge: 86400, // 1 day
-        sameSite: "lax",
-        domain: this._getUserJourneyCookieDomain(),
-      });
-
-      this.log("info", "User journey updated on route change: " + currentUrl);
+      if (!response.ok) {
+        throw new Error("Network response was not ok");
+      }
+      return true;
     } catch (error) {
-      this.log(
-        "error",
-        "Error updating user journey on route change: " + error
+      console.error("Beacon send failed:", error);
+      return false;
+    }
+  }
+
+  // src/external-form/form-handlers.ts
+  function attachFormHandlers(form) {
+    if (!form.environmentId) {
+      form.log.warn("No environment id configured");
+      return;
+    }
+    if (form.forms.length === 0) {
+      form.log.warn("No forms with data-id attribute found");
+      return;
+    }
+    form.forms.forEach((htmlForm) => {
+      const formId = htmlForm.getAttribute("data-id");
+      form.log.info(`Attaching handlers to form: ${formId}`);
+      htmlForm.querySelectorAll(
+        "input[data-id], select[data-id], textarea[data-id], fieldset[data-id]"
+      ).forEach(
+        (el) => el.addEventListener(
+          "change",
+          (e) => handleInputChange(form, formId, e)
+        )
       );
-    }
-  }
-
-  _setupRouteChangeDetection() {
-    let currentUrl = window.location.href;
-
-    const handleRouteChange = () => {
-      const newUrl = window.location.href;
-      if (newUrl !== currentUrl) {
-        currentUrl = newUrl;
-        this.windowUrl = new URL(window.location.href).toString();
-
-        this._updateUserJourneyOnRouteChange(newUrl);
-
-        this.sendPayloadToIframes("STORE_UPDATE");
-        this._initializeMessageListener();
-
-        if (this.debugMode) {
-          this.log(
-            "info",
-            "Route changed, updated user journey and re-initialized message listener"
-          );
-        }
+      const nextButtons = htmlForm.getElementsByClassName("surface-next-button");
+      const submitButtons = htmlForm.getElementsByClassName("surface-submit-button");
+      if (nextButtons.length > 0) {
+        Array.from(nextButtons).forEach((btn) => {
+          btn.addEventListener("click", () => submitForm(form, htmlForm, false));
+        });
       }
-    };
-
-    window.addEventListener("popstate", handleRouteChange);
-
-    const originalPushState = history.pushState;
-    const originalReplaceState = history.replaceState;
-
-    history.pushState = function (...args) {
-      originalPushState.apply(history, args);
-      setTimeout(handleRouteChange, 0);
-    };
-
-    history.replaceState = function (...args) {
-      originalReplaceState.apply(history, args);
-      setTimeout(handleRouteChange, 0);
-    };
-  }
-
-  _clearUserJourney() {
-    const domain = this._getUserJourneyCookieDomain();
-    this._deleteCookie(SURFACE_USER_JOURNEY_COOKIE_NAME, { domain });
-    this._deleteCookie(SURFACE_USER_JOURNEY_RECENT_VISIT_COOKIE_NAME, {
-      domain,
-    });
-
-    this.userJourneyId = null;
-    this.userJourney = [];
-
-    this.log("info", "User journey cleared");
-  }
-}
-
-const SurfaceTagStore = new SurfaceStore();
-
-class SurfaceEmbed {
-  static _instances = [];
-
-  constructor(src, surface_embed_type, target_element_class, options = {}) {
-    this.src = new URL(src);
-    this.currentQuestionId =
-      document.currentScript?.getAttribute("data-question-id");
-    SurfaceEmbed._instances.push(this);
-    const isPreviewMode = this._isFormPreviewMode();
-
-    if (isPreviewMode) {
-      this.log("info", "Form is in preview mode");
-      this.src.searchParams.append("preview", "true");
-    }
-
-    this._popupSize = options.popupSize || "medium";
-    this.documentReferenceSelector = options.enforceIDSelector ? "#" : ".";
-
-    this.log(
-      "info",
-      "documentReferenceSelector set to " + this.documentReferenceSelector
-    );
-
-    const preloadOptions = ["true", "false", "pageLoad"];
-
-    this._preload = preloadOptions.includes(options.preload)
-      ? options.preload
-      : "true";
-
-    this.log("info", "preload set to " + this._preload);
-
-    this.styles = {
-      popup: null,
-      widget: null,
-    };
-
-    this.initialized = false;
-
-    const defaultWidgetStyles = {
-      position: "right",
-      bottomMargin: "40px",
-      sideMargin: "30px",
-      size: "64px",
-      backgroundColor: "#1a56db",
-      hoverScale: "1.05",
-      boxShadow: "0 6px 12px rgba(0,0,0,0.25)",
-    };
-
-    this.widgetStyle = {
-      ...defaultWidgetStyles,
-      ...(options.widgetStyles || {}),
-    };
-
-    if (options.prefillData) {
-      SurfaceTagStore.partialFilledData = Object.entries(
-        options.prefillData
-      ).map(([key, value]) => ({ [key]: value }));
-    }
-
-    this._cachedSrcUrl = null;
-    this._getSrcUrl = () => {
-      if (!this._cachedSrcUrl) {
-        this._cachedSrcUrl = this.src.toString();
-      }
-      return this._cachedSrcUrl;
-    };
-
-    this.embed_type = this.getEmbedType(surface_embed_type);
-    this.target_element_class = target_element_class;
-    this.options = options;
-    this.options.popupSize = this._popupSize;
-    this.shouldShowSurfaceForm = () => {};
-    this.embedSurfaceForm = () => {};
-
-    if (!SurfaceTagStore.validEmbedTypes.includes(this.embed_type)) {
-      this.log("error", "Invalid embed type: must be string or object");
-    }
-
-    if (
-      SurfaceTagStore.validEmbedTypes.includes(this.embed_type) &&
-      target_element_class
-    ) {
-      if (this.embed_type === "inline") {
-        if (this.initialized) return;
-        this.surface_inline_reference = null;
-        this.inline_embed_references = document.querySelectorAll(
-          this.documentReferenceSelector + this.target_element_class
-        );
-        this.embedSurfaceForm = this.embedInline;
-        this.shouldShowSurfaceForm = this.showSurfaceInline;
-        this.hideSurfaceForm = this.hideSurfaceInline;
-        this.initializeEmbed();
-      } else if (
-        this.embed_type === "popup" ||
-        this.embed_type === "widget" ||
-        this.embed_type === "input-trigger"
-      ) {
-        if (this.initialized) return;
-        this.embedSurfaceForm = this.embedPopup;
-        this.shouldShowSurfaceForm = this.showSurfacePopup;
-        this.hideSurfaceForm = this.hideSurfacePopup;
-        if (this.embed_type === "widget") {
-          if (this.surface_popup_reference == null) {
-            this.surface_popup_reference = document.createElement("div");
-          }
-          this.addWidgetButton();
-        }
-      } else if (this.embed_type === "slideover") {
-        if (this.initialized) return;
-        this.embedSurfaceForm = this.embedSlideover;
-        this.shouldShowSurfaceForm = this.showSurfaceSlideover;
-        this.hideSurfaceForm = this.hideSurfaceSlideover;
-      }
-
-      if (this.surface_popup_reference == null) {
-        this.surface_popup_reference = document.createElement("div");
-      }
-      this.setupClickHandlers();
-      this.formInputTriggerInitialize();
-      this.showSurfaceFormFromUrlParameter();
-      this.preloadIframe();
-      this._hideFormOnEsc();
-      this._setupRouteChangeDetection();
-    }
-  }
-
-  _setupRouteChangeDetection() {
-    let currentUrl = window.location.href;
-
-    const handleRouteChange = () => {
-      const newUrl = window.location.href;
-      if (newUrl !== currentUrl) {
-        currentUrl = newUrl;
-        SurfaceTagStore.windowUrl = new URL(window.location.href).toString();
-
-        this.setupClickHandlers();
-        this.formInputTriggerInitialize();
-
-        if (SurfaceTagStore.debugMode) {
-          this.log("info", "Route changed, re-initialized handlers");
-        }
-      }
-    };
-
-    window.addEventListener("popstate", handleRouteChange);
-
-    const originalPushState = history.pushState;
-    const originalReplaceState = history.replaceState;
-
-    history.pushState = function (...args) {
-      originalPushState.apply(history, args);
-      setTimeout(handleRouteChange, 0);
-    };
-
-    history.replaceState = function (...args) {
-      originalReplaceState.apply(history, args);
-      setTimeout(handleRouteChange, 0);
-    };
-
-    if (typeof MutationObserver !== "undefined") {
-      const observer = new MutationObserver((mutations) => {
-        let shouldReinit = false;
-
-        mutations.forEach((mutation) => {
-          mutation.addedNodes.forEach((node) => {
-            if (node.nodeType === 1) {
-              if (
-                node.matches &&
-                (node.matches("form.surface-form-handler") ||
-                  node.matches(
-                    this.documentReferenceSelector + this.target_element_class
-                  ) ||
-                  node.querySelector("form.surface-form-handler") ||
-                  node.querySelector(
-                    this.documentReferenceSelector + this.target_element_class
-                  ))
-              ) {
-                shouldReinit = true;
-              }
-            }
+      if (submitButtons.length > 0) {
+        Array.from(submitButtons).forEach((btn) => {
+          btn.addEventListener("click", (e) => {
+            e.preventDefault();
+            submitForm(form, htmlForm, true);
           });
         });
-
-        if (shouldReinit) {
-          clearTimeout(this._reinitTimeout);
-          this._reinitTimeout = setTimeout(() => {
-            const newUrl = window.location.href;
-            if (newUrl !== currentUrl) {
-              currentUrl = newUrl;
-              SurfaceTagStore.windowUrl = new URL(
-                window.location.href
-              ).toString();
-            }
-            this.setupClickHandlers();
-            this.formInputTriggerInitialize();
-
-            if (SurfaceTagStore.debugMode) {
-              this.log("info", "DOM changed, re-initialized handlers");
-            }
-          }, 100);
-        }
-      });
-
-      if (document.body) {
-        observer.observe(document.body, {
-          childList: true,
-          subtree: true,
-        });
       } else {
-        const bodyObserver = new MutationObserver(() => {
-          if (document.body) {
-            observer.observe(document.body, {
-              childList: true,
-              subtree: true,
-            });
-            bodyObserver.disconnect();
-          }
-        });
-        bodyObserver.observe(document.documentElement, {
-          childList: true,
+        htmlForm.addEventListener("submit", (e) => {
+          e.preventDefault();
+          form.log.info(`Form ${formId} submitted`);
+          submitForm(form, htmlForm, true);
         });
       }
-    }
-  }
-
-  getEmbedType(embed_type) {
-    if (typeof embed_type === "string") {
-      return embed_type;
-    }
-
-    if (typeof embed_type === "object") {
-      return this.handleObjectEmbedType(embed_type);
-    }
-
-    this.log("error", "Invalid embed type: must be string or object");
-    return null;
-  }
-
-  handleObjectEmbedType(embed_type) {
-    const embedTypeWithDefault = this.ensureDefaultEmbedType(embed_type);
-    const matchingBreakpoint = this.getCurrentScreenBreakpoint();
-
-    if (!matchingBreakpoint) {
-      this.log(
-        "info",
-        "No matching breakpoint found, using default embed type"
-      );
-      return embedTypeWithDefault.default;
-    }
-
-    const [breakpointKey] = matchingBreakpoint;
-    const embedType = embedTypeWithDefault[breakpointKey];
-
-    if (embedType) {
-      this.log(
-        "info",
-        `Using ${breakpointKey} breakpoint embed type: ${embedType}`
-      );
-      return embedType;
-    }
-
-    this.log(
-      "warn",
-      `No embed type defined for breakpoint: ${breakpointKey}, using default`
-    );
-    return embedTypeWithDefault.default;
-  }
-
-  ensureDefaultEmbedType(embed_type) {
-    if (!embed_type.default) {
-      embed_type.default = embed_type.sm || Object.values(embed_type)[0];
-    }
-    return embed_type;
-  }
-
-  getCurrentScreenBreakpoint() {
-    const width = window.innerWidth;
-    const breakpoints = [
-      { name: "2xl", min: 1536 },
-      { name: "xl", min: 1280 },
-      { name: "lg", min: 1024 },
-      { name: "md", min: 768 },
-      { name: "sm", min: 0 },
-    ];
-
-    const matchingBreakpoint = breakpoints.find((bp) => width >= bp.min);
-    return [matchingBreakpoint.name, matchingBreakpoint.min];
-  }
-
-  log(level, message) {
-    const prefix = "Surface Embed :: ";
-    const fullMessage = prefix + message;
-    if (level == "info" && SurfaceTagStore.debugMode) {
-      console.log(fullMessage);
-    }
-    if (level == "warn") {
-      console.warn(fullMessage);
-    }
-    if (level == "error") {
-      console.error(fullMessage);
-    }
-  }
-
-  setupClickHandlers() {
-    if (this._clickHandler) {
-      document.removeEventListener("click", this._clickHandler);
-    }
-
-    this._clickHandler = (event) => {
-      const clickedButton = event.target.closest(
-        this.documentReferenceSelector + this.target_element_class
-      );
-      if (clickedButton) {
-        if (!this.initialized) {
-          this.initializeEmbed();
-          this.shouldShowSurfaceForm();
-        } else {
-          this.shouldShowSurfaceForm();
-        }
-      }
-    };
-
-    document.addEventListener("click", this._clickHandler);
-  }
-
-  initializeEmbed() {
-    if (this.initialized) return;
-    if (this.embedSurfaceForm) {
-      this.embedSurfaceForm();
-    }
-
-    this.initialized = true;
-  }
-
-  preloadIframe() {
-    if (this.initialized || this._preload === "false") return;
-
-    if (this.initializeEmbed && this._preload === "true") {
-      const initWhenIdle = () => {
-        if (this.initialized) return;
-        if ("requestIdleCallback" in window) {
-          window.requestIdleCallback(
-            () => {
-              if (!this.initialized) {
-                this.initializeEmbed();
-              }
-            },
-            { timeout: 3000 }
-          );
-        } else {
-          setTimeout(() => {
-            if (!this.initialized) {
-              this.initializeEmbed();
-            }
-          }, 100);
-        }
-      };
-
-      if (document.readyState === "complete") {
-        initWhenIdle();
-      } else {
-        window.addEventListener("load", initWhenIdle, { once: true });
-      }
-    }
-
-    if (this.initializeEmbed && this._preload === "pageLoad") {
-      this.initializeEmbed();
-    }
-  }
-
-  // --- Inline embedding ---
-  embedInline(options = {}, fromInputTrigger = false) {
-    if (this.surface_inline_reference == null) {
-      this.log(
-        "warn",
-        `Surface Form could not find target div with class ${this.target_element_class}`
-      );
-    }
-
-    const src = this._getSrcUrl();
-    const target_client_divs = this.inline_embed_references;
-
-    target_client_divs.forEach((client_div) => {
-      const existingDiv = client_div.querySelector("#surface-inline-div");
-      if (existingDiv) {
-        return;
-      }
-
-      const surface_inline_iframe_wrapper = document.createElement("div");
-      surface_inline_iframe_wrapper.id = "surface-inline-div";
-
-      const inline_iframe = document.createElement("iframe");
-      inline_iframe.id = "surface-iframe";
-      inline_iframe.src = src;
-      inline_iframe.frameBorder = "0";
-      inline_iframe.allowFullscreen = true;
-
-      if (!this.iframe) {
-        this.iframe = inline_iframe;
-      }
-
-      if (
-        this.iframeInlineStyle &&
-        typeof this.iframeInlineStyle === "object"
-      ) {
-        Object.assign(inline_iframe.style, this.iframeInlineStyle);
-      }
-
-      client_div.appendChild(surface_inline_iframe_wrapper);
-      surface_inline_iframe_wrapper.appendChild(inline_iframe);
-
-      var style = document.createElement("style");
-      style.innerHTML = `
-          #surface-inline-div {
-              width: 100%;
-              height: 100%;
-          }
-          #surface-inline-div iframe {
-              width: 100%;
-              height: 100%;
-          }
-      `;
-      document.head.appendChild(style);
-      this.updateIframeWithOptions(options, surface_inline_iframe_wrapper);
+      form.formStates[formId] = {};
+      form.formStarted[formId] = false;
+      form.initializeForm(formId);
     });
   }
+  function handleInputChange(form, formId, event) {
+    if (!form.formStarted[formId]) {
+      form.callFormStartedApi(formId);
+      form.formStarted[formId] = true;
+    }
+    const target = event.target;
+    const elementId = target.getAttribute("data-id") || "";
+    const [questionId, variableName] = elementId.includes("_") ? elementId.split("_") : [elementId, null];
+    const value = target.value;
+    form.log.info(
+      `Form ${formId} element changed - Question ID: ${questionId}, Variable Name: ${variableName}, Value: ${value}`
+    );
+    form.storeQuestionData({
+      formId,
+      questionId,
+      variableName: variableName ?? "value",
+      value
+    });
+  }
+  function submitForm(form, htmlForm, finished) {
+    const formId = htmlForm.getAttribute("data-id");
+    const responses = Object.entries(form.formStates[formId] || {}).map(
+      ([questionId, data]) => ({ questionId, response: data })
+    );
+    const payload = {
+      id: form.responseIds[formId],
+      formId,
+      responses,
+      finished,
+      environmentId: form.environmentId,
+      leadSessionId: form.getLeadSessionId(formId),
+      initialRenderTime: form.initialRenderTime.toISOString()
+    };
+    form.log.info("Submitting form data");
+    if (!form.environmentId) {
+      form.log.error("Skipping form submission: environmentId not configured");
+      return;
+    }
+    fetch(`${form.config.serverBaseUrl}/externalForm/submit`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    }).then((r) => r.json()).then((data) => {
+      if (data?.data?.response?.id) {
+        form.responseIds[formId] = data.data.response.id;
+        form.log.info("Response ID stored: " + data.data.response.id);
+      }
+    }).catch((error) => form.log.error("Error submitting form: " + error));
+  }
 
-  updateIframeWithOptions(options, iframe_reference) {
-    const iframe = iframe_reference.querySelector("#surface-iframe");
-    const spinner = iframe_reference.querySelector(".surface-loading-spinner");
-    const closeBtn = iframe_reference.querySelector(".close-btn-container");
+  // src/external-form/external-form.ts
+  var SurfaceExternalForm = class {
+    constructor(props) {
+      this.initialRenderTime = /* @__PURE__ */ new Date();
+      this.formStates = {};
+      this.responseIds = {};
+      this.formSessions = {};
+      this.formInitializationStatus = {};
+      this.formStarted = {};
+      this.log = createLogger("Surface External Form");
+      this.config = {
+        serverBaseUrl: props?.serverBaseUrl || EXTERNAL_FORM_API
+      };
+      this.environmentId = props?.siteId || getSiteIdFromScript(document.currentScript);
+      this.forms = Array.from(document.querySelectorAll("form")).filter(
+        (form) => Boolean(form.getAttribute("data-id"))
+      );
+    }
+    getLeadSessionId(formId) {
+      return this.formSessions[formId]?.sessionId || null;
+    }
+    callFormViewApi(formId) {
+      sendBeacon(`${this.config.serverBaseUrl}/externalForm/initialize`, {
+        formId,
+        environmentId: this.environmentId,
+        leadSessionId: this.getLeadSessionId(formId)
+      });
+    }
+    callFormStartedApi(formId) {
+      sendBeacon(`${this.config.serverBaseUrl}/externalForm/formStarted`, {
+        formId,
+        environmentId: this.environmentId,
+        leadSessionId: this.getLeadSessionId(formId)
+      });
+    }
+    async identify(formId) {
+      const apiUrl = `${this.config.serverBaseUrl}/lead/identify`;
+      const parentUrl = new URL(window.location.href);
+      try {
+        const response = await fetch(apiUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            formId,
+            environmentId: this.environmentId,
+            source: "surfaceForm",
+            sourceURL: parentUrl.href,
+            sourceURLDomain: parentUrl.hostname,
+            sourceURLPath: parentUrl.pathname,
+            sourceUrlSearchParams: parentUrl.search,
+            leadId: null,
+            sessionIdFromParams: null
+          })
+        });
+        const jsonData = await response.json();
+        if (response.ok && jsonData.data?.data?.sessionId) {
+          this.formSessions[formId] = jsonData.data.data;
+        }
+      } catch (error) {
+        this.log.error("Error identifying lead: " + error);
+      }
+    }
+    async initializeForm(formId) {
+      if (this.formInitializationStatus[formId]) return;
+      this.formInitializationStatus[formId] = true;
+      await this.identify(formId);
+      this.callFormViewApi(formId);
+    }
+    storeQuestionData(params) {
+      const { formId, questionId, variableName, value } = params;
+      if (!this.formStates[formId]) this.formStates[formId] = {};
+      if (!this.formStates[formId][questionId]) this.formStates[formId][questionId] = {};
+      this.formStates[formId][questionId][variableName] = value;
+    }
+    attachFormHandlers() {
+      attachFormHandlers(this);
+    }
+  };
 
+  // src/embed/breakpoints.ts
+  var BREAKPOINTS = [
+    { name: "2xl", min: 1536 },
+    { name: "xl", min: 1280 },
+    { name: "lg", min: 1024 },
+    { name: "md", min: 768 },
+    { name: "sm", min: 0 }
+  ];
+  function resolveEmbedType(input, log) {
+    if (typeof input === "string") return input;
+    if (typeof input === "object") return resolveResponsiveType(input, log);
+    log.error("Invalid embed type: must be string or object");
+    return null;
+  }
+  function resolveResponsiveType(config, log) {
+    const withDefault = ensureDefault(config);
+    const breakpoint = getCurrentBreakpoint();
+    if (!breakpoint) {
+      log.info("No matching breakpoint, using default embed type");
+      return withDefault.default;
+    }
+    const embedType = withDefault[breakpoint];
+    if (embedType) {
+      log.info(`Using ${breakpoint} breakpoint embed type: ${embedType}`);
+      return embedType;
+    }
+    log.warn(`No embed type for breakpoint: ${breakpoint}, using default`);
+    return withDefault.default;
+  }
+  function ensureDefault(config) {
+    if (!config.default) {
+      config.default = config.sm || Object.values(config)[0];
+    }
+    return config;
+  }
+  function getCurrentBreakpoint() {
+    const width = window.innerWidth;
+    const match = BREAKPOINTS.find((bp) => width >= bp.min);
+    return match?.name ?? null;
+  }
+
+  // src/embed/iframe-updater.ts
+  function updateIframeWithOptions(options, iframeReference) {
+    const iframe = iframeReference.querySelector("#surface-iframe");
+    const spinner = iframeReference.querySelector(".surface-loading-spinner");
+    const closeBtn = iframeReference.querySelector(".close-btn-container");
     if (iframe) {
       this.iframe = iframe;
     }
-
     const optionsKey = JSON.stringify(options);
-
-    // If iframe is preloaded with same options, just ensure it's visible
-    if (this._cachedOptionsKey === optionsKey && iframe && iframe.src) {
-      // If iframe finished preloading, show it immediately
+    if (this._cachedOptionsKey === optionsKey && iframe?.src) {
       if (this._iframePreloaded) {
         if (spinner) spinner.style.display = "none";
         if (closeBtn) closeBtn.style.display = "flex";
         iframe.style.opacity = "1";
         return;
       }
-      // If still loading (preload in progress), set up onload handler but don't reset src
       iframe.onload = () => {
         this._iframePreloaded = true;
         iframe.style.opacity = "1";
@@ -1418,10 +786,8 @@ class SurfaceEmbed {
       };
       return;
     }
-
     this._cachedOptionsKey = optionsKey;
     this._iframePreloaded = false;
-
     if (spinner) spinner.style.display = "flex";
     if (closeBtn) closeBtn.style.display = "none";
     if (iframe) {
@@ -1430,7 +796,7 @@ class SurfaceEmbed {
         try {
           const url = new URL(this._getSrcUrl());
           if (url.protocol !== "https:") {
-            this.log("error", "Only HTTPS URLs are allowed");
+            this.log.error("Only HTTPS URLs are allowed");
           }
           iframe.src = url.toString();
           iframe.onload = () => {
@@ -1440,275 +806,167 @@ class SurfaceEmbed {
             if (closeBtn) closeBtn.style.display = "flex";
           };
           iframe.onerror = () => {
-            this.log("error", "Failed to load iframe content");
+            this.log.error("Failed to load iframe content");
             if (spinner) spinner.style.display = "none";
           };
         } catch (error) {
-          this.log("error", `Invalid iframe URL: ${error.message}`);
+          this.log.error(`Invalid iframe URL: ${error.message}`);
           if (spinner) spinner.style.display = "none";
         }
       }, 0);
     }
   }
 
-  showSurfacePopup(options = {}, fromInputTrigger = false) {
-    if (this.surface_popup_reference == null) {
-      this.log(
-        "warn",
-        "Invalid shouldShowSurfaceForm invocation. Embed type is not popup or slideover"
-      );
-      return;
+  // src/embed/click-handlers.ts
+  function setupClickHandlers() {
+    if (this._clickHandler) {
+      document.removeEventListener("click", this._clickHandler);
     }
-
-    this._previouslyFocusedElement = document.activeElement;
-
-    this.updateIframeWithOptions(options, this.surface_popup_reference);
-
-    this.surface_popup_reference.style.display = "flex";
-    document.body.style.overflow = "hidden";
-
-    const embedClient = this;
-    setTimeout(function () {
-      embedClient.surface_popup_reference.classList.add("active");
-      if (embedClient.iframe) {
-        embedClient.iframe.focus();
+    this._clickHandler = (event) => {
+      const target = event.target;
+      const clickedButton = target.closest(
+        this.documentReferenceSelector + this.target_element_class
+      );
+      if (clickedButton) {
+        if (!this.initialized) {
+          this.initializeEmbed();
+        }
+        this.shouldShowSurfaceForm();
       }
-    }, 50);
+    };
+    document.addEventListener("click", this._clickHandler);
   }
 
-  hideSurfacePopup() {
-    if (this.surface_popup_reference == null) {
-      this.log(
-        "warn",
-        "Invalid hideSurfaceForm invocation. Embed type is not popup or slideover"
-      );
-      return;
+  // src/embed/preload.ts
+  function preloadIframe() {
+    if (this.initialized || this._preload === "false") return;
+    if (this._preload === "true") {
+      const initWhenIdle = () => {
+        if (this.initialized) return;
+        if ("requestIdleCallback" in window) {
+          window.requestIdleCallback(
+            () => {
+              if (!this.initialized) this.initializeEmbed();
+            },
+            { timeout: 3e3 }
+          );
+        } else {
+          setTimeout(() => {
+            if (!this.initialized) this.initializeEmbed();
+          }, 100);
+        }
+      };
+      if (document.readyState === "complete") {
+        initWhenIdle();
+      } else {
+        window.addEventListener("load", initWhenIdle, { once: true });
+      }
     }
-    this.surface_popup_reference.classList.remove("active");
-    document.body.style.overflow = "auto";
-
-    if (this._previouslyFocusedElement) {
-      this._previouslyFocusedElement.focus();
-      this._previouslyFocusedElement = null;
+    if (this._preload === "pageLoad") {
+      this.initializeEmbed();
     }
-
-    const embedClient = this;
-    setTimeout(function () {
-      embedClient.surface_popup_reference.style.display = "none";
-    }, 200);
   }
 
-  embedPopup() {
-    if (this.surface_popup_reference == null) {
-      this.log(
-        "error",
-        `Cannot embed popup because Surface embed type is ${this.embed_type}`
-      );
-    }
-
-    const surface_popup = this.surface_popup_reference;
-    const src = this._getSrcUrl();
-
-    if (!this.initialized) {
-      surface_popup.id = "surface-popup";
-      surface_popup.innerHTML = `
-            <div class="surface-popup-content">
-                <div style="display: flex; justify-content: center; align-items: center; height: 100%; position: absolute; top: 0; left: 0; width: 100%; pointer-events: none;">
-                    <div class="surface-loading-spinner"></div>
-                </div>
-                <iframe id="surface-iframe" src="${src}" frameborder="0" allowfullscreen style="opacity: 0;"></iframe>
-                <div class="close-btn-container" style="display: none;">
-                    <span class="close-btn">&times;</span>
-                </div>
-            </div>
-        `;
-
-      document.body.appendChild(surface_popup);
-
-      const desktopPopupDimensions = this._getPopupDimensions();
-
-      if (!this.styles.popup) {
-        const style = document.createElement("style");
-        style.innerHTML = this.getPopupStyles(desktopPopupDimensions);
-        document.head.appendChild(style);
-        this.styles.popup = style;
+  // src/embed/show-from-url.ts
+  function showSurfaceFormFromUrlParameter() {
+    try {
+      const params = this.store.getUrlParams();
+      if (params?.showSurfaceForm === "true") {
+        this.showSurfaceForm();
       }
-
-      const iframe = surface_popup.querySelector("#surface-iframe");
-      const spinner = surface_popup.querySelector(".surface-loading-spinner");
-      const closeBtn = surface_popup.querySelector(".close-btn-container");
-
-      if (iframe) {
-        this.iframe = iframe;
-        this._cachedOptionsKey = JSON.stringify({});
-
-        iframe.onload = () => {
-          this._iframePreloaded = true;
-          iframe.style.opacity = "1";
-          if (spinner) spinner.style.display = "none";
-          if (closeBtn) closeBtn.style.display = "flex";
-        };
-      }
+    } catch (error) {
+      this.log.error(`Failed to show Surface Form from URL parameter: ${error}`);
     }
+  }
 
-    surface_popup
-      .querySelector(".close-btn-container")
-      .addEventListener("click", () => {
-        this.hideSurfacePopup();
-      });
-
+  // src/utils/dom.ts
+  function injectStyle(css) {
+    const style = document.createElement("style");
+    style.innerHTML = css;
+    document.head.appendChild(style);
+    return style;
+  }
+  function setupDismissHandlers(overlay, closeBtn, hideCallback) {
+    closeBtn.addEventListener("click", hideCallback);
     window.addEventListener("click", (event) => {
-      if (event.target == surface_popup) {
-        this.hideSurfacePopup();
-      }
+      if (event.target === overlay) hideCallback();
     });
   }
 
-  _getPopupDimensions() {
-    const defaultDimensions = {
-      width: "calc(100% - 80px)",
-      height: "calc(100% - 80px)",
-    };
-
-    const sizePresets = {
-      small: {
-        width: "500px",
-        height: "80%",
-      },
-      medium: {
-        width: "70%",
-        height: "80%",
-      },
-      large: defaultDimensions,
-    };
-
-    if (typeof this._popupSize === "string" && sizePresets[this._popupSize]) {
-      return { ...sizePresets[this._popupSize] };
-    }
-
-    if (
-      typeof this._popupSize === "object" &&
-      this._popupSize !== null &&
-      (this._popupSize.width || this._popupSize.height)
-    ) {
-      return {
-        width: this._popupSize.width || defaultDimensions.width,
-        height: this._popupSize.height || defaultDimensions.height,
-      };
-    }
-
-    return { ...defaultDimensions };
-  }
-
-  // --- Slideover logic ---
-  showSurfaceSlideover(options = {}, fromInputTrigger = false) {
-    if (this.surface_popup_reference == null) {
-      this.log(
-        "warn",
-        "Invalid shouldShowSurfaceForm invocation. Embed type is not popup or slideover"
-      );
-      return;
-    }
-
-    this._previouslyFocusedElement = document.activeElement;
-
-    this.updateIframeWithOptions(options, this.surface_popup_reference);
-
-    this.surface_popup_reference.style.display = "block";
-    document.body.style.overflow = "hidden";
-
-    const embedClient = this;
-    setTimeout(function () {
-      embedClient.surface_popup_reference.classList.add("active");
-      if (embedClient.iframe) {
-        embedClient.iframe.focus();
-      }
-    }, 50);
-  }
-
-  hideSurfaceSlideover() {
-    if (this.surface_popup_reference == null) {
-      this.log(
-        "warn",
-        "Invalid hideSurfaceForm invocation. Embed type is not popup or slideover"
-      );
-      return;
-    }
-    this.surface_popup_reference.classList.remove("active");
-    document.body.style.overflow = "auto";
-
-    if (this._previouslyFocusedElement) {
-      this._previouslyFocusedElement.focus();
-      this._previouslyFocusedElement = null;
-    }
-
-    const embedClient = this;
-    setTimeout(function () {
-      embedClient.surface_popup_reference.style.display = "none";
-    }, 300);
-  }
-
-  embedSlideover() {
-    if (this.surface_popup_reference == null) {
-      this.log(
-        "error",
-        `Cannot embed slideover because Surface embed type is ${this.embed_type}`
+  // src/embed/types/inline.ts
+  function embedInline() {
+    if (this.surface_inline_reference == null) {
+      this.log.warn(
+        `Surface Form could not find target div with class ${this.target_element_class}`
       );
     }
-
-    const surface_slideover = this.surface_popup_reference;
     const src = this._getSrcUrl();
-
-    surface_slideover.id = "surface-popup";
-    surface_slideover.innerHTML = `
-            <div class="surface-popup-content">
-                <div style="display: flex; justify-content: center; align-items: center; height: 100%; position: absolute; top: 0; left: 0; width: 100%; pointer-events: none;">
-                    <div class="surface-loading-spinner"></div>
-                </div>
-                <div class="close-btn-container" style="display: none;">
-                    <span class="close-btn">&times;</span>
-                </div>
-                <iframe id="surface-iframe" src="${src}" frameborder="0" allowfullscreen style="opacity: 0;"></iframe>
-            </div>
-        `;
-
-    document.body.appendChild(surface_slideover);
-
-    var style = document.createElement("style");
-    style.innerHTML = `
-      ${this.getLoaderStyles()}
-      #surface-popup {
-        display: none;
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        z-index: 99999;
-        background-color: rgba(0,0,0,0.5);
-        opacity: 0;
-        transition: opacity 0.15s ease;
+    const targetDivs = this.inline_embed_references;
+    targetDivs.forEach((clientDiv) => {
+      if (clientDiv.querySelector("#surface-inline-div")) return;
+      const wrapper = document.createElement("div");
+      wrapper.id = "surface-inline-div";
+      const iframe = document.createElement("iframe");
+      iframe.id = "surface-iframe";
+      iframe.src = src;
+      iframe.frameBorder = "0";
+      iframe.allowFullscreen = true;
+      if (!this.iframe) this.iframe = iframe;
+      if (this.iframeInlineStyle && typeof this.iframeInlineStyle === "object") {
+        Object.assign(iframe.style, this.iframeInlineStyle);
       }
+      clientDiv.appendChild(wrapper);
+      wrapper.appendChild(iframe);
+      injectStyle(`
+      #surface-inline-div { width: 100%; height: 100%; }
+      #surface-inline-div iframe { width: 100%; height: 100%; }
+    `);
+      this.updateIframeWithOptions({}, wrapper);
+    });
+  }
+  function showSurfaceInline() {
+  }
+  function hideSurfaceInline() {
+  }
 
-      .surface-popup-content {
-        position: absolute;
-        top: 0;
-        left: 0;
-        transform: translateX(80%);
-        width: 100%;
-        height: 100%;
-        background-color: transparent;
-        padding: 0;
-        box-shadow: 0px 0px 15px rgba(0,0,0,0.2);
-        opacity: 0;
-        transition: transform 0.2s ease, opacity 0.2s ease;
-      }
+  // src/embed/styles/loader.ts
+  function getLoaderStyles() {
+    return `
+    .surface-loading-spinner {
+      height: 5px;
+      width: 5px;
+      color: #fff;
+      box-shadow: -10px -10px 0 5px, -10px -10px 0 5px, -10px -10px 0 5px, -10px -10px 0 5px;
+      animation: loader-38 6s infinite;
+    }
 
-      .surface-popup-content iframe {
-        width: 100%;
-        height: 100%;
-      }
+    @keyframes loader-38 {
+      0%     { box-shadow: -10px -10px 0 5px, -10px -10px 0 5px, -10px -10px 0 5px, -10px -10px 0 5px; }
+      8.33%  { box-shadow: -10px -10px 0 5px,  10px -10px 0 5px,  10px -10px 0 5px,  10px -10px 0 5px; }
+      16.66% { box-shadow: -10px -10px 0 5px,  10px -10px 0 5px,  10px  10px 0 5px,  10px  10px 0 5px; }
+      24.99% { box-shadow: -10px -10px 0 5px,  10px -10px 0 5px,  10px  10px 0 5px, -10px  10px 0 5px; }
+      33.32% { box-shadow: -10px -10px 0 5px,  10px -10px 0 5px,  10px  10px 0 5px, -10px -10px 0 5px; }
+      41.65% { box-shadow:  10px -10px 0 5px,  10px -10px 0 5px,  10px  10px 0 5px,  10px -10px 0 5px; }
+      49.98% { box-shadow:  10px  10px 0 5px,  10px  10px 0 5px,  10px  10px 0 5px,  10px  10px 0 5px; }
+      58.31% { box-shadow: -10px  10px 0 5px, -10px  10px 0 5px,  10px  10px 0 5px, -10px  10px 0 5px; }
+      66.64% { box-shadow: -10px -10px 0 5px, -10px -10px 0 5px,  10px  10px 0 5px, -10px  10px 0 5px; }
+      74.97% { box-shadow: -10px -10px 0 5px,  10px -10px 0 5px,  10px  10px 0 5px, -10px  10px 0 5px; }
+      83.3%  { box-shadow: -10px -10px 0 5px,  10px  10px 0 5px,  10px  10px 0 5px, -10px  10px 0 5px; }
+      91.63% { box-shadow: -10px -10px 0 5px, -10px  10px 0 5px, -10px  10px 0 5px, -10px  10px 0 5px; }
+      100%   { box-shadow: -10px -10px 0 5px, -10px -10px 0 5px, -10px -10px 0 5px, -10px -10px 0 5px; }
+    }
 
+    @keyframes spin {
+      0%   { transform: translate(-50%, -50%) rotate(0deg); }
+      100% { transform: translate(-50%, -50%) rotate(360deg); }
+    }
+  `;
+  }
+
+  // src/embed/styles/close-button.ts
+  function getCloseButtonStyles(variant) {
+    if (variant === "slideover") {
+      return `
       .close-btn-container {
         position: absolute;
         right: 20px;
@@ -1728,8 +986,7 @@ class SurfaceEmbed {
       .close-btn {
         display: block;
         padding: 0;
-        margin: 0;
-        margin-bottom: 6px;
+        margin: 0 0 6px 0;
         font-size: 20px;
         font-weight: normal;
         line-height: 24px;
@@ -1741,26 +998,301 @@ class SurfaceEmbed {
         color: #000;
         height: 20px;
       }
-
-      #surface-popup.active {
-        opacity: 1;
-      }
-
-      #surface-popup.active .surface-popup-content {
-        transform: translateX(0%);
-        opacity: 1;
-      }
     `;
-    document.head.appendChild(style);
+    }
+    return `
+    .close-btn-container {
+      position: absolute;
+      display: none;
+      justify-content: center;
+      align-items: center;
+      top: 6px;
+      right: 8px;
+      background: #ffffff;
+      border: none;
+      border-radius: 50%;
+      width: 24px;
+      height: 24px;
+      opacity: .75;
+    }
 
-    const iframe = surface_slideover.querySelector("#surface-iframe");
-    const spinner = surface_slideover.querySelector(".surface-loading-spinner");
-    const closeBtn = surface_slideover.querySelector(".close-btn-container");
+    @media (min-width: 481px) {
+      .close-btn-container {
+        top: -34px;
+        right: 0;
+        background: none;
+        border: none;
+        border-radius: 0;
+      }
+    }
 
+    .close-btn {
+      display: block;
+      padding: 0;
+      margin: 0 0 6px 0;
+      font-size: 20px;
+      font-weight: normal;
+      line-height: 24px;
+      text-align: center;
+      text-transform: none;
+      cursor: pointer;
+      transition: opacity .25s ease-in-out;
+      text-decoration: none;
+      color: #000;
+      height: 20px;
+    }
+
+    @media (min-width: 481px) {
+      .close-btn {
+        color: #ffffff;
+        font-size: 32px;
+        margin-bottom: 0px;
+        height: auto;
+      }
+    }
+  `;
+  }
+
+  // src/embed/styles/popup.ts
+  function getPopupStyles(dimensions) {
+    return `
+    ${getLoaderStyles()}
+
+    #surface-popup {
+      display: none;
+      justify-content: center;
+      align-items: center;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 99999;
+      background-color: rgba(0,0,0,0.5);
+      opacity: 0;
+      transition: opacity 0.15s ease;
+    }
+
+    .surface-popup-content {
+      position: relative;
+      top: 0;
+      left: 0;
+      transform: scale(0.9);
+      width: calc(100% - 20px);
+      height: calc(100% - 20px);
+      background-color: transparent;
+      border-radius: 15px;
+      opacity: 0;
+      transition: transform 0.15s ease, opacity 0.15s ease;
+    }
+
+    .surface-popup-content iframe {
+      width: 100%;
+      height: 100%;
+      border-radius: 15px;
+    }
+
+    @media (min-width: 481px) {
+      .surface-popup-content {
+        width: ${dimensions.width};
+        height: ${dimensions.height};
+        margin: 20px;
+      }
+    }
+
+    #surface-iframe {
+      transition: opacity 0.15s ease-in-out;
+    }
+
+    #surface-popup.active {
+      opacity: 1;
+    }
+
+    #surface-popup.active .surface-popup-content {
+      transform: scale(1);
+      opacity: 1;
+    }
+
+    ${getCloseButtonStyles("popup")}
+  `;
+  }
+
+  // src/embed/popup-dimensions.ts
+  var DEFAULT_DIMENSIONS = {
+    width: "calc(100% - 80px)",
+    height: "calc(100% - 80px)"
+  };
+  var SIZE_PRESETS = {
+    small: { width: "500px", height: "80%" },
+    medium: { width: "70%", height: "80%" },
+    large: DEFAULT_DIMENSIONS
+  };
+  function getPopupDimensions(size) {
+    if (typeof size === "string" && SIZE_PRESETS[size]) {
+      return { ...SIZE_PRESETS[size] };
+    }
+    if (typeof size === "object" && size !== null && ("width" in size || "height" in size)) {
+      return {
+        width: size.width || DEFAULT_DIMENSIONS.width,
+        height: size.height || DEFAULT_DIMENSIONS.height
+      };
+    }
+    return { ...DEFAULT_DIMENSIONS };
+  }
+
+  // src/embed/types/popup.ts
+  var POPUP_HTML = (src) => `
+  <div class="surface-popup-content">
+    <div style="display:flex;justify-content:center;align-items:center;height:100%;position:absolute;top:0;left:0;width:100%;pointer-events:none;">
+      <div class="surface-loading-spinner"></div>
+    </div>
+    <iframe id="surface-iframe" src="${src}" frameborder="0" allowfullscreen style="opacity:0;"></iframe>
+    <div class="close-btn-container" style="display:none;">
+      <span class="close-btn">&times;</span>
+    </div>
+  </div>
+`;
+  function embedPopup() {
+    if (!this.surface_popup_reference) {
+      this.log.error(`Cannot embed popup: embed type is ${this.embed_type}`);
+      return;
+    }
+    const popup = this.surface_popup_reference;
+    const src = this._getSrcUrl();
+    if (!this.initialized) {
+      popup.id = "surface-popup";
+      popup.innerHTML = POPUP_HTML(src);
+      document.body.appendChild(popup);
+      const dimensions = getPopupDimensions(this._popupSize);
+      if (!this.styles.popup) {
+        this.styles.popup = injectStyle(getPopupStyles(dimensions));
+      }
+      const iframe = popup.querySelector("#surface-iframe");
+      const spinner = popup.querySelector(".surface-loading-spinner");
+      const closeBtn = popup.querySelector(".close-btn-container");
+      if (iframe) {
+        this.iframe = iframe;
+        this._cachedOptionsKey = JSON.stringify({});
+        iframe.onload = () => {
+          this._iframePreloaded = true;
+          iframe.style.opacity = "1";
+          if (spinner) spinner.style.display = "none";
+          if (closeBtn) closeBtn.style.display = "flex";
+        };
+      }
+    }
+    const closeContainer = popup.querySelector(".close-btn-container");
+    setupDismissHandlers(popup, closeContainer, () => this.hideSurfacePopup());
+  }
+  function showSurfacePopup(options = {}) {
+    if (!this.surface_popup_reference) {
+      this.log.warn("Invalid showSurfaceForm: embed type is not popup");
+      return;
+    }
+    this._previouslyFocusedElement = document.activeElement;
+    this.updateIframeWithOptions(options, this.surface_popup_reference);
+    this.surface_popup_reference.style.display = "flex";
+    document.body.style.overflow = "hidden";
+    setTimeout(() => {
+      this.surface_popup_reference.classList.add("active");
+      this.iframe?.focus();
+    }, 50);
+  }
+  function hideSurfacePopup() {
+    if (!this.surface_popup_reference) {
+      this.log.warn("Invalid hideSurfaceForm: embed type is not popup");
+      return;
+    }
+    this.surface_popup_reference.classList.remove("active");
+    document.body.style.overflow = "auto";
+    if (this._previouslyFocusedElement) {
+      this._previouslyFocusedElement.focus();
+      this._previouslyFocusedElement = null;
+    }
+    setTimeout(() => {
+      this.surface_popup_reference.style.display = "none";
+    }, 200);
+  }
+
+  // src/embed/styles/slideover.ts
+  function getSlideoverStyles() {
+    return `
+    ${getLoaderStyles()}
+
+    #surface-popup {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 99999;
+      background-color: rgba(0,0,0,0.5);
+      opacity: 0;
+      transition: opacity 0.15s ease;
+    }
+
+    .surface-popup-content {
+      position: absolute;
+      top: 0;
+      left: 0;
+      transform: translateX(80%);
+      width: 100%;
+      height: 100%;
+      background-color: transparent;
+      padding: 0;
+      box-shadow: 0px 0px 15px rgba(0,0,0,0.2);
+      opacity: 0;
+      transition: transform 0.2s ease, opacity 0.2s ease;
+    }
+
+    .surface-popup-content iframe {
+      width: 100%;
+      height: 100%;
+    }
+
+    #surface-popup.active {
+      opacity: 1;
+    }
+
+    #surface-popup.active .surface-popup-content {
+      transform: translateX(0%);
+      opacity: 1;
+    }
+
+    ${getCloseButtonStyles("slideover")}
+  `;
+  }
+
+  // src/embed/types/slideover.ts
+  var SLIDEOVER_HTML = (src) => `
+  <div class="surface-popup-content">
+    <div style="display:flex;justify-content:center;align-items:center;height:100%;position:absolute;top:0;left:0;width:100%;pointer-events:none;">
+      <div class="surface-loading-spinner"></div>
+    </div>
+    <div class="close-btn-container" style="display:none;">
+      <span class="close-btn">&times;</span>
+    </div>
+    <iframe id="surface-iframe" src="${src}" frameborder="0" allowfullscreen style="opacity:0;"></iframe>
+  </div>
+`;
+  function embedSlideover() {
+    if (!this.surface_popup_reference) {
+      this.log.error(`Cannot embed slideover: embed type is ${this.embed_type}`);
+      return;
+    }
+    const slideover = this.surface_popup_reference;
+    const src = this._getSrcUrl();
+    slideover.id = "surface-popup";
+    slideover.innerHTML = SLIDEOVER_HTML(src);
+    document.body.appendChild(slideover);
+    injectStyle(getSlideoverStyles());
+    const iframe = slideover.querySelector("#surface-iframe");
+    const spinner = slideover.querySelector(".surface-loading-spinner");
+    const closeBtn = slideover.querySelector(".close-btn-container");
     if (iframe) {
       this.iframe = iframe;
       this._cachedOptionsKey = JSON.stringify({});
-
       iframe.onload = () => {
         this._iframePreloaded = true;
         iframe.style.opacity = "1";
@@ -1768,665 +1300,533 @@ class SurfaceEmbed {
         if (closeBtn) closeBtn.style.display = "flex";
       };
     }
-
-    surface_slideover
-      .querySelector(".close-btn")
-      .addEventListener("click", () => {
-        this.hideSurfaceSlideover();
-      });
-
-    window.addEventListener("click", (event) => {
-      if (event.target == surface_slideover) {
-        this.hideSurfaceSlideover();
-      }
-    });
+    const closeBtnEl = slideover.querySelector(".close-btn");
+    setupDismissHandlers(slideover, closeBtnEl, () => this.hideSurfaceSlideover());
+  }
+  function showSurfaceSlideover(options = {}) {
+    if (!this.surface_popup_reference) {
+      this.log.warn("Invalid showSurfaceForm: embed type is not slideover");
+      return;
+    }
+    this._previouslyFocusedElement = document.activeElement;
+    this.updateIframeWithOptions(options, this.surface_popup_reference);
+    this.surface_popup_reference.style.display = "block";
+    document.body.style.overflow = "hidden";
+    setTimeout(() => {
+      this.surface_popup_reference.classList.add("active");
+      this.iframe?.focus();
+    }, 50);
+  }
+  function hideSurfaceSlideover() {
+    if (!this.surface_popup_reference) {
+      this.log.warn("Invalid hideSurfaceForm: embed type is not slideover");
+      return;
+    }
+    this.surface_popup_reference.classList.remove("active");
+    document.body.style.overflow = "auto";
+    if (this._previouslyFocusedElement) {
+      this._previouslyFocusedElement.focus();
+      this._previouslyFocusedElement = null;
+    }
+    setTimeout(() => {
+      this.surface_popup_reference.style.display = "none";
+    }, 300);
   }
 
-  // --- Widget logic ---
-  addWidgetButton() {
-    const widgetButton = document.createElement("div");
-    widgetButton.id = "surface-widget-button";
-    widgetButton.innerHTML = `
-          <div class="widget-button-inner">
-            <svg width="29" height="34" viewBox="0 0 29 34" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M15.008 33.986C10.6773 33.986 7.27467 33.0773 4.8 31.26C2.364 29.404 1.088 26.852 0.972 23.604H8.222C8.338 24.6867 8.93733 25.6727 10.02 26.562C11.1027 27.4513 12.804 27.896 15.124 27.896C17.0573 27.896 18.5847 27.548 19.706 26.852C20.866 26.156 21.446 25.2087 21.446 24.01C21.446 22.966 21.0013 22.1347 20.112 21.516C19.2613 20.8973 17.792 20.4913 15.704 20.298L12.92 20.008C9.40133 19.6213 6.69467 18.616 4.8 16.992C2.90533 15.368 1.958 13.2027 1.958 10.496C1.958 8.33067 2.49933 6.51333 3.582 5.044C4.66467 3.57466 6.15333 2.47266 8.048 1.738C9.98133 0.964665 12.1853 0.577999 14.66 0.577999C18.5267 0.577999 21.6587 1.42867 24.056 3.13C26.4533 4.83133 27.71 7.32533 27.826 10.612H20.576C20.4987 9.52933 19.9573 8.60133 18.952 7.828C17.9467 7.05467 16.4967 6.668 14.602 6.668C12.9007 6.668 11.586 6.99667 10.658 7.654C9.73 8.31133 9.266 9.162 9.266 10.206C9.266 11.2113 9.63333 11.9847 10.368 12.526C11.1413 13.0673 12.3787 13.4347 14.08 13.628L16.864 13.918C20.576 14.3047 23.476 15.3293 25.564 16.992C27.6907 18.6547 28.754 20.8973 28.754 23.72C28.754 25.808 28.174 27.6253 27.014 29.172C25.8927 30.68 24.3073 31.8593 22.258 32.71C20.2087 33.5607 17.792 33.986 15.008 33.986Z" fill="white"/>
-            </svg>
-          </div>
-        `;
+  // src/embed/styles/widget.ts
+  function getWidgetStyles(ws) {
+    return `
+    #surface-widget-button {
+      position: fixed;
+      bottom: ${ws.bottomMargin};
+      ${ws.position}: ${ws.sideMargin};
+      z-index: 99998;
+      cursor: pointer;
+    }
 
-    document.body.appendChild(widgetButton);
+    .widget-button-inner {
+      width: ${ws.size};
+      height: ${ws.size};
+      border-radius: 50%;
+      background-color: ${ws.backgroundColor};
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: ${ws.boxShadow};
+      transition: transform 0.2s ease;
+    }
 
-    const style = document.createElement("style");
-    style.innerHTML = this.getWidgetStyles();
-    document.head.appendChild(style);
+    .widget-button-inner:hover {
+      transform: scale(${ws.hoverScale});
+    }
+  `;
+  }
 
-    widgetButton.addEventListener("click", () => {
-      if (!this.initialized) {
-        this.initializeEmbed();
-      }
+  // src/embed/types/widget.ts
+  var WIDGET_SVG = `
+  <svg width="29" height="34" viewBox="0 0 29 34" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M15.008 33.986C10.6773 33.986 7.27467 33.0773 4.8 31.26C2.364 29.404 1.088 26.852 0.972 23.604H8.222C8.338 24.6867 8.93733 25.6727 10.02 26.562C11.1027 27.4513 12.804 27.896 15.124 27.896C17.0573 27.896 18.5847 27.548 19.706 26.852C20.866 26.156 21.446 25.2087 21.446 24.01C21.446 22.966 21.0013 22.1347 20.112 21.516C19.2613 20.8973 17.792 20.4913 15.704 20.298L12.92 20.008C9.40133 19.6213 6.69467 18.616 4.8 16.992C2.90533 15.368 1.958 13.2027 1.958 10.496C1.958 8.33067 2.49933 6.51333 3.582 5.044C4.66467 3.57466 6.15333 2.47266 8.048 1.738C9.98133 0.964665 12.1853 0.577999 14.66 0.577999C18.5267 0.577999 21.6587 1.42867 24.056 3.13C26.4533 4.83133 27.71 7.32533 27.826 10.612H20.576C20.4987 9.52933 19.9573 8.60133 18.952 7.828C17.9467 7.05467 16.4967 6.668 14.602 6.668C12.9007 6.668 11.586 6.99667 10.658 7.654C9.73 8.31133 9.266 9.162 9.266 10.206C9.266 11.2113 9.63333 11.9847 10.368 12.526C11.1413 13.0673 12.3787 13.4347 14.08 13.628L16.864 13.918C20.576 14.3047 23.476 15.3293 25.564 16.992C27.6907 18.6547 28.754 20.8973 28.754 23.72C28.754 25.808 28.174 27.6253 27.014 29.172C25.8927 30.68 24.3073 31.8593 22.258 32.71C20.2087 33.5607 17.792 33.986 15.008 33.986Z" fill="white"/>
+  </svg>
+`;
+  function addWidgetButton() {
+    const button = document.createElement("div");
+    button.id = "surface-widget-button";
+    button.innerHTML = `<div class="widget-button-inner">${WIDGET_SVG}</div>`;
+    document.body.appendChild(button);
+    injectStyle(getWidgetStyles(this.widgetStyle));
+    button.addEventListener("click", () => {
+      if (!this.initialized) this.initializeEmbed();
       this.showSurfaceForm();
     });
   }
 
-  getLoaderStyles() {
-    return `
-      .surface-loading-spinner {
-        height: 5px;
-        width: 5px;
-        color: #fff;
-        box-shadow: -10px -10px 0 5px,
-                    -10px -10px 0 5px,
-                    -10px -10px 0 5px,
-                    -10px -10px 0 5px;
-        animation: loader-38 6s infinite;
+  // src/embed/input-trigger/field-validation.ts
+  function getFieldValue(field) {
+    const tagName = field.tagName.toLowerCase();
+    const type = field.type?.toLowerCase();
+    if (tagName === "select") {
+      const select = field;
+      if (select.multiple) {
+        return Array.from(select.selectedOptions).map((opt) => opt.value);
       }
-
-      @keyframes loader-38 {
-        0% {
-          box-shadow: -10px -10px 0 5px,
-                      -10px -10px 0 5px,
-                      -10px -10px 0 5px,
-                      -10px -10px 0 5px;
-        }
-        8.33% {
-          box-shadow: -10px -10px 0 5px,
-                      10px -10px 0 5px,
-                      10px -10px 0 5px,
-                      10px -10px 0 5px;
-        }
-        16.66% {
-          box-shadow: -10px -10px 0 5px,
-                      10px -10px 0 5px,
-                      10px 10px 0 5px,
-                      10px 10px 0 5px;
-        }
-        24.99% {
-          box-shadow: -10px -10px 0 5px,
-                      10px -10px 0 5px,
-                      10px 10px 0 5px,
-                      -10px 10px 0 5px;
-        }
-        33.32% {
-          box-shadow: -10px -10px 0 5px,
-                      10px -10px 0 5px,
-                      10px 10px 0 5px,
-                      -10px -10px 0 5px;
-        }
-        41.65% {
-          box-shadow: 10px -10px 0 5px,
-                      10px -10px 0 5px,
-                      10px 10px 0 5px,
-                      10px -10px 0 5px;
-        }
-        49.98% {
-          box-shadow: 10px 10px 0 5px,
-                    10px 10px 0 5px,
-                    10px 10px 0 5px,
-                    10px 10px 0 5px;
-        }
-        58.31% {
-          box-shadow: -10px 10px 0 5px,
-                      -10px 10px 0 5px,
-                      10px 10px 0 5px,
-                      -10px 10px 0 5px;
-        }
-        66.64% {
-          box-shadow: -10px -10px 0 5px,
-                      -10px -10px 0 5px,
-                      10px 10px 0 5px,
-                      -10px 10px 0 5px;
-        }
-        74.97% {
-          box-shadow: -10px -10px 0 5px,
-                      10px -10px 0 5px,
-                      10px 10px 0 5px,
-                      -10px 10px 0 5px;
-        }
-        83.3% {
-          box-shadow: -10px -10px 0 5px,
-                      10px 10px 0 5px,
-                      10px 10px 0 5px,
-                      -10px 10px 0 5px;
-        }
-        91.63% {
-          box-shadow: -10px -10px 0 5px,
-                      -10px 10px 0 5px,
-                      -10px 10px 0 5px,
-                      -10px 10px 0 5px;
-        }
-        100% {
-          box-shadow: -10px -10px 0 5px,
-                      -10px -10px 0 5px,
-                      -10px -10px 0 5px,
-                      -10px -10px 0 5px;
-        }
-      }
-
-      @keyframes spin {
-          0% { transform: translate(-50%, -50%) rotate(0deg); }
-          100% { transform: translate(-50%, -50%) rotate(360deg); }
-      }
-    `;
-  }
-
-  getPopupStyles(desktopPopupDimensions) {
-    return `
-      ${this.getLoaderStyles()}
-      #surface-popup {
-        display: none;
-        justify-content: center;
-        align-items: center;
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        z-index: 99999;
-        background-color: rgba(0,0,0,0.5);
-        opacity: 0;
-        transition: opacity 0.15s ease;
-      }
-
-      .surface-popup-content {
-        position: relative;
-        top: 0;
-        left: 0;
-        transform: scale(0.9);
-        width: calc(100% - 20px);
-        height: calc(100% - 20px);
-        background-color: transparent;
-        border-radius: 15px;
-        opacity: 0;
-        transition: transform 0.15s ease, opacity 0.15s ease;
-      }
-
-      .surface-popup-content iframe {
-        width: 100%;
-        height: 100%;
-        border-radius: 15px;
-      }
-
-      @media (min-width: 481px) {
-        .surface-popup-content {
-          width: ${desktopPopupDimensions.width};
-          height: ${desktopPopupDimensions.height};
-          margin: 20px;
-        }
-      }
-
-      #surface-iframe {
-        transition: opacity 0.15s ease-in-out;
-      }
-
-      #surface-popup.active {
-        opacity: 1;
-      }
-
-      #surface-popup.active .surface-popup-content {
-        transform: scale(1);
-        opacity: 1;
-      }
-
-      .close-btn-container {
-        position: absolute;
-        display: none;
-        justify-content: center;
-        align-items: center;
-        top: 6px;
-        right: 8px;
-        background: #ffffff;
-        border: none;
-        border-radius: 50%;
-        width: 24px;
-        height: 24px;
-        opacity: .75;
-      }
-
-      @media (min-width: 481px) {
-        .close-btn-container {
-          top: -34px;
-          right: 0;
-          background: none;
-          border: none;
-          border-radius: 0;
-        }
-      }
-
-      .close-btn {
-        display: block;
-        padding: 0;
-        margin: 0;
-        margin-bottom: 6px;
-        font-size: 20px;
-        font-weight: normal;
-        line-height: 24px;
-        text-align: center;
-        text-transform: none;
-        cursor: pointer;
-        transition: opacity .25s ease-in-out;
-        text-decoration: none;
-        color: #000;
-        height: 20px;
-      }
-
-      @media (min-width: 481px) {
-        .close-btn {
-          color: #ffffff;
-          font-size: 32px;
-          margin-bottom: 0px;
-          height: auto;
-        }
-      }
-    `;
-  }
-
-  getWidgetStyles() {
-    return `
-      ${this.getLoaderStyles()}
-      #surface-widget-button {
-        position: fixed;
-        bottom: ${this.widgetStyle.bottomMargin};
-        ${this.widgetStyle.position}: ${this.widgetStyle.sideMargin};
-        z-index: 99998;
-        cursor: pointer;
-      }
-
-      .widget-button-inner {
-        width: ${this.widgetStyle.size};
-        height: ${this.widgetStyle.size};
-        border-radius: 50%;
-        background-color: ${this.widgetStyle.backgroundColor};
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        box-shadow: ${this.widgetStyle.boxShadow};
-        transition: transform 0.2s ease;
-      }
-
-      .widget-button-inner:hover {
-        transform: scale(${this.widgetStyle.hoverScale});
-      }
-    `;
-  }
-
-  formInputTriggerInitialize() {
-    const e = this.currentQuestionId;
-    if (this._formHandlers) {
-      this._formHandlers.forEach(({ form, submitHandler, keydownHandler }) => {
-        form.removeEventListener("submit", submitHandler);
-        form.removeEventListener("keydown", keydownHandler);
-      });
-      this._formHandlers = [];
-    } else {
-      this._formHandlers = [];
+      return select.value;
     }
-
-    let forms = [];
-
-    const allForms = document.querySelectorAll("form.surface-form-handler");
-    forms = Array.from(allForms).filter(
-      (form) => form.getAttribute("data-question-id") === e
-    );
-
-    if (forms.length === 0) {
-      const formsWithQuestionId = Array.from(allForms).filter(
-        (form) => form.hasAttribute("data-question-id")
-      );
-      if (!formsWithQuestionId.length) {
-        forms = Array.from(allForms);
-      }
+    if (tagName === "textarea") {
+      return field.value.trim();
     }
-
-    const getFieldValue = (field) => {
-      const tagName = field.tagName.toLowerCase();
-      const type = field.type?.toLowerCase();
-
-      if (tagName === "select") {
-        if (field.multiple) {
-          return Array.from(field.selectedOptions).map(
-            (option) => option.value
-          );
-        }
-        return field.value;
+    if (tagName === "input") {
+      const input = field;
+      if (type === "checkbox") {
+        return input.checked ? input.value || "true" : null;
       }
-
-      if (tagName === "textarea") {
-        return field.value.trim();
+      if (type === "radio") {
+        const group = document.querySelectorAll(
+          `input[type="radio"][name="${input.name}"]`
+        );
+        const checked = Array.from(group).find((r) => r.checked);
+        return checked ? checked.value : null;
       }
-
-      if (tagName === "input") {
-        if (type === "checkbox") {
-          return field.checked ? field.value || "true" : null;
-        }
-        if (type === "radio") {
-          const radioGroup = document.querySelectorAll(
-            `input[type="radio"][name="${field.name}"]`
-          );
-          const checkedRadio = Array.from(radioGroup).find((r) => r.checked);
-          return checkedRadio ? checkedRadio.value : null;
-        }
-        return field.value.trim();
-      }
-
-      return null;
-    };
-
-    const validateField = (field, value) => {
-      const isArray = Array.isArray(value);
-      const isEmpty = isArray
-        ? value.length === 0
-        : value === null || value === "";
-
-      if (isEmpty) {
-        if (field.hasAttribute("required") || field.required) {
-          return { valid: false, field };
-        }
-        return { valid: true, field: null };
-      }
-
-      const type = field.type?.toLowerCase();
-
-      if (type === "email") {
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/;
-        if (isArray) {
-          if (!value.every((email) => emailRegex.test(email))) {
-            return { valid: false, field };
-          }
-        } else {
-          if (!emailRegex.test(value)) {
-            return { valid: false, field };
-          }
-        }
-      }
-
-      if (field.hasAttribute("pattern")) {
-        const pattern = new RegExp(field.getAttribute("pattern"));
-        if (isArray) {
-          if (!value.every((item) => pattern.test(item))) {
-            return { valid: false, field };
-          }
-        } else {
-          if (!pattern.test(value)) {
-            return { valid: false, field };
-          }
-        }
-      }
-
-      if (field.hasAttribute("minlength")) {
-        const minLength = parseInt(field.getAttribute("minlength"));
-        if (value.length < minLength) {
-          return { valid: false, field };
-        }
-      }
-
-      if (field.hasAttribute("maxlength")) {
-        const maxLength = parseInt(field.getAttribute("maxlength"));
-        if (value.length > maxLength) {
-          return { valid: false, field };
-        }
-      }
-
-      if (!field.checkValidity()) {
+      return input.value.trim();
+    }
+    return null;
+  }
+  function validateField(field, value) {
+    const isArray = Array.isArray(value);
+    const isEmpty = isArray ? value.length === 0 : value === null || value === "";
+    if (isEmpty) {
+      if (field.hasAttribute("required") || field.required) {
         return { valid: false, field };
       }
-
       return { valid: true, field: null };
-    };
-
-    const collectFormFields = (form) => {
-      const fields = [];
-      const formQuestionId = form.getAttribute("data-question-id") || e;
-      const processedFields = new Set();
-
-      const findFormField = (element) => {
-        const tagName = element.tagName.toLowerCase();
-        if (
-          tagName === "input" ||
-          tagName === "select" ||
-          tagName === "textarea"
-        ) {
-          return element;
-        }
-        return element.querySelector("input, select, textarea");
-      };
-
-      const processField = (field, questionId, fieldNameFromParent = null) => {
-        if (processedFields.has(field)) {
-          return;
-        }
-
-        const fieldType = field.type?.toLowerCase();
-
-        let fieldName;
-        if (fieldType === "email") {
-          fieldName = "emailAddress";
-        } else {
-          fieldName =
-            fieldNameFromParent || field.getAttribute("data-field-name") || "";
-        }
-
-        if (field.type === "radio") {
-          const radioGroupName = field.name;
-          const alreadyProcessed = fields.some(
-            (f) => f.field.type === "radio" && f.field.name === radioGroupName
-          );
-          if (alreadyProcessed) {
-            return;
-          }
-        }
-
-        const value = getFieldValue(field);
-        fields.push({
-          field,
-          questionId,
-          fieldName,
-          value,
-        });
-        processedFields.add(field);
-      };
-
-      const elementsWithDataQuestionId =
-        form.querySelectorAll("[data-question-id]");
-
-      elementsWithDataQuestionId.forEach((element) => {
-        const fieldQuestionId = element.getAttribute("data-question-id");
-        const formField = findFormField(element);
-
-        if (formField) {
-          const fieldNameFromParent = element.getAttribute("data-field-name");
-          processField(formField, fieldQuestionId, fieldNameFromParent);
-        }
-      });
-
-      const elementsWithDataFieldName =
-        form.querySelectorAll("[data-field-name]");
-
-      elementsWithDataFieldName.forEach((element) => {
-        if (!element.hasAttribute("data-question-id")) {
-          const formField = findFormField(element);
-
-          if (formField && !processedFields.has(formField)) {
-            const fieldNameFromParent = element.getAttribute("data-field-name");
-            processField(formField, formQuestionId, fieldNameFromParent);
-          }
-        }
-      });
-
-      const emailInput = form.querySelector('input[type="email"]');
-      if (emailInput && !processedFields.has(emailInput)) {
-        processField(emailInput, formQuestionId, "emailAddress");
+    }
+    const type = field.type?.toLowerCase();
+    if (type === "email") {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/;
+      const values = isArray ? value : [value];
+      if (!values.every((v) => emailRegex.test(v))) {
+        return { valid: false, field };
       }
+    }
+    if (field.hasAttribute("pattern")) {
+      const pattern = new RegExp(field.getAttribute("pattern"));
+      const values = isArray ? value : [value];
+      if (!values.every((v) => pattern.test(v))) {
+        return { valid: false, field };
+      }
+    }
+    if (field.hasAttribute("minlength")) {
+      const minLength = parseInt(field.getAttribute("minlength"));
+      if (value.length < minLength) {
+        return { valid: false, field };
+      }
+    }
+    if (field.hasAttribute("maxlength")) {
+      const maxLength = parseInt(field.getAttribute("maxlength"));
+      if (value.length > maxLength) {
+        return { valid: false, field };
+      }
+    }
+    if (!field.checkValidity()) {
+      return { valid: false, field };
+    }
+    return { valid: true, field: null };
+  }
 
-      return fields;
-    };
+  // src/embed/input-trigger/field-collection.ts
+  function collectFormFields(form, defaultQuestionId) {
+    const fields = [];
+    const formQuestionId = form.getAttribute("data-question-id") || defaultQuestionId;
+    const processedFields = /* @__PURE__ */ new Set();
+    const elementsWithQuestionId = form.querySelectorAll("[data-question-id]");
+    elementsWithQuestionId.forEach((element) => {
+      const questionId = element.getAttribute("data-question-id");
+      const formField = findFormField(element);
+      if (formField) {
+        const fieldNameFromParent = element.getAttribute("data-field-name");
+        processField(formField, questionId, fieldNameFromParent, fields, processedFields);
+      }
+    });
+    const elementsWithFieldName = form.querySelectorAll("[data-field-name]");
+    elementsWithFieldName.forEach((element) => {
+      if (!element.hasAttribute("data-question-id")) {
+        const formField = findFormField(element);
+        if (formField && !processedFields.has(formField)) {
+          const fieldNameFromParent = element.getAttribute("data-field-name");
+          processField(formField, formQuestionId, fieldNameFromParent, fields, processedFields);
+        }
+      }
+    });
+    const emailInput = form.querySelector('input[type="email"]');
+    if (emailInput && !processedFields.has(emailInput)) {
+      processField(emailInput, formQuestionId, "emailAddress", fields, processedFields);
+    }
+    return fields;
+  }
+  function findFormField(element) {
+    const tagName = element.tagName.toLowerCase();
+    if (tagName === "input" || tagName === "select" || tagName === "textarea") {
+      return element;
+    }
+    return element.querySelector("input, select, textarea");
+  }
+  function processField(field, questionId, fieldNameFromParent, fields, processed) {
+    if (processed.has(field)) return;
+    const fieldType = field.type?.toLowerCase();
+    let fieldName;
+    if (fieldType === "email") {
+      fieldName = "emailAddress";
+    } else {
+      fieldName = fieldNameFromParent || field.getAttribute("data-field-name") || "";
+    }
+    if (field.type === "radio") {
+      const radioGroupName = field.name;
+      const alreadyProcessed = fields.some(
+        (f) => f.field.type === "radio" && f.field.name === radioGroupName
+      );
+      if (alreadyProcessed) return;
+    }
+    fields.push({
+      field,
+      questionId,
+      fieldName,
+      value: getFieldValue(field)
+    });
+    processed.add(field);
+  }
 
-    const handleSubmitCallback = (t) => (n) => {
-      n.preventDefault();
-
-      const formFields = collectFormFields(t);
+  // src/embed/input-trigger/submit-handler.ts
+  function createSubmitHandler(embed, form, questionId) {
+    return (e) => {
+      e.preventDefault();
+      const formFields = collectFormFields(form, questionId);
       const options = {};
-      let hasValidationError = false;
-      let firstInvalidField = null;
-
-      formFields.forEach(({ field, questionId, fieldName, value }) => {
+      let hasError = false;
+      let firstInvalid = null;
+      formFields.forEach(({ field, questionId: qId, fieldName, value }) => {
         const isArray = Array.isArray(value);
-        const isEmpty = isArray
-          ? value.length === 0
-          : value === null || value === "";
-
+        const isEmpty = isArray ? value.length === 0 : value === null || value === "";
         if (isEmpty && !field.hasAttribute("required") && !field.required) {
           return;
         }
-
-        const validation = validateField(field, value);
-        if (!validation.valid) {
-          hasValidationError = true;
-          if (!firstInvalidField) {
-            firstInvalidField = validation.field || field;
-          }
+        const result = validateField(field, value);
+        if (!result.valid) {
+          hasError = true;
+          if (!firstInvalid) firstInvalid = result.field || field;
           return;
         }
-
         if (!isEmpty) {
-          const fieldNameKey = fieldName ? `_${fieldName}` : "";
-          const key = `${questionId}${fieldNameKey}`;
+          const key = fieldName ? `${qId}_${fieldName}` : qId;
           options[key] = value;
         }
       });
-
-      if (hasValidationError && firstInvalidField) {
-        firstInvalidField.reportValidity();
+      if (hasError && firstInvalid) {
+        firstInvalid.reportValidity();
         return;
       }
-
       if (Object.keys(options).length > 0) {
-        const existingData = Array.isArray(SurfaceTagStore.partialFilledData)
-          ? SurfaceTagStore.partialFilledData
-          : [];
-
-        const dataMap = new Map();
+        const existingData = Array.isArray(embed.store.partialFilledData) ? embed.store.partialFilledData : [];
+        const dataMap = /* @__PURE__ */ new Map();
         existingData.forEach((entry, index) => {
           const key = Object.keys(entry)[0];
           dataMap.set(key, index);
         });
-
         Object.entries(options).forEach(([key, value]) => {
           const newEntry = { [key]: value };
-
           if (dataMap.has(key)) {
             existingData[dataMap.get(key)] = newEntry;
           } else {
             existingData.push(newEntry);
           }
         });
-
-        SurfaceTagStore.partialFilledData = existingData;
-        if (!this.initialized) {
-          this.initializeEmbed();
-        }
-        SurfaceTagStore.notifyIframe(this.iframe, "STORE_UPDATE");
-        this.showSurfaceForm();
+        embed.store.partialFilledData = existingData;
+        if (!embed.initialized) embed.initializeEmbed();
+        embed.store.notifyIframe(embed.iframe, "STORE_UPDATE");
+        embed.showSurfaceForm();
       } else {
-        const emailInput = t.querySelector('input[type="email"]');
-        if (emailInput) {
-          emailInput.reportValidity();
-        }
+        const emailInput = form.querySelector('input[type="email"]');
+        if (emailInput) emailInput.reportValidity();
       }
     };
-
-    const handleKeyDownCallback = (t) => (n) => {
-      if (n.key === "Enter") {
-        const activeElement = document.activeElement;
-        const tagName = activeElement.tagName.toLowerCase();
-        const type = activeElement.type?.toLowerCase();
-
-        if (tagName === "textarea") {
-          return;
-        }
-
-        if (type === "checkbox" || type === "radio") {
-          return;
-        }
-
-        if (
-          (tagName === "input" && type !== "checkbox" && type !== "radio") ||
-          tagName === "select"
-        ) {
-          n.preventDefault();
-          t.dispatchEvent(new Event("submit", { cancelable: true }));
-        }
+  }
+  function createKeyDownHandler(form) {
+    return (e) => {
+      const ke = e;
+      if (ke.key !== "Enter") return;
+      const active = document.activeElement;
+      const tagName = active.tagName.toLowerCase();
+      const type = active.type?.toLowerCase();
+      if (tagName === "textarea") return;
+      if (type === "checkbox" || type === "radio") return;
+      if (tagName === "input" && type !== "checkbox" && type !== "radio" || tagName === "select") {
+        ke.preventDefault();
+        form.dispatchEvent(new Event("submit", { cancelable: true }));
       }
     };
+  }
 
-    if (forms.length > 0) {
-      forms.forEach((form) => {
-        const submitHandler = handleSubmitCallback(form);
-        const keydownHandler = handleKeyDownCallback(form);
-        form.addEventListener("submit", submitHandler);
-        form.addEventListener("keydown", keydownHandler);
-        this._formHandlers.push({ form, submitHandler, keydownHandler });
+  // src/embed/input-trigger/input-trigger.ts
+  function formInputTriggerInitialize() {
+    const questionId = this.currentQuestionId || "";
+    if (this._formHandlers) {
+      this._formHandlers.forEach(({ form, submitHandler, keydownHandler }) => {
+        form.removeEventListener("submit", submitHandler);
+        form.removeEventListener("keydown", keydownHandler);
       });
     }
-  }
-
-  // Show Surface Form
-  showSurfaceForm() {
-    if (!this.initialized) {
-      this.initializeEmbed();
-    }
-
-    this.shouldShowSurfaceForm();
-  }
-
-  // Show Surface Form from URL parameter
-  showSurfaceFormFromUrlParameter() {
-    try {
-      const paramsFromStore = SurfaceTagStore.getUrlParams();
-      if (!paramsFromStore) return;
-      if (paramsFromStore.showSurfaceForm === "true") {
-        this.showSurfaceForm();
-      }
-    } catch (error) {
-      this.log(
-        "error",
-        `Failed to show Surface Form from URL parameter: ${error}`
+    this._formHandlers = [];
+    const allForms = document.querySelectorAll("form.surface-form-handler");
+    let forms = Array.from(allForms).filter(
+      (form) => form.getAttribute("data-question-id") === questionId
+    );
+    if (forms.length === 0) {
+      const formsWithQuestionId = Array.from(allForms).filter(
+        (f) => f.hasAttribute("data-question-id")
       );
-    }
-  }
-
-  get popupSize() {
-    return this._popupSize;
-  }
-
-  set popupSize(size) {
-    if (
-      !["small", "medium", "large"].includes(size) &&
-      !(typeof size === "object" && Object.keys(size).length > 0)
-    ) {
-      this.log("warn", "Invalid popup size. Using 'medium' instead.");
-      this._popupSize = "medium";
-    } else {
-      this._popupSize = size;
-    }
-  }
-
-  _isFormPreviewMode() {
-    const params = SurfaceTagStore.getUrlParams();
-    const previewMode = params?.surfaceDebug === "true";
-    return previewMode;
-  }
-
-  _hideFormOnEsc() {
-    document.addEventListener("keydown", (event) => {
-      if (event.key === "Escape") {
-        this.hideSurfaceForm();
+      if (!formsWithQuestionId.length) {
+        forms = Array.from(allForms);
       }
+    }
+    forms.forEach((form) => {
+      const submitHandler = createSubmitHandler(this, form, questionId);
+      const keydownHandler = createKeyDownHandler(form);
+      form.addEventListener("submit", submitHandler);
+      form.addEventListener("keydown", keydownHandler);
+      this._formHandlers.push({ form, submitHandler, keydownHandler });
     });
   }
-}
 
-(function () {
-  const scriptTag = document.currentScript;
-  const environmentId = SurfaceGetSiteIdFromScript(scriptTag);
-  EnvironmentId = environmentId;
+  // src/embed/embed.ts
+  var DEFAULT_WIDGET_STYLES = {
+    position: "right",
+    bottomMargin: "40px",
+    sideMargin: "30px",
+    size: "64px",
+    backgroundColor: "#1a56db",
+    hoverScale: "1.05",
+    boxShadow: "0 6px 12px rgba(0,0,0,0.25)"
+  };
+  var _SurfaceEmbed = class _SurfaceEmbed {
+    constructor(src, surface_embed_type, target_element_class, options = {}, store) {
+      this.src = new URL(src);
+      this.log = createLogger("Surface Embed");
+      this.store = store || window.SurfaceTagStore;
+      this.currentQuestionId = document.currentScript?.getAttribute("data-question-id") || null;
+      _SurfaceEmbed._instances.push(this);
+      if (this._isFormPreviewMode()) {
+        this.log.info("Form is in preview mode");
+        this.src.searchParams.append("preview", "true");
+      }
+      this._popupSize = options.popupSize || "medium";
+      this.documentReferenceSelector = options.enforceIDSelector ? "#" : ".";
+      this.log.info("documentReferenceSelector set to " + this.documentReferenceSelector);
+      const preloadOptions = ["true", "false", "pageLoad"];
+      this._preload = preloadOptions.includes(options.preload) ? options.preload : "true";
+      this.log.info("preload set to " + this._preload);
+      this.styles = { popup: null, widget: null };
+      this.initialized = false;
+      this.iframe = null;
+      this.surface_popup_reference = null;
+      this.surface_inline_reference = null;
+      this.inline_embed_references = null;
+      this.iframeInlineStyle = null;
+      this._cachedSrcUrl = null;
+      this._cachedOptionsKey = null;
+      this._iframePreloaded = false;
+      this._previouslyFocusedElement = null;
+      this._clickHandler = null;
+      this._formHandlers = null;
+      this.target_element_class = target_element_class;
+      this.options = options;
+      this.options.popupSize = this._popupSize;
+      this.widgetStyle = { ...DEFAULT_WIDGET_STYLES, ...options.widgetStyles || {} };
+      if (options.prefillData) {
+        this.store.partialFilledData = Object.entries(options.prefillData).map(
+          ([key, value]) => ({ [key]: value })
+        );
+      }
+      this.embed_type = resolveEmbedType(surface_embed_type, this.log);
+      this.shouldShowSurfaceForm = () => {
+      };
+      this.embedSurfaceForm = () => {
+      };
+      this.hideSurfaceForm = () => {
+      };
+      if (!this.embed_type || !VALID_EMBED_TYPES.includes(this.embed_type)) {
+        this.log.error("Invalid embed type: must be string or object");
+        return;
+      }
+      if (!target_element_class) return;
+      this.wireEmbedType();
+      this.surface_popup_reference ?? (this.surface_popup_reference = document.createElement("div"));
+      this.setupClickHandlers();
+      this.formInputTriggerInitialize();
+      this.showSurfaceFormFromUrlParameter();
+      this.preloadIframe();
+      this.hideFormOnEsc();
+      this.setupEmbedRouteDetection();
+    }
+    wireEmbedType() {
+      if (this.initialized) return;
+      if (this.embed_type === "inline") {
+        this.surface_inline_reference = null;
+        this.inline_embed_references = document.querySelectorAll(
+          this.documentReferenceSelector + this.target_element_class
+        );
+        this.embedSurfaceForm = this.embedInline;
+        this.shouldShowSurfaceForm = this.showSurfaceInline;
+        this.hideSurfaceForm = this.hideSurfaceInline;
+        this.initializeEmbed();
+      } else if (this.embed_type === "popup" || this.embed_type === "widget" || this.embed_type === "input-trigger") {
+        this.embedSurfaceForm = this.embedPopup;
+        this.shouldShowSurfaceForm = this.showSurfacePopup;
+        this.hideSurfaceForm = this.hideSurfacePopup;
+        if (this.embed_type === "widget") {
+          this.surface_popup_reference ?? (this.surface_popup_reference = document.createElement("div"));
+          this.addWidgetButton();
+        }
+      } else if (this.embed_type === "slideover") {
+        this.embedSurfaceForm = this.embedSlideover;
+        this.shouldShowSurfaceForm = this.showSurfaceSlideover;
+        this.hideSurfaceForm = this.hideSurfaceSlideover;
+      }
+    }
+    initializeEmbed() {
+      if (this.initialized) return;
+      this.embedSurfaceForm();
+      this.initialized = true;
+    }
+    showSurfaceForm() {
+      if (!this.initialized) this.initializeEmbed();
+      this.shouldShowSurfaceForm();
+    }
+    _getSrcUrl() {
+      if (!this._cachedSrcUrl) {
+        this._cachedSrcUrl = this.src.toString();
+      }
+      return this._cachedSrcUrl;
+    }
+    get popupSize() {
+      return this._popupSize;
+    }
+    set popupSize(size) {
+      const validSizes = ["small", "medium", "large"];
+      if (!(typeof size === "string" && validSizes.includes(size)) && !(typeof size === "object" && Object.keys(size).length > 0)) {
+        this.log.warn("Invalid popup size. Using 'medium' instead.");
+        this._popupSize = "medium";
+      } else {
+        this._popupSize = size;
+      }
+    }
+    _isFormPreviewMode() {
+      const params = this.store?.getUrlParams?.() ?? {};
+      return params.surfaceDebug === "true";
+    }
+    hideFormOnEsc() {
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") this.hideSurfaceForm();
+      });
+    }
+    setupEmbedRouteDetection() {
+      let currentUrl2 = window.location.href;
+      const handleChange = () => {
+        const newUrl = window.location.href;
+        if (newUrl === currentUrl2) return;
+        currentUrl2 = newUrl;
+        this.store.windowUrl = new URL(newUrl).toString();
+        this.setupClickHandlers();
+        this.formInputTriggerInitialize();
+        this.log.info("Route changed, re-initialized handlers");
+      };
+      onRouteChange(handleChange);
+      if (typeof MutationObserver !== "undefined") {
+        const observer = new MutationObserver((mutations) => {
+          let shouldReinit = false;
+          mutations.forEach((mutation) => {
+            mutation.addedNodes.forEach((node) => {
+              if (node.nodeType !== 1) return;
+              const el = node;
+              if (el.matches?.("form.surface-form-handler") || el.matches?.(this.documentReferenceSelector + this.target_element_class) || el.querySelector?.("form.surface-form-handler") || el.querySelector?.(this.documentReferenceSelector + this.target_element_class)) {
+                shouldReinit = true;
+              }
+            });
+          });
+          if (shouldReinit) {
+            clearTimeout(this._reinitTimeout);
+            this._reinitTimeout = setTimeout(() => {
+              this.store.windowUrl = new URL(window.location.href).toString();
+              this.setupClickHandlers();
+              this.formInputTriggerInitialize();
+              this.log.info("DOM changed, re-initialized handlers");
+            }, 100);
+          }
+        });
+        if (document.body) {
+          observer.observe(document.body, { childList: true, subtree: true });
+        } else {
+          const bodyObserver = new MutationObserver(() => {
+            if (document.body) {
+              observer.observe(document.body, { childList: true, subtree: true });
+              bodyObserver.disconnect();
+            }
+          });
+          bodyObserver.observe(document.documentElement, { childList: true });
+        }
+      }
+    }
+  };
+  _SurfaceEmbed._instances = [];
+  var SurfaceEmbed = _SurfaceEmbed;
+  Object.assign(SurfaceEmbed.prototype, {
+    updateIframeWithOptions,
+    setupClickHandlers,
+    preloadIframe,
+    showSurfaceFormFromUrlParameter,
+    embedInline,
+    showSurfaceInline,
+    hideSurfaceInline,
+    embedPopup,
+    showSurfacePopup,
+    hideSurfacePopup,
+    embedSlideover,
+    showSurfaceSlideover,
+    hideSurfaceSlideover,
+    addWidgetButton,
+    formInputTriggerInitialize
+  });
+
+  // src/index.ts
+  var SurfaceTagStore = new SurfaceStore();
+  var w = window;
+  w.SurfaceEmbed = SurfaceEmbed;
+  w.SurfaceExternalForm = SurfaceExternalForm;
+  w.SurfaceTagStore = SurfaceTagStore;
+  w.SurfaceIdentifyLead = identifyLead;
+  w.SurfaceSetLeadDataWithTTL = setLeadDataWithTTL;
+  w.SurfaceGetLeadDataWithTTL = getLeadDataWithTTL;
+  w.SurfaceGetSiteIdFromScript = getSiteIdFromScript;
+  (function() {
+    const scriptTag = document.currentScript;
+    const environmentId2 = getSiteIdFromScript(scriptTag);
+    setEnvironmentId(environmentId2);
+  })();
 })();
