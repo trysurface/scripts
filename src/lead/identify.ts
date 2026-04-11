@@ -13,6 +13,10 @@ export function getEnvironmentId(): string | null {
   return environmentId;
 }
 
+export function isIdentifyInProgress(): boolean {
+  return identifyInProgress;
+}
+
 export function setLeadDataWithTTL(data: Omit<LeadData, "expiry">): void {
   const item = {
     ...data,

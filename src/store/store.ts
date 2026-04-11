@@ -4,7 +4,7 @@ import { createLogger } from "../utils/logger";
 import { parseCookies } from "../utils/cookies";
 import { getUrlParams } from "../utils/url";
 import { onRouteChange } from "../utils/route-observer";
-import { getLeadDataWithTTL } from "../lead/identify";
+import { getLeadDataWithTTL, isIdentifyInProgress } from "../lead/identify";
 import { initializeMessageListener } from "./message-listener";
 import {
   initializeUserJourneyTracking,
@@ -47,7 +47,10 @@ export class SurfaceStore {
 
     initializeMessageListener(this);
 
-    if (!this.isCurrentOriginSurfaceDomain()) {
+    if (
+      (this.cachedIdentifyData || !isIdentifyInProgress()) &&
+      !this.isCurrentOriginSurfaceDomain()
+    ) {
       initializeUserJourneyTracking(
         this.log,
         () => this.userJourneyId,

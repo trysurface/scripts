@@ -80,6 +80,9 @@
   function getEnvironmentId() {
     return environmentId;
   }
+  function isIdentifyInProgress() {
+    return identifyInProgress;
+  }
   function setLeadDataWithTTL(data) {
     const item = {
       ...data,
@@ -452,7 +455,7 @@
       this.cachedIdentifyData = getLeadDataWithTTL();
       this.log = createLogger("Surface Store");
       initializeMessageListener(this);
-      if (!this.isCurrentOriginSurfaceDomain()) {
+      if ((this.cachedIdentifyData || !isIdentifyInProgress()) && !this.isCurrentOriginSurfaceDomain()) {
         initializeUserJourneyTracking(
           this.log,
           () => this.userJourneyId,
