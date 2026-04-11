@@ -1,4 +1,5 @@
-import { SURFACE_DOMAINS } from "../constants";
+import { SURFACE_DOMAINS, VALID_EMBED_TYPES } from "../constants";
+import { isDebugMode } from "../utils/debug";
 import { createLogger } from "../utils/logger";
 import { parseCookies } from "../utils/cookies";
 import { getUrlParams } from "../utils/url";
@@ -10,16 +11,22 @@ import {
   updateUserJourneyOnRouteChange,
   clearUserJourney as clearJourney,
 } from "./user-journey";
-import type { Logger, StorePayload, PartialFilledData } from "../types";
+import type { Logger, StorePayload, PartialFilledData, LeadData } from "../types";
 
 export class SurfaceStore {
   windowUrl: string;
   origin: string;
   referrer: string;
   cookies: Record<string, string>;
+  metadata: Record<string, unknown>;
   urlParams: Record<string, string>;
   partialFilledData: PartialFilledData;
+  validEmbedTypes: readonly string[];
+  debugMode: boolean;
+  surfaceDomains: readonly string[];
   userJourneyId: string | null;
+  userJourney: unknown[];
+  cachedIdentifyData: LeadData | null;
   log: Logger;
 
   constructor() {
@@ -27,9 +34,15 @@ export class SurfaceStore {
     this.origin = new URL(window.location.href).origin.toString();
     this.referrer = document.referrer || "";
     this.cookies = {};
+    this.metadata = {};
     this.urlParams = {};
     this.partialFilledData = {};
+    this.validEmbedTypes = VALID_EMBED_TYPES;
+    this.debugMode = isDebugMode();
+    this.surfaceDomains = SURFACE_DOMAINS;
     this.userJourneyId = null;
+    this.userJourney = [];
+    this.cachedIdentifyData = getLeadDataWithTTL();
     this.log = createLogger("Surface Store");
 
     initializeMessageListener(this);

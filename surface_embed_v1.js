@@ -441,9 +441,15 @@
       this.origin = new URL(window.location.href).origin.toString();
       this.referrer = document.referrer || "";
       this.cookies = {};
+      this.metadata = {};
       this.urlParams = {};
       this.partialFilledData = {};
+      this.validEmbedTypes = VALID_EMBED_TYPES;
+      this.debugMode = isDebugMode();
+      this.surfaceDomains = SURFACE_DOMAINS;
       this.userJourneyId = null;
+      this.userJourney = [];
+      this.cachedIdentifyData = getLeadDataWithTTL();
       this.log = createLogger("Surface Store");
       initializeMessageListener(this);
       if (!this.isCurrentOriginSurfaceDomain()) {
@@ -548,98 +554,49 @@
   // src/external-form/form-handlers.ts
   function attachFormHandlers(form) {
     if (!form.environmentId) {
-      form.log.warn("No environment id configured");
+      form.log("No environment id configured", "warn");
       return;
     }
     if (form.forms.length === 0) {
-      form.log.warn("No forms with data-id attribute found");
+      form.log("No forms with data-id attribute found", "warn");
       return;
     }
     form.forms.forEach((htmlForm) => {
       const formId = htmlForm.getAttribute("data-id");
-      form.log.info(`Attaching handlers to form: ${formId}`);
+      form.log(`Attaching handlers to form: ${formId}`);
       htmlForm.querySelectorAll(
         "input[data-id], select[data-id], textarea[data-id], fieldset[data-id]"
       ).forEach(
         (el) => el.addEventListener(
           "change",
-          (e) => handleInputChange(form, formId, e)
+          (e) => form.handleInputChange(formId, e)
         )
       );
       const nextButtons = htmlForm.getElementsByClassName("surface-next-button");
       const submitButtons = htmlForm.getElementsByClassName("surface-submit-button");
       if (nextButtons.length > 0) {
         Array.from(nextButtons).forEach((btn) => {
-          btn.addEventListener("click", () => submitForm(form, htmlForm, false));
+          btn.addEventListener("click", () => form.submitForm(htmlForm, false));
         });
       }
       if (submitButtons.length > 0) {
         Array.from(submitButtons).forEach((btn) => {
           btn.addEventListener("click", (e) => {
             e.preventDefault();
-            submitForm(form, htmlForm, true);
+            form.submitForm(htmlForm, true);
           });
         });
       } else {
         htmlForm.addEventListener("submit", (e) => {
           e.preventDefault();
-          form.log.info(`Form ${formId} submitted`);
-          submitForm(form, htmlForm, true);
+          form.log(`Form ${formId} submitted`);
+          form.submitForm(htmlForm, true);
         });
       }
       form.formStates[formId] = {};
       form.formStarted[formId] = false;
       form.initializeForm(formId);
     });
-  }
-  function handleInputChange(form, formId, event) {
-    if (!form.formStarted[formId]) {
-      form.callFormStartedApi(formId);
-      form.formStarted[formId] = true;
-    }
-    const target = event.target;
-    const elementId = target.getAttribute("data-id") || "";
-    const [questionId, variableName] = elementId.includes("_") ? elementId.split("_") : [elementId, null];
-    const value = target.value;
-    form.log.info(
-      `Form ${formId} element changed - Question ID: ${questionId}, Variable Name: ${variableName}, Value: ${value}`
-    );
-    form.storeQuestionData({
-      formId,
-      questionId,
-      variableName: variableName ?? "value",
-      value
-    });
-  }
-  function submitForm(form, htmlForm, finished) {
-    const formId = htmlForm.getAttribute("data-id");
-    const responses = Object.entries(form.formStates[formId] || {}).map(
-      ([questionId, data]) => ({ questionId, response: data })
-    );
-    const payload = {
-      id: form.responseIds[formId],
-      formId,
-      responses,
-      finished,
-      environmentId: form.environmentId,
-      leadSessionId: form.getLeadSessionId(formId),
-      initialRenderTime: form.initialRenderTime.toISOString()
-    };
-    form.log.info("Submitting form data");
-    if (!form.environmentId) {
-      form.log.error("Skipping form submission: environmentId not configured");
-      return;
-    }
-    fetch(`${form.config.serverBaseUrl}/externalForm/submit`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
-    }).then((r) => r.json()).then((data) => {
-      if (data?.data?.response?.id) {
-        form.responseIds[formId] = data.data.response.id;
-        form.log.info("Response ID stored: " + data.data.response.id);
-      }
-    }).catch((error) => form.log.error("Error submitting form: " + error));
   }
 
   // src/external-form/external-form.ts
@@ -648,12 +605,13 @@
       this.initialRenderTime = /* @__PURE__ */ new Date();
       this.formStates = {};
       this.responseIds = {};
+      this.windowUrl = new URL(window.location.href).toString();
       this.formSessions = {};
       this.formInitializationStatus = {};
       this.formStarted = {};
-      this.log = createLogger("Surface External Form");
       this.config = {
-        serverBaseUrl: props?.serverBaseUrl || EXTERNAL_FORM_API
+        serverBaseUrl: props?.serverBaseUrl || EXTERNAL_FORM_API,
+        debugMode: isDebugMode()
       };
       this.environmentId = props?.siteId || getSiteIdFromScript(document.currentScript);
       this.forms = Array.from(document.querySelectorAll("form")).filter(
@@ -677,9 +635,23 @@
         leadSessionId: this.getLeadSessionId(formId)
       });
     }
+    log(message, level = "log") {
+      if (!this.config.debugMode) return;
+      switch (level) {
+        case "warn":
+          console.warn(message);
+          break;
+        case "error":
+          console.error(message);
+          break;
+        default:
+          console.log(message);
+          break;
+      }
+    }
     async identify(formId) {
       const apiUrl = `${this.config.serverBaseUrl}/lead/identify`;
-      const parentUrl = new URL(window.location.href);
+      const parentUrl = new URL(this.windowUrl);
       try {
         const response = await fetch(apiUrl, {
           method: "POST",
@@ -701,7 +673,7 @@
           this.formSessions[formId] = jsonData.data.data;
         }
       } catch (error) {
-        this.log.error("Error identifying lead: " + error);
+        this.log("Error identifying lead: " + error, "error");
       }
     }
     async initializeForm(formId) {
@@ -711,10 +683,63 @@
       this.callFormViewApi(formId);
     }
     storeQuestionData(params) {
-      const { formId, questionId, variableName, value } = params;
+      const { formId, questionId, value } = params;
+      const variableName = params.variableName ?? "value";
       if (!this.formStates[formId]) this.formStates[formId] = {};
       if (!this.formStates[formId][questionId]) this.formStates[formId][questionId] = {};
       this.formStates[formId][questionId][variableName] = value;
+    }
+    sendBeacon(url, payload) {
+      sendBeacon(url, payload);
+    }
+    submitForm(form, finished = false) {
+      const formId = form.getAttribute("data-id");
+      const responses = Object.entries(this.formStates[formId] || {}).map(
+        ([questionId, data]) => ({ questionId, response: data })
+      );
+      const payload = {
+        id: this.responseIds[formId],
+        formId,
+        responses,
+        finished,
+        environmentId: this.environmentId,
+        leadSessionId: this.getLeadSessionId(formId),
+        initialRenderTime: this.initialRenderTime.toISOString()
+      };
+      this.log("Submitting form data:" + JSON.stringify(payload));
+      if (!this.environmentId) {
+        this.log("Skipping form submission: environmentId not configured", "error");
+        return;
+      }
+      fetch(`${this.config.serverBaseUrl}/externalForm/submit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      }).then((r) => r.json()).then((data) => {
+        if (data?.data?.response?.id) {
+          this.responseIds[formId] = data.data.response.id;
+          this.log("Response ID stored: " + data.data.response.id);
+        }
+      }).catch((error) => this.log("Error submitting form: " + error, "error"));
+    }
+    handleInputChange(formId, event) {
+      if (!this.formStarted[formId]) {
+        this.callFormStartedApi(formId);
+        this.formStarted[formId] = true;
+      }
+      const target = event.target;
+      const elementId = target.getAttribute("data-id") || "";
+      const [questionId, variableName] = elementId.includes("_") ? elementId.split("_") : [elementId, null];
+      const value = target.value;
+      this.log(
+        `Form ${formId} element changed - Question ID: ${questionId}, Variable Name: ${variableName}, Value: ${value}`
+      );
+      this.storeQuestionData({
+        formId,
+        questionId,
+        variableName: variableName ?? "value",
+        value
+      });
     }
     attachFormHandlers() {
       attachFormHandlers(this);
@@ -1626,10 +1651,10 @@
     boxShadow: "0 6px 12px rgba(0,0,0,0.25)"
   };
   var _SurfaceEmbed = class _SurfaceEmbed {
-    constructor(src, surface_embed_type, target_element_class, options = {}, store) {
+    constructor(src, surface_embed_type, target_element_class, options = {}) {
       this.src = new URL(src);
       this.log = createLogger("Surface Embed");
-      this.store = store || window.SurfaceTagStore;
+      this.store = window.SurfaceTagStore;
       this.currentQuestionId = document.currentScript?.getAttribute("data-question-id") || null;
       _SurfaceEmbed._instances.push(this);
       if (this._isFormPreviewMode()) {

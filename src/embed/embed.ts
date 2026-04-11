@@ -94,12 +94,11 @@ export class SurfaceEmbed {
     src: string,
     surface_embed_type: EmbedTypeInput,
     target_element_class: string,
-    options: SurfaceEmbedOptions = {},
-    store?: SurfaceStore
+    options: SurfaceEmbedOptions = {}
   ) {
     this.src = new URL(src);
     this.log = createLogger("Surface Embed");
-    this.store = store || (window as unknown as Record<string, unknown>).SurfaceTagStore as SurfaceStore;
+    this.store = (window as unknown as Record<string, unknown>).SurfaceTagStore as SurfaceStore;
     this.currentQuestionId =
       document.currentScript?.getAttribute("data-question-id") || null;
 
