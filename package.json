@@ -4,7 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "build": "esbuild src/index.ts --bundle --format=iife --outfile=surface_tag.js --target=es2020",
+    "build": "esbuild src/index.ts --bundle --format=iife --outfile=surface_tag.js --target=es2020 && pnpm copyTagToEmbed",
+    "copyTagToEmbed": "cp surface_tag.js surface_embed_v1.js",
     "dev": "esbuild src/index.ts --bundle --format=iife --outfile=surface_tag.js --target=es2020 --watch --sourcemap",
     "typecheck": "tsc --noEmit"
   },
