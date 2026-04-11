@@ -17,7 +17,7 @@ const POPUP_HTML = (src: string) => `
 
 export function embedPopup(this: SurfaceEmbed): void {
   if (!this.surface_popup_reference) {
-    this.log.error(`Cannot embed popup: embed type is ${this.embed_type}`);
+    this.log.error({ message: "Cannot embed popup", response: { embedType: this.embed_type } });
     return;
   }
 
@@ -56,7 +56,7 @@ export function embedPopup(this: SurfaceEmbed): void {
 
 export function showSurfacePopup(this: SurfaceEmbed, options: Record<string, string> = {}): void {
   if (!this.surface_popup_reference) {
-    this.log.warn("Invalid showSurfaceForm: embed type is not popup");
+    this.log.warn({ message: "Invalid showSurfaceForm: embed type is not popup" });
     return;
   }
 
@@ -74,7 +74,7 @@ export function showSurfacePopup(this: SurfaceEmbed, options: Record<string, str
 
 export function hideSurfacePopup(this: SurfaceEmbed): void {
   if (!this.surface_popup_reference) {
-    this.log.warn("Invalid hideSurfaceForm: embed type is not popup");
+    this.log.warn({ message: "Invalid hideSurfaceForm: embed type is not popup" });
     return;
   }
 

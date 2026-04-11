@@ -79,7 +79,7 @@ export class SurfaceStore {
       this.sendPayloadToIframes("STORE_UPDATE");
       initializeMessageListener(this);
 
-      this.log.info("Route changed, updated journey and re-initialized listener");
+      this.log.info({ message: "Route changed, updated journey and re-initialized listener", response: { url: newUrl } });
     });
   }
 
@@ -90,7 +90,7 @@ export class SurfaceStore {
     this.urlParams = getUrlParams();
     this.urlParams.url = window.location.href;
 
-    this.log.info("Updating iframe params");
+    this.log.info({ message: "Updating iframe params", response: { type, iframeCount: iframes.length } });
 
     iframes.forEach((iframe) => this.notifyIframe(iframe, type));
   }

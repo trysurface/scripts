@@ -44,7 +44,7 @@ export function updateIframeWithOptions(
       try {
         const url = new URL(this._getSrcUrl());
         if (url.protocol !== "https:") {
-          this.log.error("Only HTTPS URLs are allowed");
+          this.log.error({ message: "Only HTTPS URLs are allowed" });
         }
         iframe.src = url.toString();
         iframe.onload = () => {
@@ -54,11 +54,11 @@ export function updateIframeWithOptions(
           if (closeBtn) closeBtn.style.display = "flex";
         };
         iframe.onerror = () => {
-          this.log.error("Failed to load iframe content");
+          this.log.error({ message: "Failed to load iframe content" });
           if (spinner) spinner.style.display = "none";
         };
       } catch (error) {
-        this.log.error(`Invalid iframe URL: ${(error as Error).message}`);
+        this.log.error({ message: "Invalid iframe URL", error });
         if (spinner) spinner.style.display = "none";
       }
     }, 0);

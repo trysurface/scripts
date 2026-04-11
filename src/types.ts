@@ -78,9 +78,9 @@ export interface CookieOptions {
 }
 
 export interface Logger {
-  info: (message: string) => void;
-  warn: (message: string) => void;
-  error: (message: string) => void;
+  info: (message: string | Record<string, unknown>) => void;
+  warn: (message: string | Record<string, unknown>) => void;
+  error: (message: string | Record<string, unknown>) => void;
 }
 
 export interface JourneyTrackEvent {

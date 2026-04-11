@@ -7,6 +7,6 @@ export function showSurfaceFormFromUrlParameter(this: SurfaceEmbed): void {
       this.showSurfaceForm();
     }
   } catch (error) {
-    this.log.error(`Failed to show Surface Form from URL parameter: ${error}`);
+    this.log.error({ message: "Failed to show Surface Form from URL parameter", error });
   }
 }

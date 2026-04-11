@@ -181,7 +181,15 @@
 
   // src/utils/logger.ts
   function createLogger(prefix) {
-    const fmt = (msg) => `${prefix} :: ${msg}`;
+    const fmt = (msg) => {
+      if (typeof msg === "string") {
+        return `${prefix} :: ${msg}`;
+      }
+      return {
+        prefix,
+        ...msg
+      };
+    };
     return {
       info: (msg) => {
         if (isDebugMode()) console.log(fmt(msg));
@@ -284,7 +292,7 @@
         }
       }
       if (event.data.event === "CLEAR_USER_JOURNEY_DATA") {
-        store.log.info("Clearing user journey");
+        store.log.info({ message: "Clearing user journey" });
         store.clearUserJourney();
       }
     };
@@ -322,11 +330,11 @@
     try {
       const existingId = getExistingJourneyId();
       setJourneyId(existingId);
-      log.info(`Existing journey ID: ${existingId || "none"}`);
+      log.info({ message: "Existing journey ID", response: { id: existingId || "none" } });
       const currentUrl2 = window.location.href;
       const recentVisit = getCookie(SURFACE_USER_JOURNEY_RECENT_VISIT_COOKIE_NAME);
       if (recentVisit === currentUrl2) {
-        log.info("Skipping duplicate page view (same as recent visit)");
+        log.info({ message: "Skipping duplicate page view (same as recent visit)" });
         return;
       }
       const surfaceLeadData = getLeadDataWithTTL();
@@ -351,9 +359,9 @@
         sameSite: "lax",
         domain: getJourneyCookieDomain()
       });
-      log.info("User journey tracking initialized");
+      log.info({ message: "User journey tracking initialized" });
     } catch (error) {
-      log.error("Error initializing user journey tracking: " + error);
+      log.error({ message: "Error initializing user journey tracking", error });
     }
   }
   async function trackToRedis(event, log, getJourneyId, setJourneyId) {
@@ -361,7 +369,7 @@
       const journeyId = getJourneyId();
       const payload = { ...event };
       if (journeyId) payload.id = journeyId;
-      log.info("Tracking to Redis: " + JSON.stringify(payload, null, 2));
+      log.info({ message: "Tracking to Redis", response: payload });
       if (journeyId && navigator.sendBeacon) {
         const blob = new Blob([JSON.stringify(payload)], {
           type: "application/json"
@@ -369,10 +377,10 @@
         const sent = navigator.sendBeacon(USER_JOURNEY_TRACKING_API, blob);
         if (sent) {
           refreshJourneyCookie(journeyId);
-          log.info("Tracking sent via sendBeacon");
+          log.info({ message: "Tracking sent via sendBeacon", response: { sent } });
           return { success: true };
         }
-        log.warn("sendBeacon failed, falling back to fetch");
+        log.warn({ message: "sendBeacon failed, falling back to fetch" });
       }
       const response = await fetch(USER_JOURNEY_TRACKING_API, {
         method: "POST",
@@ -380,18 +388,18 @@
         body: JSON.stringify(payload)
       });
       if (!response.ok) {
-        log.warn(`Tracking API returned status ${response.status}`);
+        log.warn({ message: "Tracking API returned status", response: { status: response.status } });
         return null;
       }
       const data = await response.json();
       if (data?.data?.id) {
         setJourneyId(data.data.id);
-        log.info(`Journey ID stored: ${data.data.id}`);
+        log.info({ message: "Journey ID stored", response: { id: data.data.id } });
       }
       refreshJourneyCookie(getJourneyId());
       return data;
     } catch (error) {
-      log.error("Error tracking to Redis: " + error);
+      log.error({ message: "Error tracking to Redis", error });
       return null;
     }
   }
@@ -400,7 +408,7 @@
       const currentUrl2 = newUrl || window.location.href;
       const recentVisit = getCookie(SURFACE_USER_JOURNEY_RECENT_VISIT_COOKIE_NAME);
       if (recentVisit === currentUrl2) {
-        log.info("Skipping duplicate page view on route change");
+        log.info({ message: "Skipping duplicate page view on route change" });
         return;
       }
       const surfaceLeadData = getLeadDataWithTTL();
@@ -424,9 +432,9 @@
         sameSite: "lax",
         domain: getJourneyCookieDomain()
       });
-      log.info("User journey updated on route change: " + currentUrl2);
+      log.info({ message: "User journey updated on route change", response: { url: currentUrl2 } });
     } catch (error) {
-      log.error("Error updating user journey on route change: " + error);
+      log.error({ message: "Error updating user journey on route change", error });
     }
   }
   function clearUserJourney(log, setJourneyId) {
@@ -434,7 +442,7 @@
     deleteCookie(SURFACE_USER_JOURNEY_COOKIE_NAME, { domain });
     deleteCookie(SURFACE_USER_JOURNEY_RECENT_VISIT_COOKIE_NAME, { domain });
     setJourneyId(null);
-    log.info("User journey cleared");
+    log.info({ message: "User journey cleared" });
   }
 
   // src/store/store.ts
@@ -483,7 +491,7 @@
         );
         this.sendPayloadToIframes("STORE_UPDATE");
         initializeMessageListener(this);
-        this.log.info("Route changed, updated journey and re-initialized listener");
+        this.log.info({ message: "Route changed, updated journey and re-initialized listener", response: { url: newUrl } });
       });
     }
     sendPayloadToIframes(type) {
@@ -491,7 +499,7 @@
       if (iframes.length === 0) return;
       this.urlParams = getUrlParams();
       this.urlParams.url = window.location.href;
-      this.log.info("Updating iframe params");
+      this.log.info({ message: "Updating iframe params", response: { type, iframeCount: iframes.length } });
       iframes.forEach((iframe) => this.notifyIframe(iframe, type));
     }
     notifyIframe(iframe, type) {
@@ -760,22 +768,22 @@
   function resolveEmbedType(input, log) {
     if (typeof input === "string") return input;
     if (typeof input === "object") return resolveResponsiveType(input, log);
-    log.error("Invalid embed type: must be string or object");
+    log.error({ message: "Invalid embed type: must be string or object" });
     return null;
   }
   function resolveResponsiveType(config, log) {
     const withDefault = ensureDefault(config);
     const breakpoint = getCurrentBreakpoint();
     if (!breakpoint) {
-      log.info("No matching breakpoint, using default embed type");
+      log.info({ message: "No matching breakpoint, using default embed type" });
       return withDefault.default;
     }
     const embedType = withDefault[breakpoint];
     if (embedType) {
-      log.info(`Using ${breakpoint} breakpoint embed type: ${embedType}`);
+      log.info({ message: "Using breakpoint embed type", response: { breakpoint, embedType } });
       return embedType;
     }
-    log.warn(`No embed type for breakpoint: ${breakpoint}, using default`);
+    log.warn({ message: "No embed type for breakpoint, using default", response: { breakpoint } });
     return withDefault.default;
   }
   function ensureDefault(config) {
@@ -824,7 +832,7 @@
         try {
           const url = new URL(this._getSrcUrl());
           if (url.protocol !== "https:") {
-            this.log.error("Only HTTPS URLs are allowed");
+            this.log.error({ message: "Only HTTPS URLs are allowed" });
           }
           iframe.src = url.toString();
           iframe.onload = () => {
@@ -834,11 +842,11 @@
             if (closeBtn) closeBtn.style.display = "flex";
           };
           iframe.onerror = () => {
-            this.log.error("Failed to load iframe content");
+            this.log.error({ message: "Failed to load iframe content" });
             if (spinner) spinner.style.display = "none";
           };
         } catch (error) {
-          this.log.error(`Invalid iframe URL: ${error.message}`);
+          this.log.error({ message: "Invalid iframe URL", error });
           if (spinner) spinner.style.display = "none";
         }
       }, 0);
@@ -903,7 +911,7 @@
         this.showSurfaceForm();
       }
     } catch (error) {
-      this.log.error(`Failed to show Surface Form from URL parameter: ${error}`);
+      this.log.error({ message: "Failed to show Surface Form from URL parameter", error });
     }
   }
 
@@ -924,9 +932,7 @@
   // src/embed/types/inline.ts
   function embedInline() {
     if (this.surface_inline_reference == null) {
-      this.log.warn(
-        `Surface Form could not find target div with class ${this.target_element_class}`
-      );
+      this.log.warn({ message: "Surface Form could not find target div", response: { targetClass: this.target_element_class } });
     }
     const src = this._getSrcUrl();
     const targetDivs = this.inline_embed_references;
@@ -1182,7 +1188,7 @@
 `;
   function embedPopup() {
     if (!this.surface_popup_reference) {
-      this.log.error(`Cannot embed popup: embed type is ${this.embed_type}`);
+      this.log.error({ message: "Cannot embed popup", response: { embedType: this.embed_type } });
       return;
     }
     const popup = this.surface_popup_reference;
@@ -1214,7 +1220,7 @@
   }
   function showSurfacePopup(options = {}) {
     if (!this.surface_popup_reference) {
-      this.log.warn("Invalid showSurfaceForm: embed type is not popup");
+      this.log.warn({ message: "Invalid showSurfaceForm: embed type is not popup" });
       return;
     }
     this._previouslyFocusedElement = document.activeElement;
@@ -1228,7 +1234,7 @@
   }
   function hideSurfacePopup() {
     if (!this.surface_popup_reference) {
-      this.log.warn("Invalid hideSurfaceForm: embed type is not popup");
+      this.log.warn({ message: "Invalid hideSurfaceForm: embed type is not popup" });
       return;
     }
     this.surface_popup_reference.classList.remove("active");
@@ -1306,7 +1312,7 @@
 `;
   function embedSlideover() {
     if (!this.surface_popup_reference) {
-      this.log.error(`Cannot embed slideover: embed type is ${this.embed_type}`);
+      this.log.error({ message: "Cannot embed slideover", response: { embedType: this.embed_type } });
       return;
     }
     const slideover = this.surface_popup_reference;
@@ -1333,7 +1339,7 @@
   }
   function showSurfaceSlideover(options = {}) {
     if (!this.surface_popup_reference) {
-      this.log.warn("Invalid showSurfaceForm: embed type is not slideover");
+      this.log.warn({ message: "Invalid showSurfaceForm: embed type is not slideover" });
       return;
     }
     this._previouslyFocusedElement = document.activeElement;
@@ -1347,7 +1353,7 @@
   }
   function hideSurfaceSlideover() {
     if (!this.surface_popup_reference) {
-      this.log.warn("Invalid hideSurfaceForm: embed type is not slideover");
+      this.log.warn({ message: "Invalid hideSurfaceForm: embed type is not slideover" });
       return;
     }
     this.surface_popup_reference.classList.remove("active");
@@ -1661,15 +1667,15 @@
       this.currentQuestionId = document.currentScript?.getAttribute("data-question-id") || null;
       _SurfaceEmbed._instances.push(this);
       if (this._isFormPreviewMode()) {
-        this.log.info("Form is in preview mode");
+        this.log.info({ message: "Form is in preview mode" });
         this.src.searchParams.append("preview", "true");
       }
       this._popupSize = options.popupSize || "medium";
       this.documentReferenceSelector = options.enforceIDSelector ? "#" : ".";
-      this.log.info("documentReferenceSelector set to " + this.documentReferenceSelector);
+      this.log.info({ message: "documentReferenceSelector set", response: { selector: this.documentReferenceSelector } });
       const preloadOptions = ["true", "false", "pageLoad"];
       this._preload = preloadOptions.includes(options.preload) ? options.preload : "true";
-      this.log.info("preload set to " + this._preload);
+      this.log.info({ message: "preload set", response: { preload: this._preload } });
       this.styles = { popup: null, widget: null };
       this.initialized = false;
       this.iframe = null;
@@ -1700,7 +1706,7 @@
       this.hideSurfaceForm = () => {
       };
       if (!this.embed_type || !VALID_EMBED_TYPES.includes(this.embed_type)) {
-        this.log.error("Invalid embed type: must be string or object");
+        this.log.error({ message: "Invalid embed type: must be string or object" });
         return;
       }
       if (!target_element_class) return;
@@ -1759,7 +1765,7 @@
     set popupSize(size) {
       const validSizes = ["small", "medium", "large"];
       if (!(typeof size === "string" && validSizes.includes(size)) && !(typeof size === "object" && Object.keys(size).length > 0)) {
-        this.log.warn("Invalid popup size. Using 'medium' instead.");
+        this.log.warn({ message: "Invalid popup size, using 'medium' instead", response: { size } });
         this._popupSize = "medium";
       } else {
         this._popupSize = size;
@@ -1783,7 +1789,7 @@
         this.store.windowUrl = new URL(newUrl).toString();
         this.setupClickHandlers();
         this.formInputTriggerInitialize();
-        this.log.info("Route changed, re-initialized handlers");
+        this.log.info({ message: "Route changed, re-initialized handlers", response: { url: newUrl } });
       };
       onRouteChange(handleChange);
       if (typeof MutationObserver !== "undefined") {
@@ -1804,7 +1810,7 @@
               this.store.windowUrl = new URL(window.location.href).toString();
               this.setupClickHandlers();
               this.formInputTriggerInitialize();
-              this.log.info("DOM changed, re-initialized handlers");
+              this.log.info({ message: "DOM changed, re-initialized handlers" });
             }, 100);
           }
         });

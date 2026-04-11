@@ -21,13 +21,13 @@ export function initializeUserJourneyTracking(
   try {
     const existingId = getExistingJourneyId();
     setJourneyId(existingId);
-    log.info(`Existing journey ID: ${existingId || "none"}`);
+    log.info({ message: "Existing journey ID", response: { id: existingId || "none" } });
 
     const currentUrl = window.location.href;
     const recentVisit = getCookie(SURFACE_USER_JOURNEY_RECENT_VISIT_COOKIE_NAME);
 
     if (recentVisit === currentUrl) {
-      log.info("Skipping duplicate page view (same as recent visit)");
+      log.info({ message: "Skipping duplicate page view (same as recent visit)" });
       return;
     }
 
@@ -56,9 +56,9 @@ export function initializeUserJourneyTracking(
       domain: getJourneyCookieDomain(),
     });
 
-    log.info("User journey tracking initialized");
+    log.info({ message: "User journey tracking initialized" });
   } catch (error) {
-    log.error("Error initializing user journey tracking: " + error);
+    log.error({ message: "Error initializing user journey tracking", error });
   }
 }
 
@@ -73,7 +73,7 @@ export async function trackToRedis(
     const payload: JourneyTrackEvent = { ...event };
     if (journeyId) payload.id = journeyId;
 
-    log.info("Tracking to Redis: " + JSON.stringify(payload, null, 2));
+    log.info({ message: "Tracking to Redis", response: payload });
 
     if (journeyId && navigator.sendBeacon) {
       const blob = new Blob([JSON.stringify(payload)], {
@@ -82,10 +82,10 @@ export async function trackToRedis(
       const sent = navigator.sendBeacon(USER_JOURNEY_TRACKING_API, blob);
       if (sent) {
         refreshJourneyCookie(journeyId);
-        log.info("Tracking sent via sendBeacon");
+        log.info({ message: "Tracking sent via sendBeacon", response: { sent } });
         return { success: true };
       }
-      log.warn("sendBeacon failed, falling back to fetch");
+      log.warn({ message: "sendBeacon failed, falling back to fetch" });
     }
 
     const response = await fetch(USER_JOURNEY_TRACKING_API, {
@@ -95,7 +95,7 @@ export async function trackToRedis(
     });
 
     if (!response.ok) {
-      log.warn(`Tracking API returned status ${response.status}`);
+      log.warn({ message: "Tracking API returned status", response: { status: response.status } });
       return null;
     }
 
@@ -103,13 +103,13 @@ export async function trackToRedis(
 
     if (data?.data?.id) {
       setJourneyId(data.data.id);
-      log.info(`Journey ID stored: ${data.data.id}`);
+      log.info({ message: "Journey ID stored", response: { id: data.data.id } });
     }
 
     refreshJourneyCookie(getJourneyId());
     return data;
   } catch (error) {
-    log.error("Error tracking to Redis: " + error);
+    log.error({ message: "Error tracking to Redis", error: error });
     return null;
   }
 }
@@ -125,7 +125,7 @@ export function updateUserJourneyOnRouteChange(
     const recentVisit = getCookie(SURFACE_USER_JOURNEY_RECENT_VISIT_COOKIE_NAME);
 
     if (recentVisit === currentUrl) {
-      log.info("Skipping duplicate page view on route change");
+      log.info({ message: "Skipping duplicate page view on route change" });
       return;
     }
 
@@ -153,9 +153,9 @@ export function updateUserJourneyOnRouteChange(
       domain: getJourneyCookieDomain(),
     });
 
-    log.info("User journey updated on route change: " + currentUrl);
+    log.info({ message: "User journey updated on route change", response: { url: currentUrl } });
   } catch (error) {
-    log.error("Error updating user journey on route change: " + error);
+    log.error({ message: "Error updating user journey on route change", error: error });
   }
 }
 
@@ -167,5 +167,5 @@ export function clearUserJourney(
   deleteCookie(SURFACE_USER_JOURNEY_COOKIE_NAME, { domain });
   deleteCookie(SURFACE_USER_JOURNEY_RECENT_VISIT_COOKIE_NAME, { domain });
   setJourneyId(null);
-  log.info("User journey cleared");
+  log.info({ message: "User journey cleared" });
 }

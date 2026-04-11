@@ -3,9 +3,7 @@ import type { SurfaceEmbed } from "../embed";
 
 export function embedInline(this: SurfaceEmbed): void {
   if (this.surface_inline_reference == null) {
-    this.log.warn(
-      `Surface Form could not find target div with class ${this.target_element_class}`
-    );
+    this.log.warn({ message: "Surface Form could not find target div", response: { targetClass: this.target_element_class } });
   }
 
   const src = this._getSrcUrl();

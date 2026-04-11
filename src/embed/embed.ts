@@ -105,19 +105,19 @@ export class SurfaceEmbed {
     SurfaceEmbed._instances.push(this);
 
     if (this._isFormPreviewMode()) {
-      this.log.info("Form is in preview mode");
+      this.log.info({ message: "Form is in preview mode" });
       this.src.searchParams.append("preview", "true");
     }
 
     this._popupSize = options.popupSize || "medium";
     this.documentReferenceSelector = options.enforceIDSelector ? "#" : ".";
-    this.log.info("documentReferenceSelector set to " + this.documentReferenceSelector);
+    this.log.info({ message: "documentReferenceSelector set", response: { selector: this.documentReferenceSelector } });
 
     const preloadOptions: PreloadOption[] = ["true", "false", "pageLoad"];
     this._preload = preloadOptions.includes(options.preload as PreloadOption)
       ? options.preload!
       : "true";
-    this.log.info("preload set to " + this._preload);
+    this.log.info({ message: "preload set", response: { preload: this._preload } });
 
     this.styles = { popup: null, widget: null };
     this.initialized = false;
@@ -150,7 +150,7 @@ export class SurfaceEmbed {
     this.hideSurfaceForm = () => {};
 
     if (!this.embed_type || !(VALID_EMBED_TYPES as readonly string[]).includes(this.embed_type)) {
-      this.log.error("Invalid embed type: must be string or object");
+      this.log.error({ message: "Invalid embed type: must be string or object" });
       return;
     }
 
@@ -225,7 +225,7 @@ export class SurfaceEmbed {
       !(typeof size === "string" && validSizes.includes(size)) &&
       !(typeof size === "object" && Object.keys(size).length > 0)
     ) {
-      this.log.warn("Invalid popup size. Using 'medium' instead.");
+      this.log.warn({ message: "Invalid popup size, using 'medium' instead", response: { size } });
       this._popupSize = "medium";
     } else {
       this._popupSize = size;
@@ -253,7 +253,7 @@ export class SurfaceEmbed {
       this.store.windowUrl = new URL(newUrl).toString();
       this.setupClickHandlers();
       this.formInputTriggerInitialize();
-      this.log.info("Route changed, re-initialized handlers");
+      this.log.info({ message: "Route changed, re-initialized handlers", response: { url: newUrl } });
     };
 
     onRouteChange(handleChange);
@@ -282,7 +282,7 @@ export class SurfaceEmbed {
             this.store.windowUrl = new URL(window.location.href).toString();
             this.setupClickHandlers();
             this.formInputTriggerInitialize();
-            this.log.info("DOM changed, re-initialized handlers");
+            this.log.info({ message: "DOM changed, re-initialized handlers" });
           }, 100);
         }
       });

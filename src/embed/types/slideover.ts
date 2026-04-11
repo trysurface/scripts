@@ -16,7 +16,7 @@ const SLIDEOVER_HTML = (src: string) => `
 
 export function embedSlideover(this: SurfaceEmbed): void {
   if (!this.surface_popup_reference) {
-    this.log.error(`Cannot embed slideover: embed type is ${this.embed_type}`);
+    this.log.error({ message: "Cannot embed slideover", response: { embedType: this.embed_type } });
     return;
   }
 
@@ -50,7 +50,7 @@ export function embedSlideover(this: SurfaceEmbed): void {
 
 export function showSurfaceSlideover(this: SurfaceEmbed, options: Record<string, string> = {}): void {
   if (!this.surface_popup_reference) {
-    this.log.warn("Invalid showSurfaceForm: embed type is not slideover");
+    this.log.warn({ message: "Invalid showSurfaceForm: embed type is not slideover" });
     return;
   }
 
@@ -68,7 +68,7 @@ export function showSurfaceSlideover(this: SurfaceEmbed, options: Record<string,
 
 export function hideSurfaceSlideover(this: SurfaceEmbed): void {
   if (!this.surface_popup_reference) {
-    this.log.warn("Invalid hideSurfaceForm: embed type is not slideover");
+    this.log.warn({ message: "Invalid hideSurfaceForm: embed type is not slideover" });
     return;
   }
 

@@ -22,7 +22,7 @@ export function initializeMessageListener(store: SurfaceStore): void {
     }
 
     if (event.data.event === "CLEAR_USER_JOURNEY_DATA") {
-      store.log.info("Clearing user journey");
+      store.log.info({ message: "Clearing user journey" });
       store.clearUserJourney();
     }
   };

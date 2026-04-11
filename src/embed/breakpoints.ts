@@ -21,7 +21,7 @@ export function resolveEmbedType(
   if (typeof input === "string") return input;
   if (typeof input === "object") return resolveResponsiveType(input, log);
 
-  log.error("Invalid embed type: must be string or object");
+  log.error({ message: "Invalid embed type: must be string or object" });
   return null;
 }
 
@@ -33,17 +33,17 @@ function resolveResponsiveType(
   const breakpoint = getCurrentBreakpoint();
 
   if (!breakpoint) {
-    log.info("No matching breakpoint, using default embed type");
+    log.info({ message: "No matching breakpoint, using default embed type" });
     return withDefault.default!;
   }
 
   const embedType = withDefault[breakpoint];
   if (embedType) {
-    log.info(`Using ${breakpoint} breakpoint embed type: ${embedType}`);
+    log.info({ message: "Using breakpoint embed type", response: { breakpoint, embedType } });
     return embedType;
   }
 
-  log.warn(`No embed type for breakpoint: ${breakpoint}, using default`);
+  log.warn({ message: "No embed type for breakpoint, using default", response: { breakpoint } });
   return withDefault.default!;
 }
 
