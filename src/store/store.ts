@@ -77,9 +77,8 @@ export class SurfaceStore {
       );
 
       this.sendPayloadToIframes("STORE_UPDATE");
-      initializeMessageListener(this);
 
-      this.log.info({ message: "Route changed, updated journey and re-initialized listener", response: { url: newUrl } });
+      this.log.info({ message: "Route changed, updated journey", response: { url: newUrl } });
     });
   }
 

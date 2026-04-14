@@ -45,6 +45,8 @@ export function updateIframeWithOptions(
         const url = new URL(this._getSrcUrl());
         if (url.protocol !== "https:") {
           this.log.error({ message: "Only HTTPS URLs are allowed" });
+          if (spinner) spinner.style.display = "none";
+          return;
         }
         iframe.src = url.toString();
         iframe.onload = () => {

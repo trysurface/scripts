@@ -48,10 +48,8 @@ function resolveResponsiveType(
 }
 
 function ensureDefault(config: ResponsiveEmbedType): ResponsiveEmbedType {
-  if (!config.default) {
-    config.default = config.sm || Object.values(config)[0] as EmbedTypeName;
-  }
-  return config;
+  if (config.default) return config;
+  return { ...config, default: config.sm || Object.values(config)[0] as EmbedTypeName };
 }
 
 function getCurrentBreakpoint(): BreakpointName | null {

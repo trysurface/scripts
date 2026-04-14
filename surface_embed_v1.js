@@ -490,8 +490,7 @@
           }
         );
         this.sendPayloadToIframes("STORE_UPDATE");
-        initializeMessageListener(this);
-        this.log.info({ message: "Route changed, updated journey and re-initialized listener", response: { url: newUrl } });
+        this.log.info({ message: "Route changed, updated journey", response: { url: newUrl } });
       });
     }
     sendPayloadToIframes(type) {
@@ -787,10 +786,8 @@
     return withDefault.default;
   }
   function ensureDefault(config) {
-    if (!config.default) {
-      config.default = config.sm || Object.values(config)[0];
-    }
-    return config;
+    if (config.default) return config;
+    return { ...config, default: config.sm || Object.values(config)[0] };
   }
   function getCurrentBreakpoint() {
     const width = window.innerWidth;
@@ -833,6 +830,8 @@
           const url = new URL(this._getSrcUrl());
           if (url.protocol !== "https:") {
             this.log.error({ message: "Only HTTPS URLs are allowed" });
+            if (spinner) spinner.style.display = "none";
+            return;
           }
           iframe.src = url.toString();
           iframe.onload = () => {
