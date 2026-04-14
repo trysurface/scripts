@@ -38,11 +38,3 @@ export function embedInline(this: SurfaceEmbed): void {
     this.updateIframeWithOptions({}, wrapper);
   });
 }
-
-export function showSurfaceInline(this: SurfaceEmbed): void {
-  // Inline embeds are always visible once embedded
-}
-
-export function hideSurfaceInline(this: SurfaceEmbed): void {
-  // Inline embeds don't hide
-}

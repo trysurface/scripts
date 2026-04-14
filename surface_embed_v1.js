@@ -958,10 +958,6 @@
       this.updateIframeWithOptions({}, wrapper);
     });
   }
-  function showSurfaceInline() {
-  }
-  function hideSurfaceInline() {
-  }
 
   // src/embed/styles/loader.ts
   function getLoaderStyles() {
@@ -1727,8 +1723,6 @@
           this.documentReferenceSelector + this.target_element_class
         );
         this.embedSurfaceForm = this.embedInline;
-        this.shouldShowSurfaceForm = this.showSurfaceInline;
-        this.hideSurfaceForm = this.hideSurfaceInline;
         this.initializeEmbed();
       } else if (this.embed_type === "popup" || this.embed_type === "widget" || this.embed_type === "input-trigger") {
         this.embedSurfaceForm = this.embedPopup;
@@ -1836,8 +1830,6 @@
     preloadIframe,
     showSurfaceFormFromUrlParameter,
     embedInline,
-    showSurfaceInline,
-    hideSurfaceInline,
     embedPopup,
     showSurfacePopup,
     hideSurfacePopup,

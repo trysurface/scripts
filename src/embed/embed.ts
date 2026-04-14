@@ -18,7 +18,7 @@ import { updateIframeWithOptions } from "./iframe-updater";
 import { setupClickHandlers } from "./click-handlers";
 import { preloadIframe } from "./preload";
 import { showSurfaceFormFromUrlParameter } from "./show-from-url";
-import { embedInline, showSurfaceInline, hideSurfaceInline } from "./types/inline";
+import { embedInline } from "./types/inline";
 import { embedPopup, showSurfacePopup, hideSurfacePopup } from "./types/popup";
 import { embedSlideover, showSurfaceSlideover, hideSurfaceSlideover } from "./types/slideover";
 import { addWidgetButton } from "./types/widget";
@@ -75,8 +75,6 @@ export class SurfaceEmbed {
   declare preloadIframe: typeof preloadIframe;
   declare showSurfaceFormFromUrlParameter: typeof showSurfaceFormFromUrlParameter;
   declare embedInline: typeof embedInline;
-  declare showSurfaceInline: typeof showSurfaceInline;
-  declare hideSurfaceInline: typeof hideSurfaceInline;
   declare embedPopup: typeof embedPopup;
   declare showSurfacePopup: typeof showSurfacePopup;
   declare hideSurfacePopup: typeof hideSurfacePopup;
@@ -175,8 +173,8 @@ export class SurfaceEmbed {
         this.documentReferenceSelector + this.target_element_class
       );
       this.embedSurfaceForm = this.embedInline;
-      this.shouldShowSurfaceForm = this.showSurfaceInline;
-      this.hideSurfaceForm = this.hideSurfaceInline;
+      // shouldShowSurfaceForm and hideSurfaceForm stay as constructor no-ops:
+      // inline embeds are always visible and cannot be dismissed.
       this.initializeEmbed();
     } else if (
       this.embed_type === "popup" ||
@@ -309,8 +307,6 @@ Object.assign(SurfaceEmbed.prototype, {
   preloadIframe,
   showSurfaceFormFromUrlParameter,
   embedInline,
-  showSurfaceInline,
-  hideSurfaceInline,
   embedPopup,
   showSurfacePopup,
   hideSurfacePopup,
