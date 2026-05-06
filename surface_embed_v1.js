@@ -1036,6 +1036,43 @@ class SurfaceEmbed {
     this.shouldShowSurfaceForm = () => {};
     this.embedSurfaceForm = () => {};
 
+    // Cleanup tracking — every DOM node and listener created by this
+    // instance is recorded here so destroy() can fully tear it down.
+    this._destroyed = false;
+    this._injectedStyles = [];
+    this._inlineWrappers = [];
+    this._popupWindowClickHandler = null;
+    this._slideoverWindowClickHandler = null;
+    this._escHandler = null;
+    this._routeChangeHandler = null;
+    this._routeMutationObserver = null;
+    this._bodyObserver = null;
+    this._widgetButton = null;
+
+    // SPA dedup: when the host page re-runs `new SurfaceEmbed(...)` on a
+    // route change (no full reload), dispose any prior instance bound to
+    // the same target class. Without this, document click handlers and
+    // popup <div>s accumulate across navigations, so one click opens N
+    // popups.
+    if (target_element_class) {
+      if (!window.__SurfaceEmbedInstances) {
+        window.__SurfaceEmbedInstances = new Map();
+      }
+      const existing = window.__SurfaceEmbedInstances.get(target_element_class);
+      if (
+        existing &&
+        existing !== this &&
+        typeof existing.destroy === "function"
+      ) {
+        try {
+          existing.destroy();
+        } catch (e) {
+          // best-effort cleanup; never block new instance creation
+        }
+      }
+      window.__SurfaceEmbedInstances.set(target_element_class, this);
+    }
+
     if (!SurfaceTagStore.validEmbedTypes.includes(this.embed_type)) {
       this.log("error", "Invalid embed type: must be string or object");
     }
@@ -1088,10 +1125,48 @@ class SurfaceEmbed {
     }
   }
 
+  // Patch history.pushState/replaceState exactly once per page so that
+  // instance lifecycles never re-wrap them. Without this, every time the
+  // host page constructed a new SurfaceEmbed, pushState gained another
+  // wrapper layer — after N navigations every pushState ran N route
+  // handlers. Instead we install one global patch that fires a custom
+  // event, and instances subscribe/unsubscribe via destroy().
+  static _ensureGlobalRouteChangeDispatch() {
+    if (window.__SurfaceRouteDispatchInstalled) return;
+    window.__SurfaceRouteDispatchInstalled = true;
+
+    const dispatch = () => {
+      try {
+        window.dispatchEvent(new Event("surface:routechange"));
+      } catch (e) {
+        // CustomEvent fallback for very old browsers
+        const evt = document.createEvent("Event");
+        evt.initEvent("surface:routechange", false, false);
+        window.dispatchEvent(evt);
+      }
+    };
+
+    window.addEventListener("popstate", dispatch);
+
+    const originalPushState = history.pushState;
+    const originalReplaceState = history.replaceState;
+    history.pushState = function (...args) {
+      originalPushState.apply(history, args);
+      setTimeout(dispatch, 0);
+    };
+    history.replaceState = function (...args) {
+      originalReplaceState.apply(history, args);
+      setTimeout(dispatch, 0);
+    };
+  }
+
   _setupRouteChangeDetection() {
+    SurfaceEmbed._ensureGlobalRouteChangeDispatch();
+
     let currentUrl = window.location.href;
 
-    const handleRouteChange = () => {
+    this._routeChangeHandler = () => {
+      if (this._destroyed) return;
       const newUrl = window.location.href;
       if (newUrl !== currentUrl) {
         currentUrl = newUrl;
@@ -1106,23 +1181,11 @@ class SurfaceEmbed {
       }
     };
 
-    window.addEventListener("popstate", handleRouteChange);
-
-    const originalPushState = history.pushState;
-    const originalReplaceState = history.replaceState;
-
-    history.pushState = function (...args) {
-      originalPushState.apply(history, args);
-      setTimeout(handleRouteChange, 0);
-    };
-
-    history.replaceState = function (...args) {
-      originalReplaceState.apply(history, args);
-      setTimeout(handleRouteChange, 0);
-    };
+    window.addEventListener("surface:routechange", this._routeChangeHandler);
 
     if (typeof MutationObserver !== "undefined") {
       const observer = new MutationObserver((mutations) => {
+        if (this._destroyed) return;
         let shouldReinit = false;
 
         mutations.forEach((mutation) => {
@@ -1148,6 +1211,7 @@ class SurfaceEmbed {
         if (shouldReinit) {
           clearTimeout(this._reinitTimeout);
           this._reinitTimeout = setTimeout(() => {
+            if (this._destroyed) return;
             const newUrl = window.location.href;
             if (newUrl !== currentUrl) {
               currentUrl = newUrl;
@@ -1165,6 +1229,8 @@ class SurfaceEmbed {
         }
       });
 
+      this._routeMutationObserver = observer;
+
       if (document.body) {
         observer.observe(document.body, {
           childList: true,
@@ -1172,14 +1238,17 @@ class SurfaceEmbed {
         });
       } else {
         const bodyObserver = new MutationObserver(() => {
+          if (this._destroyed) return;
           if (document.body) {
             observer.observe(document.body, {
               childList: true,
               subtree: true,
             });
             bodyObserver.disconnect();
+            this._bodyObserver = null;
           }
         });
+        this._bodyObserver = bodyObserver;
         bodyObserver.observe(document.documentElement, {
           childList: true,
         });
@@ -1352,6 +1421,7 @@ class SurfaceEmbed {
 
       const surface_inline_iframe_wrapper = document.createElement("div");
       surface_inline_iframe_wrapper.id = "surface-inline-div";
+      this._inlineWrappers.push(surface_inline_iframe_wrapper);
 
       const inline_iframe = document.createElement("iframe");
       inline_iframe.id = "surface-iframe";
@@ -1385,6 +1455,7 @@ class SurfaceEmbed {
           }
       `;
       document.head.appendChild(style);
+      this._injectedStyles.push(style);
       this.updateIframeWithOptions(options, surface_inline_iframe_wrapper);
     });
   }
@@ -1532,6 +1603,7 @@ class SurfaceEmbed {
         style.innerHTML = this.getPopupStyles(desktopPopupDimensions);
         document.head.appendChild(style);
         this.styles.popup = style;
+        this._injectedStyles.push(style);
       }
 
       const iframe = surface_popup.querySelector("#surface-iframe");
@@ -1557,11 +1629,15 @@ class SurfaceEmbed {
         this.hideSurfacePopup();
       });
 
-    window.addEventListener("click", (event) => {
+    if (this._popupWindowClickHandler) {
+      window.removeEventListener("click", this._popupWindowClickHandler);
+    }
+    this._popupWindowClickHandler = (event) => {
       if (event.target == surface_popup) {
         this.hideSurfacePopup();
       }
-    });
+    };
+    window.addEventListener("click", this._popupWindowClickHandler);
   }
 
   _getPopupDimensions() {
@@ -1752,6 +1828,7 @@ class SurfaceEmbed {
       }
     `;
     document.head.appendChild(style);
+    this._injectedStyles.push(style);
 
     const iframe = surface_slideover.querySelector("#surface-iframe");
     const spinner = surface_slideover.querySelector(".surface-loading-spinner");
@@ -1775,17 +1852,22 @@ class SurfaceEmbed {
         this.hideSurfaceSlideover();
       });
 
-    window.addEventListener("click", (event) => {
+    if (this._slideoverWindowClickHandler) {
+      window.removeEventListener("click", this._slideoverWindowClickHandler);
+    }
+    this._slideoverWindowClickHandler = (event) => {
       if (event.target == surface_slideover) {
         this.hideSurfaceSlideover();
       }
-    });
+    };
+    window.addEventListener("click", this._slideoverWindowClickHandler);
   }
 
   // --- Widget logic ---
   addWidgetButton() {
     const widgetButton = document.createElement("div");
     widgetButton.id = "surface-widget-button";
+    this._widgetButton = widgetButton;
     widgetButton.innerHTML = `
           <div class="widget-button-inner">
             <svg width="29" height="34" viewBox="0 0 29 34" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -1799,6 +1881,7 @@ class SurfaceEmbed {
     const style = document.createElement("style");
     style.innerHTML = this.getWidgetStyles();
     document.head.appendChild(style);
+    this._injectedStyles.push(style);
 
     widgetButton.addEventListener("click", () => {
       if (!this.initialized) {
@@ -2417,11 +2500,140 @@ class SurfaceEmbed {
   }
 
   _hideFormOnEsc() {
-    document.addEventListener("keydown", (event) => {
-      if (event.key === "Escape") {
+    if (this._escHandler) {
+      document.removeEventListener("keydown", this._escHandler);
+    }
+    this._escHandler = (event) => {
+      if (event.key === "Escape" && this.hideSurfaceForm) {
         this.hideSurfaceForm();
       }
-    });
+    };
+    document.addEventListener("keydown", this._escHandler);
+  }
+
+  destroy() {
+    if (this._destroyed) return;
+    this._destroyed = true;
+
+    // Document-level click handler (button trigger)
+    if (this._clickHandler) {
+      document.removeEventListener("click", this._clickHandler);
+      this._clickHandler = null;
+    }
+
+    // Window-level click handlers (popup/slideover backdrop dismissal)
+    if (this._popupWindowClickHandler) {
+      window.removeEventListener("click", this._popupWindowClickHandler);
+      this._popupWindowClickHandler = null;
+    }
+    if (this._slideoverWindowClickHandler) {
+      window.removeEventListener("click", this._slideoverWindowClickHandler);
+      this._slideoverWindowClickHandler = null;
+    }
+
+    // Document keydown (ESC dismissal)
+    if (this._escHandler) {
+      document.removeEventListener("keydown", this._escHandler);
+      this._escHandler = null;
+    }
+
+    // Route change subscription
+    if (this._routeChangeHandler) {
+      window.removeEventListener(
+        "surface:routechange",
+        this._routeChangeHandler
+      );
+      this._routeChangeHandler = null;
+    }
+
+    // MutationObservers
+    if (this._routeMutationObserver) {
+      try {
+        this._routeMutationObserver.disconnect();
+      } catch (e) {}
+      this._routeMutationObserver = null;
+    }
+    if (this._bodyObserver) {
+      try {
+        this._bodyObserver.disconnect();
+      } catch (e) {}
+      this._bodyObserver = null;
+    }
+
+    // Pending re-init timeout
+    if (this._reinitTimeout) {
+      clearTimeout(this._reinitTimeout);
+      this._reinitTimeout = null;
+    }
+
+    // Form input trigger submit/keydown handlers
+    if (this._formHandlers && this._formHandlers.length) {
+      this._formHandlers.forEach(({ form, submitHandler, keydownHandler }) => {
+        try {
+          form.removeEventListener("submit", submitHandler);
+          form.removeEventListener("keydown", keydownHandler);
+        } catch (e) {}
+      });
+    }
+    this._formHandlers = [];
+
+    // Popup / slideover root <div>
+    if (
+      this.surface_popup_reference &&
+      this.surface_popup_reference.parentNode
+    ) {
+      this.surface_popup_reference.parentNode.removeChild(
+        this.surface_popup_reference
+      );
+    }
+    this.surface_popup_reference = null;
+
+    // Widget button
+    if (this._widgetButton && this._widgetButton.parentNode) {
+      this._widgetButton.parentNode.removeChild(this._widgetButton);
+    }
+    this._widgetButton = null;
+
+    // Inline iframe wrappers
+    if (this._inlineWrappers && this._inlineWrappers.length) {
+      this._inlineWrappers.forEach((wrapper) => {
+        if (wrapper && wrapper.parentNode) {
+          wrapper.parentNode.removeChild(wrapper);
+        }
+      });
+    }
+    this._inlineWrappers = [];
+
+    // Injected <style> elements (popup, slideover, widget, inline)
+    if (this._injectedStyles && this._injectedStyles.length) {
+      this._injectedStyles.forEach((styleEl) => {
+        if (styleEl && styleEl.parentNode) {
+          styleEl.parentNode.removeChild(styleEl);
+        }
+      });
+    }
+    this._injectedStyles = [];
+    this.styles = { popup: null, widget: null };
+
+    this.iframe = null;
+    this._iframePreloaded = false;
+    this._cachedOptionsKey = null;
+    this.initialized = false;
+
+    // Drop from static instance list
+    if (Array.isArray(SurfaceEmbed._instances)) {
+      const idx = SurfaceEmbed._instances.indexOf(this);
+      if (idx !== -1) SurfaceEmbed._instances.splice(idx, 1);
+    }
+
+    // Drop from global registry if we are still the registered instance
+    if (
+      window.__SurfaceEmbedInstances &&
+      this.target_element_class &&
+      window.__SurfaceEmbedInstances.get(this.target_element_class) === this
+    ) {
+      window.__SurfaceEmbedInstances.delete(this.target_element_class);
+    }
   }
 }
 
