@@ -220,7 +220,7 @@
   function setCookie(name, value, options = {}) {
     const encoded = encodeURIComponent(value);
     const path = options.path || "/";
-    const maxAge = options.maxAge || 604800;
+    const maxAge = options.maxAge ?? 604800;
     const sameSite = options.sameSite || "lax";
     const domainAttr = options.domain ? `; domain=${options.domain}` : "";
     document.cookie = `${name}=${encoded}; path=${path}; max-age=${maxAge}; samesite=${sameSite}${domainAttr}`;
