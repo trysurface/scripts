@@ -48,7 +48,7 @@
   }
 
   // src/lead/fingerprint.ts
-  async function getBrowserFingerprint(environmentId2) {
+  async function getBrowserFingerprint(environmentId3) {
     const fingerprint = {};
     fingerprint.deviceType = /Mobi|Android/i.test(navigator.userAgent) ? "Mobile" : "Desktop";
     fingerprint.screen = {
@@ -65,7 +65,7 @@
       fingerprint.plugins = Array.from(navigator.plugins).map((p) => p.name);
     }
     fingerprint.timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    fingerprint.environmentId = environmentId2;
+    fingerprint.environmentId = environmentId3;
     const fingerprintString = JSON.stringify(fingerprint);
     const id = await getHash(fingerprintString);
     return { ...fingerprint, id };
@@ -326,7 +326,7 @@
   }
 
   // src/store/user-journey.ts
-  function initializeUserJourneyTracking(log, getJourneyId, setJourneyId) {
+  function initializeUserJourneyTracking(environmentId3, log, getJourneyId, setJourneyId) {
     try {
       const existingId = getExistingJourneyId();
       setJourneyId(existingId);
@@ -348,7 +348,10 @@
               referrer: document.referrer || ""
             }
           },
-          metadata: { ...surfaceLeadData ?? {} }
+          metadata: {
+            ...environmentId3 ? { environmentId: environmentId3 } : {},
+            ...surfaceLeadData ?? {}
+          }
         },
         log,
         getJourneyId,
@@ -403,7 +406,7 @@
       return null;
     }
   }
-  function updateUserJourneyOnRouteChange(newUrl, log, getJourneyId, setJourneyId) {
+  function updateUserJourneyOnRouteChange(environmentId3, newUrl, log, getJourneyId, setJourneyId) {
     try {
       const currentUrl2 = newUrl || window.location.href;
       const recentVisit = getCookie(SURFACE_USER_JOURNEY_RECENT_VISIT_COOKIE_NAME);
@@ -421,7 +424,10 @@
               timestamp: (/* @__PURE__ */ new Date()).toISOString()
             }
           },
-          metadata: { ...surfaceLeadData ?? {} }
+          metadata: {
+            ...environmentId3 ? { environmentId: environmentId3 } : {},
+            ...surfaceLeadData ?? {}
+          }
         },
         log,
         getJourneyId,
@@ -447,7 +453,7 @@
 
   // src/store/store.ts
   var SurfaceStore = class {
-    constructor() {
+    constructor(environmentId3 = null) {
       this.windowUrl = new URL(window.location.href).toString();
       this.origin = new URL(window.location.href).origin.toString();
       this.referrer = document.referrer || "";
@@ -461,10 +467,12 @@
       this.userJourneyId = null;
       this.userJourney = [];
       this.cachedIdentifyData = getLeadDataWithTTL();
+      this.environmentId = environmentId3;
       this.log = createLogger("Surface Store");
       initializeMessageListener(this);
       if ((this.cachedIdentifyData || !isIdentifyInProgress()) && !this.isCurrentOriginSurfaceDomain()) {
         initializeUserJourneyTracking(
+          this.environmentId,
           this.log,
           () => this.userJourneyId,
           (id) => {
@@ -482,6 +490,7 @@
       onRouteChange((newUrl) => {
         this.windowUrl = new URL(newUrl).toString();
         updateUserJourneyOnRouteChange(
+          this.environmentId,
           newUrl,
           this.log,
           () => this.userJourneyId,
@@ -1840,7 +1849,10 @@
   });
 
   // src/index.ts
-  var SurfaceTagStore = new SurfaceStore();
+  var scriptTag = document.currentScript;
+  var environmentId2 = getSiteIdFromScript(scriptTag);
+  setEnvironmentId(environmentId2);
+  var SurfaceTagStore = new SurfaceStore(environmentId2);
   var w = window;
   w.SurfaceEmbed = SurfaceEmbed;
   w.SurfaceExternalForm = SurfaceExternalForm;
@@ -1849,9 +1861,4 @@
   w.SurfaceSetLeadDataWithTTL = setLeadDataWithTTL;
   w.SurfaceGetLeadDataWithTTL = getLeadDataWithTTL;
   w.SurfaceGetSiteIdFromScript = getSiteIdFromScript;
-  (function() {
-    const scriptTag = document.currentScript;
-    const environmentId2 = getSiteIdFromScript(scriptTag);
-    setEnvironmentId(environmentId2);
-  })();
 })();
