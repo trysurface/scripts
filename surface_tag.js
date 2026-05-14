@@ -111,18 +111,25 @@
       return null;
     }
   }
-  async function identifyLead(envId) {
+  async function identifyLead(envId, options = {}) {
+    if (identifyInProgress) {
+      if (options.forceNetwork) {
+        await waitForIdentifyToFinish();
+      } else {
+        return waitForCachedData();
+      }
+    }
     if (identifyInProgress) {
       return waitForCachedData();
     }
     const cached2 = getLeadDataWithTTL();
-    if (cached2?.leadSessionId && cached2?.fingerprint) {
+    if (!options.forceNetwork && cached2?.leadSessionId && cached2?.fingerprint) {
       return cached2;
     }
     identifyInProgress = true;
     try {
-      const fingerprint = await getBrowserFingerprint(envId);
-      const parentUrl = new URL(window.location.href);
+      const fingerprint = cached2?.fingerprint ? { id: cached2.fingerprint } : await getBrowserFingerprint(envId);
+      const parentUrl = new URL(options.sourceUrl ?? window.location.href);
       const response = await fetch(LEAD_IDENTIFY_API, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -139,14 +146,16 @@
         })
       });
       const jsonData = await response.json();
-      if (response.ok && jsonData.data?.data) {
-        const leadId = jsonData.data.data.leadId || null;
-        const leadSessionId = jsonData.data.data.sessionId || null;
+      if (response.ok) {
+        const responseData = jsonData.data?.data ?? jsonData.data;
+        if (!responseData) return null;
+        const leadId = responseData.leadId || null;
+        const leadSessionId = responseData.sessionId || null;
         setLeadDataWithTTL({
           leadId,
           leadSessionId,
           fingerprint: fingerprint.id,
-          landingPageUrl: window.location.href
+          landingPageUrl: parentUrl.href
         });
         return { leadId, leadSessionId, fingerprint: fingerprint.id };
       }
@@ -169,6 +178,90 @@
       }
     }
     return null;
+  }
+  async function waitForIdentifyToFinish() {
+    const maxWait = 5e3;
+    const interval = 100;
+    const start = Date.now();
+    while (identifyInProgress && Date.now() - start < maxWait) {
+      await new Promise((r) => setTimeout(r, interval));
+    }
+  }
+
+  // src/utils/route-observer.ts
+  var callbacks = [];
+  var installed = false;
+  var currentUrl = "";
+  function onRouteChange(callback) {
+    callbacks.push(callback);
+    if (!installed) {
+      install();
+      installed = true;
+    }
+  }
+  function notify() {
+    const newUrl = window.location.href;
+    if (newUrl === currentUrl) return;
+    currentUrl = newUrl;
+    callbacks.forEach((cb) => cb(newUrl));
+  }
+  function install() {
+    currentUrl = window.location.href;
+    window.addEventListener("popstate", notify);
+    const origPush = history.pushState;
+    const origReplace = history.replaceState;
+    history.pushState = function(...args) {
+      origPush.apply(history, args);
+      setTimeout(notify, 0);
+    };
+    history.replaceState = function(...args) {
+      origReplace.apply(history, args);
+      setTimeout(notify, 0);
+    };
+  }
+
+  // src/lead/pageview.ts
+  var routeListenersInstalled = false;
+  var lastTrackedHref = null;
+  var trackingQueue = Promise.resolve();
+  var pendingByHref = {};
+  function initializePageviewTracking(envId) {
+    if (!envId) return;
+    trackCurrentPage(envId);
+    if (routeListenersInstalled) return;
+    routeListenersInstalled = true;
+    onRouteChange(() => {
+      setTimeout(() => {
+        trackCurrentPage(envId);
+      }, 0);
+    });
+  }
+  function trackCurrentPage(envId) {
+    const href = window.location.href;
+    if (href === lastTrackedHref) {
+      return Promise.resolve(getLeadDataWithTTL());
+    }
+    if (pendingByHref[href]) {
+      return pendingByHref[href];
+    }
+    const request = trackingQueue.catch(() => null).then(async () => {
+      if (href === lastTrackedHref) {
+        return getLeadDataWithTTL();
+      }
+      const data = await identifyLead(envId, {
+        forceNetwork: true,
+        sourceUrl: href
+      });
+      if (data) {
+        lastTrackedHref = href;
+      }
+      return data;
+    }).finally(() => {
+      delete pendingByHref[href];
+    });
+    pendingByHref[href] = request;
+    trackingQueue = request.then(() => null, () => null);
+    return request;
   }
 
   // src/utils/debug.ts
@@ -242,38 +335,6 @@
       params[key] = value;
     }
     return params;
-  }
-
-  // src/utils/route-observer.ts
-  var callbacks = [];
-  var installed = false;
-  var currentUrl = "";
-  function onRouteChange(callback) {
-    callbacks.push(callback);
-    if (!installed) {
-      install();
-      installed = true;
-    }
-  }
-  function notify() {
-    const newUrl = window.location.href;
-    if (newUrl === currentUrl) return;
-    currentUrl = newUrl;
-    callbacks.forEach((cb) => cb(newUrl));
-  }
-  function install() {
-    currentUrl = window.location.href;
-    window.addEventListener("popstate", notify);
-    const origPush = history.pushState;
-    const origReplace = history.replaceState;
-    history.pushState = function(...args) {
-      origPush.apply(history, args);
-      setTimeout(notify, 0);
-    };
-    history.replaceState = function(...args) {
-      origReplace.apply(history, args);
-      setTimeout(notify, 0);
-    };
   }
 
   // src/store/message-listener.ts
@@ -1853,5 +1914,6 @@
     const scriptTag = document.currentScript;
     const environmentId2 = getSiteIdFromScript(scriptTag);
     setEnvironmentId(environmentId2);
+    initializePageviewTracking(environmentId2);
   })();
 })();

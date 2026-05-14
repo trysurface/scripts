@@ -5,6 +5,11 @@ import type { LeadData } from "../types";
 let environmentId: string | null = null;
 let identifyInProgress = false;
 
+interface IdentifyLeadOptions {
+  forceNetwork?: boolean;
+  sourceUrl?: string;
+}
+
 export function setEnvironmentId(id: string | null): void {
   environmentId = id;
 }
@@ -49,22 +54,33 @@ export function getLeadDataWithTTL(): LeadData | null {
 }
 
 export async function identifyLead(
-  envId: string
+  envId: string,
+  options: IdentifyLeadOptions = {}
 ): Promise<LeadData | null> {
+  if (identifyInProgress) {
+    if (options.forceNetwork) {
+      await waitForIdentifyToFinish();
+    } else {
+      return waitForCachedData();
+    }
+  }
+
   if (identifyInProgress) {
     return waitForCachedData();
   }
 
   const cached = getLeadDataWithTTL();
-  if (cached?.leadSessionId && cached?.fingerprint) {
+  if (!options.forceNetwork && cached?.leadSessionId && cached?.fingerprint) {
     return cached;
   }
 
   identifyInProgress = true;
 
   try {
-    const fingerprint = await getBrowserFingerprint(envId);
-    const parentUrl = new URL(window.location.href);
+    const fingerprint = cached?.fingerprint
+      ? { id: cached.fingerprint }
+      : await getBrowserFingerprint(envId);
+    const parentUrl = new URL(options.sourceUrl ?? window.location.href);
 
     const response = await fetch(LEAD_IDENTIFY_API, {
       method: "POST",
@@ -84,15 +100,18 @@ export async function identifyLead(
 
     const jsonData = await response.json();
 
-    if (response.ok && jsonData.data?.data) {
-      const leadId = jsonData.data.data.leadId || null;
-      const leadSessionId = jsonData.data.data.sessionId || null;
+    if (response.ok) {
+      const responseData = jsonData.data?.data ?? jsonData.data;
+      if (!responseData) return null;
+
+      const leadId = responseData.leadId || null;
+      const leadSessionId = responseData.sessionId || null;
 
       setLeadDataWithTTL({
         leadId,
         leadSessionId,
         fingerprint: fingerprint.id,
-        landingPageUrl: window.location.href,
+        landingPageUrl: parentUrl.href,
       });
 
       return { leadId, leadSessionId, fingerprint: fingerprint.id };
@@ -119,4 +138,14 @@ async function waitForCachedData(): Promise<LeadData | null> {
     }
   }
   return null;
+}
+
+async function waitForIdentifyToFinish(): Promise<void> {
+  const maxWait = 5000;
+  const interval = 100;
+  const start = Date.now();
+
+  while (identifyInProgress && Date.now() - start < maxWait) {
+    await new Promise((r) => setTimeout(r, interval));
+  }
 }

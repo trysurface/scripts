@@ -5,6 +5,7 @@ import {
   getLeadDataWithTTL,
   setEnvironmentId,
 } from "./lead/identify";
+import { initializePageviewTracking } from "./lead/pageview";
 import { SurfaceStore } from "./store/store";
 import { SurfaceExternalForm } from "./external-form/external-form";
 import { SurfaceEmbed } from "./embed/embed";
@@ -27,4 +28,5 @@ w.SurfaceGetSiteIdFromScript = getSiteIdFromScript;
   const scriptTag = document.currentScript as HTMLScriptElement;
   const environmentId = getSiteIdFromScript(scriptTag);
   setEnvironmentId(environmentId);
+  initializePageviewTracking(environmentId);
 })();
