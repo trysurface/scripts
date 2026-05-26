@@ -27,9 +27,10 @@ export class SurfaceStore {
   userJourneyId: string | null;
   userJourney: unknown[];
   cachedIdentifyData: LeadData | null;
+  environmentId: string | null;
   log: Logger;
 
-  constructor() {
+  constructor(environmentId: string | null = null) {
     this.windowUrl = new URL(window.location.href).toString();
     this.origin = new URL(window.location.href).origin.toString();
     this.referrer = document.referrer || "";
@@ -43,6 +44,7 @@ export class SurfaceStore {
     this.userJourneyId = null;
     this.userJourney = [];
     this.cachedIdentifyData = getLeadDataWithTTL();
+    this.environmentId = environmentId;
     this.log = createLogger("Surface Store");
 
     initializeMessageListener(this);
@@ -52,6 +54,7 @@ export class SurfaceStore {
       !this.isCurrentOriginSurfaceDomain()
     ) {
       initializeUserJourneyTracking(
+        this.environmentId,
         this.log,
         () => this.userJourneyId,
         (id) => { this.userJourneyId = id; }
@@ -70,6 +73,7 @@ export class SurfaceStore {
       this.windowUrl = new URL(newUrl).toString();
 
       updateUserJourneyOnRouteChange(
+        this.environmentId,
         newUrl,
         this.log,
         () => this.userJourneyId,

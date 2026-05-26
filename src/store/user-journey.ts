@@ -14,6 +14,7 @@ import {
 import type { Logger, JourneyTrackEvent } from "../types";
 
 export function initializeUserJourneyTracking(
+  environmentId: string | null,
   log: Logger,
   getJourneyId: () => string | null,
   setJourneyId: (id: string | null) => void
@@ -43,7 +44,10 @@ export function initializeUserJourneyTracking(
             referrer: document.referrer || "",
           },
         },
-        metadata: { ...(surfaceLeadData ?? {}) },
+        metadata: {
+          ...(environmentId ? { environmentId } : {}),
+          ...(surfaceLeadData ?? {}),
+        },
       },
       log,
       getJourneyId,
@@ -115,6 +119,7 @@ export async function trackToRedis(
 }
 
 export function updateUserJourneyOnRouteChange(
+  environmentId: string | null,
   newUrl: string,
   log: Logger,
   getJourneyId: () => string | null,
@@ -140,7 +145,10 @@ export function updateUserJourneyOnRouteChange(
             timestamp: new Date().toISOString(),
           },
         },
-        metadata: { ...(surfaceLeadData ?? {}) },
+        metadata: {
+          ...(environmentId ? { environmentId } : {}),
+          ...(surfaceLeadData ?? {}),
+        },
       },
       log,
       getJourneyId,
