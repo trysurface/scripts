@@ -1848,6 +1848,84 @@
     formInputTriggerInitialize
   });
 
+  // src/open-triggers/open-trigger-overlay.ts
+  var ID = "surface-open-trigger";
+  var CONTENT = "surface-ot-content";
+  var IFRAME = "surface-ot-iframe";
+  var CLOSEBOX = "surface-ot-closebox";
+  var CLOSE = "surface-ot-close";
+  var SPINNER = "surface-ot-spinner";
+  var STYLE_ID = "surface-ot-style";
+  var overlayEl = null;
+  var prevBodyOverflow = "";
+  function openTriggerOverlay(formSrc, mode) {
+    if (overlayEl && document.body.contains(overlayEl)) {
+      show(overlayEl, mode);
+      return;
+    }
+    injectStyles(mode);
+    const overlay = document.createElement("div");
+    overlay.id = ID;
+    overlay.style.display = "none";
+    overlay.innerHTML = `
+    <div class="${CONTENT}">
+      <div style="display:flex;justify-content:center;align-items:center;height:100%;position:absolute;top:0;left:0;width:100%;pointer-events:none;">
+        <div class="${SPINNER}"></div>
+      </div>
+      <iframe id="${IFRAME}" src="${formSrc}" frameborder="0" allowfullscreen style="opacity:0;"></iframe>
+      <div class="${CLOSEBOX}" style="display:none;"><span class="${CLOSE}">&times;</span></div>
+    </div>
+  `;
+    document.body.appendChild(overlay);
+    overlayEl = overlay;
+    const iframe = overlay.querySelector("#" + IFRAME);
+    const spinner = overlay.querySelector("." + SPINNER);
+    const closeBox = overlay.querySelector("." + CLOSEBOX);
+    if (iframe) {
+      iframe.onload = () => {
+        iframe.style.opacity = "1";
+        if (spinner) spinner.style.display = "none";
+        if (closeBox) closeBox.style.display = "flex";
+      };
+    }
+    const close = () => hide(overlay);
+    overlay.querySelector("." + CLOSE)?.addEventListener("click", close);
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) close();
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && overlay.classList.contains("active")) close();
+    });
+    show(overlay, mode);
+  }
+  function show(overlay, mode) {
+    prevBodyOverflow = document.body.style.overflow;
+    overlay.style.display = mode === "popup" ? "flex" : "block";
+    document.body.style.overflow = "hidden";
+    setTimeout(() => {
+      overlay.classList.add("active");
+      overlay.querySelector("#" + IFRAME)?.focus();
+    }, 50);
+  }
+  function hide(overlay) {
+    overlay.classList.remove("active");
+    document.body.style.overflow = prevBodyOverflow;
+    setTimeout(() => {
+      overlay.style.display = "none";
+    }, 250);
+  }
+  function injectStyles(mode) {
+    if (document.getElementById(STYLE_ID)) return;
+    const canonical = mode === "popup" ? getPopupStyles(getPopupDimensions("medium")) : getSlideoverStyles();
+    const style = document.createElement("style");
+    style.id = STYLE_ID;
+    style.textContent = namespace(canonical);
+    document.head.appendChild(style);
+  }
+  function namespace(css) {
+    return css.replace(/surface-popup-content/g, CONTENT).replace(/surface-loading-spinner/g, SPINNER).replace(/close-btn-container/g, CLOSEBOX).replace(/close-btn/g, CLOSE).replace(/surface-iframe/g, IFRAME).replace(/surface-popup/g, ID);
+  }
+
   // src/open-triggers/resolve.ts
   var OPENABLE_MODES = ["popup", "slideover"];
   function pickOpenTrigger(search, map) {
@@ -1866,7 +1944,8 @@
   // src/open-triggers/open-triggers.ts
   var SESSION_PREFIX = "surface_open_triggers:";
   var CACHE_TTL_MS = 5 * 60 * 1e3;
-  var OPEN_TRIGGER_TARGET = "surface-open-trigger-virtual";
+  var REUSE_POLL_INTERVAL_MS = 150;
+  var REUSE_POLL_MAX_TRIES = 12;
   async function resolveOpenTriggersOnLoad(environmentId3) {
     try {
       if (!environmentId3) return;
@@ -1909,15 +1988,24 @@
       targetPathname = new URL(entry.formSrc).pathname;
     } catch {
     }
-    const existing = targetPathname !== null ? SurfaceEmbed._instances.find(
-      (inst) => (inst.embed_type === "popup" || inst.embed_type === "slideover") && !!inst.src && inst.src.pathname === targetPathname
-    ) : void 0;
-    if (existing) {
-      existing.showSurfaceForm();
-      return;
-    }
-    const embed = new SurfaceEmbed(entry.formSrc, entry.mode, OPEN_TRIGGER_TARGET);
-    embed.showSurfaceForm();
+    const findSameModeEmbed = () => targetPathname === null ? void 0 : SurfaceEmbed._instances.find(
+      (inst) => inst.embed_type === entry.mode && !!inst.src && inst.src.pathname === targetPathname
+    );
+    let tries = 0;
+    const attempt = () => {
+      const sameMode = findSameModeEmbed();
+      if (sameMode) {
+        sameMode.showSurfaceForm();
+        return;
+      }
+      if (tries < REUSE_POLL_MAX_TRIES) {
+        tries += 1;
+        setTimeout(attempt, REUSE_POLL_INTERVAL_MS);
+        return;
+      }
+      openTriggerOverlay(entry.formSrc, entry.mode);
+    };
+    attempt();
   }
 
   // src/index.ts
