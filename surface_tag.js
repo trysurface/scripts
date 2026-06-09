@@ -1848,6 +1848,78 @@
     formInputTriggerInitialize
   });
 
+  // src/open-triggers/resolve.ts
+  var OPENABLE_MODES = ["popup", "slideover"];
+  function pickOpenTrigger(search, map) {
+    if (!map) return null;
+    const params = new URLSearchParams(search);
+    for (const [key, value] of params) {
+      if (value !== "true") continue;
+      const entry = map[key];
+      if (entry && entry.formId && entry.formSrc && OPENABLE_MODES.includes(entry.mode)) {
+        return entry;
+      }
+    }
+    return null;
+  }
+
+  // src/open-triggers/open-triggers.ts
+  var SESSION_PREFIX = "surface_open_triggers:";
+  var CACHE_TTL_MS = 5 * 60 * 1e3;
+  var OPEN_TRIGGER_TARGET = "surface-open-trigger-virtual";
+  async function resolveOpenTriggersOnLoad(environmentId3) {
+    try {
+      if (!environmentId3) return;
+      if (!window.location.search) return;
+      const map = await fetchOpenTriggersMap(environmentId3);
+      const entry = pickOpenTrigger(window.location.search, map);
+      if (!entry) return;
+      openTriggerForm(entry);
+    } catch {
+    }
+  }
+  async function fetchOpenTriggersMap(environmentId3) {
+    const w2 = window;
+    if (w2.__SURFACE_OPEN_TRIGGERS_MAP) return w2.__SURFACE_OPEN_TRIGGERS_MAP;
+    const sessionKey = SESSION_PREFIX + environmentId3;
+    try {
+      const cached2 = sessionStorage.getItem(sessionKey);
+      if (cached2) {
+        const parsed = JSON.parse(cached2);
+        if (parsed && parsed.map && typeof parsed.ts === "number" && Date.now() - parsed.ts < CACHE_TTL_MS) {
+          return parsed.map;
+        }
+      }
+    } catch {
+    }
+    const base = w2.__SURFACE_OPEN_TRIGGERS_BASE || EXTERNAL_FORM_API;
+    const response = await fetch(`${base}/environments/${encodeURIComponent(environmentId3)}/open-triggers`);
+    if (!response.ok) return null;
+    const json = await response.json();
+    const map = json?.data ?? {};
+    try {
+      sessionStorage.setItem(sessionKey, JSON.stringify({ map, ts: Date.now() }));
+    } catch {
+    }
+    return map;
+  }
+  function openTriggerForm(entry) {
+    let targetPathname = null;
+    try {
+      targetPathname = new URL(entry.formSrc).pathname;
+    } catch {
+    }
+    const existing = targetPathname !== null ? SurfaceEmbed._instances.find(
+      (inst) => (inst.embed_type === "popup" || inst.embed_type === "slideover") && !!inst.src && inst.src.pathname === targetPathname
+    ) : void 0;
+    if (existing) {
+      existing.showSurfaceForm();
+      return;
+    }
+    const embed = new SurfaceEmbed(entry.formSrc, entry.mode, OPEN_TRIGGER_TARGET);
+    embed.showSurfaceForm();
+  }
+
   // src/index.ts
   var scriptTag = document.currentScript;
   var environmentId2 = getSiteIdFromScript(scriptTag);
@@ -1861,4 +1933,5 @@
   w.SurfaceSetLeadDataWithTTL = setLeadDataWithTTL;
   w.SurfaceGetLeadDataWithTTL = getLeadDataWithTTL;
   w.SurfaceGetSiteIdFromScript = getSiteIdFromScript;
+  void resolveOpenTriggersOnLoad(environmentId2);
 })();
