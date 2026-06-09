@@ -36,7 +36,6 @@ export function openTriggerOverlay(formSrc: string, mode: Mode): void {
   const overlay = document.createElement("div");
   overlay.id = ID;
   overlay.style.display = "none";
-  // Same structure as the canonical popup/slideover HTML, with namespaced classes/ids.
   overlay.innerHTML = `
     <div class="${CONTENT}">
       <div style="display:flex;justify-content:center;align-items:center;height:100%;position:absolute;top:0;left:0;width:100%;pointer-events:none;">

@@ -33,7 +33,6 @@ interface OverridableWindow {
 export async function resolveOpenTriggersOnLoad(environmentId: string | null): Promise<void> {
   try {
     if (!environmentId) return;
-    // Cheapest possible short-circuit: only fetch when there's something to match.
     if (!window.location.search) return;
 
     const map = await fetchOpenTriggersMap(environmentId);
