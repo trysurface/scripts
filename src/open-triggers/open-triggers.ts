@@ -89,12 +89,18 @@ function openTriggerForm(entry: OpenTriggerEntry): void {
     // Malformed formSrc — the overlay fallback (caught upstream) handles it.
   }
 
+  // No pathname to match against (malformed formSrc) → no embed can ever match, so
+  // skip the poll and render the overlay straight away (it surfaces its own load error
+  // if the src is truly bad), instead of waiting out the full reuse window for nothing.
+  if (targetPathname === null) {
+    openTriggerOverlay(entry.formSrc, entry.mode);
+    return;
+  }
+
   const findSameModeEmbed = (): SurfaceEmbed | undefined =>
-    targetPathname === null
-      ? undefined
-      : SurfaceEmbed._instances.find(
-          (inst) => inst.embed_type === entry.mode && !!inst.src && inst.src.pathname === targetPathname
-        );
+    SurfaceEmbed._instances.find(
+      (inst) => inst.embed_type === entry.mode && !!inst.src && inst.src.pathname === targetPathname
+    );
 
   // If the page already embeds this form in the SAME mode as the open-trigger setting,
   // reuse that embed — it is exactly what the customer configured (size, styles, …) and
@@ -102,17 +108,23 @@ function openTriggerForm(entry: OpenTriggerEntry): void {
   // all) render our own overlay in the configured mode using the canonical styles.
   let tries = 0;
   const attempt = () => {
-    const sameMode = findSameModeEmbed();
-    if (sameMode) {
-      sameMode.showSurfaceForm();
-      return;
+    // Delayed invocations run outside resolveOpenTriggersOnLoad's try/catch, so guard
+    // every attempt here — a throw must never escape to the host page's console.
+    try {
+      const sameMode = findSameModeEmbed();
+      if (sameMode) {
+        sameMode.showSurfaceForm();
+        return;
+      }
+      if (tries < REUSE_POLL_MAX_TRIES) {
+        tries += 1;
+        setTimeout(attempt, REUSE_POLL_INTERVAL_MS);
+        return;
+      }
+      openTriggerOverlay(entry.formSrc, entry.mode);
+    } catch {
+      // Auto-open must never break the host page.
     }
-    if (tries < REUSE_POLL_MAX_TRIES) {
-      tries += 1;
-      setTimeout(attempt, REUSE_POLL_INTERVAL_MS);
-      return;
-    }
-    openTriggerOverlay(entry.formSrc, entry.mode);
   };
   attempt();
 }

@@ -1899,7 +1899,9 @@
     show(overlay, mode);
   }
   function show(overlay, mode) {
-    prevBodyOverflow = document.body.style.overflow;
+    if (overlay.style.display === "none") {
+      prevBodyOverflow = document.body.style.overflow;
+    }
     overlay.style.display = mode === "popup" ? "flex" : "block";
     document.body.style.overflow = "hidden";
     setTimeout(() => {
@@ -1988,22 +1990,29 @@
       targetPathname = new URL(entry.formSrc).pathname;
     } catch {
     }
-    const findSameModeEmbed = () => targetPathname === null ? void 0 : SurfaceEmbed._instances.find(
+    if (targetPathname === null) {
+      openTriggerOverlay(entry.formSrc, entry.mode);
+      return;
+    }
+    const findSameModeEmbed = () => SurfaceEmbed._instances.find(
       (inst) => inst.embed_type === entry.mode && !!inst.src && inst.src.pathname === targetPathname
     );
     let tries = 0;
     const attempt = () => {
-      const sameMode = findSameModeEmbed();
-      if (sameMode) {
-        sameMode.showSurfaceForm();
-        return;
+      try {
+        const sameMode = findSameModeEmbed();
+        if (sameMode) {
+          sameMode.showSurfaceForm();
+          return;
+        }
+        if (tries < REUSE_POLL_MAX_TRIES) {
+          tries += 1;
+          setTimeout(attempt, REUSE_POLL_INTERVAL_MS);
+          return;
+        }
+        openTriggerOverlay(entry.formSrc, entry.mode);
+      } catch {
       }
-      if (tries < REUSE_POLL_MAX_TRIES) {
-        tries += 1;
-        setTimeout(attempt, REUSE_POLL_INTERVAL_MS);
-        return;
-      }
-      openTriggerOverlay(entry.formSrc, entry.mode);
     };
     attempt();
   }

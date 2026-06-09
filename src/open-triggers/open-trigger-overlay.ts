@@ -73,8 +73,13 @@ export function openTriggerOverlay(formSrc: string, mode: Mode): void {
 }
 
 function show(overlay: HTMLDivElement, mode: Mode): void {
-  // Capture/restore the page's own overflow rather than forcing "auto".
-  prevBodyOverflow = document.body.style.overflow;
+  // Capture/restore the page's own overflow rather than forcing "auto". Only capture
+  // on a true hidden→shown transition: on a re-show (overlay already visible, overflow
+  // already "hidden") this would otherwise save "hidden" and the next hide() would
+  // restore "hidden", leaving the host page's scroll permanently locked.
+  if (overlay.style.display === "none") {
+    prevBodyOverflow = document.body.style.overflow;
+  }
   overlay.style.display = mode === "popup" ? "flex" : "block";
   document.body.style.overflow = "hidden";
   setTimeout(() => {
