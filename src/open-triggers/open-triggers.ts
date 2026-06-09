@@ -1,13 +1,18 @@
 import { EXTERNAL_FORM_API } from "../constants";
 import { SurfaceEmbed } from "../embed/embed";
+import { openTriggerOverlay } from "./open-trigger-overlay";
 import { OpenTriggerEntry, OpenTriggersMap, pickOpenTrigger } from "./resolve";
 
 const SESSION_PREFIX = "surface_open_triggers:";
 // Self-healing cache: re-fetch the map after this long so a slug retargeted/disabled
 // by an admin is picked up within the same browser session.
 const CACHE_TTL_MS = 5 * 60 * 1000;
-// Virtual trigger class — matches no element on the page; we open programmatically.
-const OPEN_TRIGGER_TARGET = "surface-open-trigger-virtual";
+// A same-form, same-mode embed may be created on window.load (after this runs, most
+// visibly on a refresh when the cached map resolves instantly). Poll briefly for it so
+// we can reuse it (pixel-identical to what the customer configured) before falling back
+// to rendering our own overlay.
+const REUSE_POLL_INTERVAL_MS = 150;
+const REUSE_POLL_MAX_TRIES = 12; // ~1.8s
 
 interface CachedMap {
   map: OpenTriggersMap;
@@ -28,7 +33,6 @@ interface OverridableWindow {
 export async function resolveOpenTriggersOnLoad(environmentId: string | null): Promise<void> {
   try {
     if (!environmentId) return;
-    // Cheapest possible short-circuit: only fetch when there's something to match.
     if (!window.location.search) return;
 
     const map = await fetchOpenTriggersMap(environmentId);
@@ -76,32 +80,50 @@ async function fetchOpenTriggersMap(environmentId: string): Promise<OpenTriggers
 }
 
 function openTriggerForm(entry: OpenTriggerEntry): void {
-  // Match by URL pathname (e.g. "/s/<formId>"), not a substring of formId — so IDs
-  // that share a prefix can't collide, and preview/cache-bust query params on an
-  // existing embed's src don't affect the comparison.
+  // Match by URL pathname ("/s/<formId>"), resilient to host/preview/cache-bust params.
   let targetPathname: string | null = null;
   try {
     targetPathname = new URL(entry.formSrc).pathname;
   } catch {
-    // Malformed formSrc — let `new SurfaceEmbed` below surface it (caught upstream).
+    // Malformed formSrc — the overlay fallback (caught upstream) handles it.
   }
 
-  // Reuse an existing popup/slideover embed of this form if one is already on the page.
-  const existing =
-    targetPathname !== null
-      ? SurfaceEmbed._instances.find(
-          (inst) =>
-            (inst.embed_type === "popup" || inst.embed_type === "slideover") &&
-            !!inst.src &&
-            inst.src.pathname === targetPathname
-        )
-      : undefined;
-  if (existing) {
-    existing.showSurfaceForm();
+  // No pathname to match against (malformed formSrc) → no embed can ever match, so
+  // skip the poll and render the overlay straight away (it surfaces its own load error
+  // if the src is truly bad), instead of waiting out the full reuse window for nothing.
+  if (targetPathname === null) {
+    openTriggerOverlay(entry.formSrc, entry.mode);
     return;
   }
 
-  // Otherwise create it on the fly and open immediately.
-  const embed = new SurfaceEmbed(entry.formSrc, entry.mode, OPEN_TRIGGER_TARGET);
-  embed.showSurfaceForm();
+  const findSameModeEmbed = (): SurfaceEmbed | undefined =>
+    SurfaceEmbed._instances.find(
+      (inst) => inst.embed_type === entry.mode && !!inst.src && inst.src.pathname === targetPathname
+    );
+
+  // If the page already embeds this form in the SAME mode as the open-trigger setting,
+  // reuse that embed — it is exactly what the customer configured (size, styles, …) and
+  // avoids loading a duplicate iframe. Otherwise (different mode, or not embedded at
+  // all) render our own overlay in the configured mode using the canonical styles.
+  let tries = 0;
+  const attempt = () => {
+    // Delayed invocations run outside resolveOpenTriggersOnLoad's try/catch, so guard
+    // every attempt here — a throw must never escape to the host page's console.
+    try {
+      const sameMode = findSameModeEmbed();
+      if (sameMode) {
+        sameMode.showSurfaceForm();
+        return;
+      }
+      if (tries < REUSE_POLL_MAX_TRIES) {
+        tries += 1;
+        setTimeout(attempt, REUSE_POLL_INTERVAL_MS);
+        return;
+      }
+      openTriggerOverlay(entry.formSrc, entry.mode);
+    } catch {
+      // Auto-open must never break the host page.
+    }
+  };
+  attempt();
 }
