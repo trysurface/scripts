@@ -8,6 +8,7 @@ import {
 import { SurfaceStore } from "./store/store";
 import { SurfaceExternalForm } from "./external-form/external-form";
 import { SurfaceEmbed } from "./embed/embed";
+import { resolveOpenTriggersOnLoad } from "./open-triggers/open-triggers";
 
 const scriptTag = document.currentScript as HTMLScriptElement;
 const environmentId = getSiteIdFromScript(scriptTag);
@@ -25,3 +26,7 @@ w.SurfaceIdentifyLead = identifyLead;
 w.SurfaceSetLeadDataWithTTL = setLeadDataWithTTL;
 w.SurfaceGetLeadDataWithTTL = getLeadDataWithTTL;
 w.SurfaceGetSiteIdFromScript = getSiteIdFromScript;
+
+// Auto-open a form when the host URL carries a configured `?<slug>=true` param.
+// Fire-and-forget; only touches the network when params are present.
+void resolveOpenTriggersOnLoad(environmentId);
