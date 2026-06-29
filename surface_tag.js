@@ -2040,6 +2040,7 @@
         if (isUnique(selector)) return selector;
       }
     }
+    if (el === document.body) return "body";
     const parts = [];
     let node = el;
     while (node && node.nodeType === 1 && node !== document.body) {
@@ -2065,7 +2066,12 @@
     return parts.join(" > ");
   }
   function rectFor(selector) {
-    const el = document.querySelector(selector);
+    let el;
+    try {
+      el = document.querySelector(selector);
+    } catch {
+      return { selector, rect: null };
+    }
     if (!el) return { selector, rect: null };
     const r = el.getBoundingClientRect();
     return {
@@ -2116,6 +2122,7 @@
       const m = e.data;
       if (!m || m.channel !== CHANNEL) return;
       if (m.type === "hello") {
+        if (parentOrigin) return;
         if (m.token !== token) return;
         parentOrigin = e.origin;
         window.addEventListener("scroll", onViewport, true);

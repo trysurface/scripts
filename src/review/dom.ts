@@ -39,6 +39,7 @@ export function selectorFor(el: Element): string {
     }
   }
 
+  if (el === document.body) return "body"; // loop excludes body; avoid ""
   const parts: string[] = [];
   let node: Element | null = el;
   while (node && node.nodeType === 1 && node !== document.body) {
@@ -65,7 +66,12 @@ export function selectorFor(el: Element): string {
 }
 
 export function rectFor(selector: string): SelectorRect {
-  const el = document.querySelector(selector);
+  let el: Element | null;
+  try {
+    el = document.querySelector(selector);
+  } catch {
+    return { selector, rect: null }; // malformed selector — stay well-formed
+  }
   if (!el) return { selector, rect: null };
   const r = el.getBoundingClientRect();
   return {

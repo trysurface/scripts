@@ -54,6 +54,7 @@ export function initReview(): void {
     const m = e.data as Inbound | null;
     if (!m || m.channel !== CHANNEL) return;
     if (m.type === "hello") {
+      if (parentOrigin) return; // handshake already claimed — ignore re-hello
       if (m.token !== token) return; // capability gate
       parentOrigin = e.origin; // trust this parent for the session
       // Report viewport changes for the whole session so pins track scrolling
