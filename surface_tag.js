@@ -326,15 +326,15 @@
   }
 
   // src/store/user-journey.ts
-  function initializeUserJourneyTracking(environmentId3, log, getJourneyId, setJourneyId) {
+  function initializeUserJourneyTracking(environmentId3, log2, getJourneyId, setJourneyId) {
     try {
       const existingId = getExistingJourneyId();
       setJourneyId(existingId);
-      log.info({ message: "Existing journey ID", response: { id: existingId || "none" } });
+      log2.info({ message: "Existing journey ID", response: { id: existingId || "none" } });
       const currentUrl2 = window.location.href;
       const recentVisit = getCookie(SURFACE_USER_JOURNEY_RECENT_VISIT_COOKIE_NAME);
       if (recentVisit === currentUrl2) {
-        log.info({ message: "Skipping duplicate page view (same as recent visit)" });
+        log2.info({ message: "Skipping duplicate page view (same as recent visit)" });
         return;
       }
       const surfaceLeadData = getLeadDataWithTTL();
@@ -353,7 +353,7 @@
             ...surfaceLeadData ?? {}
           }
         },
-        log,
+        log2,
         getJourneyId,
         setJourneyId
       );
@@ -362,17 +362,17 @@
         sameSite: "lax",
         domain: getJourneyCookieDomain()
       });
-      log.info({ message: "User journey tracking initialized" });
+      log2.info({ message: "User journey tracking initialized" });
     } catch (error) {
-      log.error({ message: "Error initializing user journey tracking", error });
+      log2.error({ message: "Error initializing user journey tracking", error });
     }
   }
-  async function trackToRedis(event, log, getJourneyId, setJourneyId) {
+  async function trackToRedis(event, log2, getJourneyId, setJourneyId) {
     try {
       const journeyId = getJourneyId();
       const payload = { ...event };
       if (journeyId) payload.id = journeyId;
-      log.info({ message: "Tracking to Redis", response: payload });
+      log2.info({ message: "Tracking to Redis", response: payload });
       if (journeyId && navigator.sendBeacon) {
         const blob = new Blob([JSON.stringify(payload)], {
           type: "application/json"
@@ -380,10 +380,10 @@
         const sent = navigator.sendBeacon(USER_JOURNEY_TRACKING_API, blob);
         if (sent) {
           refreshJourneyCookie(journeyId);
-          log.info({ message: "Tracking sent via sendBeacon", response: { sent } });
+          log2.info({ message: "Tracking sent via sendBeacon", response: { sent } });
           return { success: true };
         }
-        log.warn({ message: "sendBeacon failed, falling back to fetch" });
+        log2.warn({ message: "sendBeacon failed, falling back to fetch" });
       }
       const response = await fetch(USER_JOURNEY_TRACKING_API, {
         method: "POST",
@@ -391,27 +391,27 @@
         body: JSON.stringify(payload)
       });
       if (!response.ok) {
-        log.warn({ message: "Tracking API returned status", response: { status: response.status } });
+        log2.warn({ message: "Tracking API returned status", response: { status: response.status } });
         return null;
       }
       const data = await response.json();
       if (data?.data?.id) {
         setJourneyId(data.data.id);
-        log.info({ message: "Journey ID stored", response: { id: data.data.id } });
+        log2.info({ message: "Journey ID stored", response: { id: data.data.id } });
       }
       refreshJourneyCookie(getJourneyId());
       return data;
     } catch (error) {
-      log.error({ message: "Error tracking to Redis", error });
+      log2.error({ message: "Error tracking to Redis", error });
       return null;
     }
   }
-  function updateUserJourneyOnRouteChange(environmentId3, newUrl, log, getJourneyId, setJourneyId) {
+  function updateUserJourneyOnRouteChange(environmentId3, newUrl, log2, getJourneyId, setJourneyId) {
     try {
       const currentUrl2 = newUrl || window.location.href;
       const recentVisit = getCookie(SURFACE_USER_JOURNEY_RECENT_VISIT_COOKIE_NAME);
       if (recentVisit === currentUrl2) {
-        log.info({ message: "Skipping duplicate page view on route change" });
+        log2.info({ message: "Skipping duplicate page view on route change" });
         return;
       }
       const surfaceLeadData = getLeadDataWithTTL();
@@ -429,7 +429,7 @@
             ...surfaceLeadData ?? {}
           }
         },
-        log,
+        log2,
         getJourneyId,
         setJourneyId
       );
@@ -438,17 +438,17 @@
         sameSite: "lax",
         domain: getJourneyCookieDomain()
       });
-      log.info({ message: "User journey updated on route change", response: { url: currentUrl2 } });
+      log2.info({ message: "User journey updated on route change", response: { url: currentUrl2 } });
     } catch (error) {
-      log.error({ message: "Error updating user journey on route change", error });
+      log2.error({ message: "Error updating user journey on route change", error });
     }
   }
-  function clearUserJourney(log, setJourneyId) {
+  function clearUserJourney(log2, setJourneyId) {
     const domain = getJourneyCookieDomain();
     deleteCookie(SURFACE_USER_JOURNEY_COOKIE_NAME, { domain });
     deleteCookie(SURFACE_USER_JOURNEY_RECENT_VISIT_COOKIE_NAME, { domain });
     setJourneyId(null);
-    log.info({ message: "User journey cleared" });
+    log2.info({ message: "User journey cleared" });
   }
 
   // src/store/store.ts
@@ -773,25 +773,25 @@
     { name: "md", min: 768 },
     { name: "sm", min: 0 }
   ];
-  function resolveEmbedType(input, log) {
+  function resolveEmbedType(input, log2) {
     if (typeof input === "string") return input;
-    if (typeof input === "object") return resolveResponsiveType(input, log);
-    log.error({ message: "Invalid embed type: must be string or object" });
+    if (typeof input === "object") return resolveResponsiveType(input, log2);
+    log2.error({ message: "Invalid embed type: must be string or object" });
     return null;
   }
-  function resolveResponsiveType(config, log) {
+  function resolveResponsiveType(config, log2) {
     const withDefault = ensureDefault(config);
     const breakpoint = getCurrentBreakpoint();
     if (!breakpoint) {
-      log.info({ message: "No matching breakpoint, using default embed type" });
+      log2.info({ message: "No matching breakpoint, using default embed type" });
       return withDefault.default;
     }
     const embedType = withDefault[breakpoint];
     if (embedType) {
-      log.info({ message: "Using breakpoint embed type", response: { breakpoint, embedType } });
+      log2.info({ message: "Using breakpoint embed type", response: { breakpoint, embedType } });
       return embedType;
     }
-    log.warn({ message: "No embed type for breakpoint, using default", response: { breakpoint } });
+    log2.warn({ message: "No embed type for breakpoint, using default", response: { breakpoint } });
     return withDefault.default;
   }
   function ensureDefault(config) {
@@ -930,10 +930,10 @@
     document.head.appendChild(style);
     return style;
   }
-  function setupDismissHandlers(overlay, closeBtn, hideCallback) {
+  function setupDismissHandlers(overlay2, closeBtn, hideCallback) {
     closeBtn.addEventListener("click", hideCallback);
     window.addEventListener("click", (event) => {
-      if (event.target === overlay) hideCallback();
+      if (event.target === overlay2) hideCallback();
     });
   }
 
@@ -1864,10 +1864,10 @@
       return;
     }
     injectStyles(mode);
-    const overlay = document.createElement("div");
-    overlay.id = ID;
-    overlay.style.display = "none";
-    overlay.innerHTML = `
+    const overlay2 = document.createElement("div");
+    overlay2.id = ID;
+    overlay2.style.display = "none";
+    overlay2.innerHTML = `
     <div class="${CONTENT}">
       <div style="display:flex;justify-content:center;align-items:center;height:100%;position:absolute;top:0;left:0;width:100%;pointer-events:none;">
         <div class="${SPINNER}"></div>
@@ -1876,11 +1876,11 @@
       <div class="${CLOSEBOX}" style="display:none;"><span class="${CLOSE}">&times;</span></div>
     </div>
   `;
-    document.body.appendChild(overlay);
-    overlayEl = overlay;
-    const iframe = overlay.querySelector("#" + IFRAME);
-    const spinner = overlay.querySelector("." + SPINNER);
-    const closeBox = overlay.querySelector("." + CLOSEBOX);
+    document.body.appendChild(overlay2);
+    overlayEl = overlay2;
+    const iframe = overlay2.querySelector("#" + IFRAME);
+    const spinner = overlay2.querySelector("." + SPINNER);
+    const closeBox = overlay2.querySelector("." + CLOSEBOX);
     if (iframe) {
       iframe.onload = () => {
         iframe.style.opacity = "1";
@@ -1888,32 +1888,32 @@
         if (closeBox) closeBox.style.display = "flex";
       };
     }
-    const close = () => hide(overlay);
-    overlay.querySelector("." + CLOSE)?.addEventListener("click", close);
-    overlay.addEventListener("click", (e) => {
-      if (e.target === overlay) close();
+    const close = () => hide(overlay2);
+    overlay2.querySelector("." + CLOSE)?.addEventListener("click", close);
+    overlay2.addEventListener("click", (e) => {
+      if (e.target === overlay2) close();
     });
     document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape" && overlay.classList.contains("active")) close();
+      if (e.key === "Escape" && overlay2.classList.contains("active")) close();
     });
-    show(overlay, mode);
+    show(overlay2, mode);
   }
-  function show(overlay, mode) {
-    if (overlay.style.display === "none") {
+  function show(overlay2, mode) {
+    if (overlay2.style.display === "none") {
       prevBodyOverflow = document.body.style.overflow;
     }
-    overlay.style.display = mode === "popup" ? "flex" : "block";
+    overlay2.style.display = mode === "popup" ? "flex" : "block";
     document.body.style.overflow = "hidden";
     setTimeout(() => {
-      overlay.classList.add("active");
-      overlay.querySelector("#" + IFRAME)?.focus();
+      overlay2.classList.add("active");
+      overlay2.querySelector("#" + IFRAME)?.focus();
     }, 50);
   }
-  function hide(overlay) {
-    overlay.classList.remove("active");
+  function hide(overlay2) {
+    overlay2.classList.remove("active");
     document.body.style.overflow = prevBodyOverflow;
     setTimeout(() => {
-      overlay.style.display = "none";
+      overlay2.style.display = "none";
     }, 250);
   }
   function injectStyles(mode) {
@@ -2017,6 +2017,192 @@
     attempt();
   }
 
+  // src/review/dom.ts
+  function escapeSelector(value) {
+    return window.CSS && CSS.escape ? CSS.escape(value) : value.replace(/[^\w-]/g, "\\$&");
+  }
+  function isUnique(selector) {
+    try {
+      return document.querySelectorAll(selector).length === 1;
+    } catch {
+      return false;
+    }
+  }
+  function selectorFor(el) {
+    if (el.id && isUnique(`#${escapeSelector(el.id)}`)) {
+      return `#${escapeSelector(el.id)}`;
+    }
+    const attrs = ["data-surface-anchor", "data-testid", "data-test", "data-id"];
+    for (const attr of attrs) {
+      const value = el.getAttribute(attr);
+      if (value) {
+        const selector = `[${attr}="${escapeSelector(value)}"]`;
+        if (isUnique(selector)) return selector;
+      }
+    }
+    const parts = [];
+    let node = el;
+    while (node && node.nodeType === 1 && node !== document.body) {
+      if (node.id && isUnique(`#${escapeSelector(node.id)}`)) {
+        parts.unshift(`#${escapeSelector(node.id)}`);
+        break;
+      }
+      let part = node.tagName.toLowerCase();
+      const parent = node.parentElement;
+      if (parent) {
+        const siblings = [];
+        for (let i = 0; i < parent.children.length; i++) {
+          const child = parent.children[i];
+          if (child.tagName === node.tagName) siblings.push(child);
+        }
+        if (siblings.length > 1) {
+          part += `:nth-of-type(${siblings.indexOf(node) + 1})`;
+        }
+      }
+      parts.unshift(part);
+      node = node.parentElement;
+    }
+    return parts.join(" > ");
+  }
+  function rectFor(selector) {
+    const el = document.querySelector(selector);
+    if (!el) return { selector, rect: null };
+    const r = el.getBoundingClientRect();
+    return {
+      selector,
+      rect: { x: r.left, y: r.top, width: r.width, height: r.height }
+    };
+  }
+  function scrollToSelector(selector) {
+    const el = document.querySelector(selector);
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+  var overlay = null;
+  function showHighlight(el) {
+    if (!overlay) {
+      overlay = document.createElement("div");
+      overlay.style.cssText = "position:fixed;z-index:2147483647;pointer-events:none;border:2px solid #2563eb;background:rgba(37,99,235,.08);border-radius:3px";
+      document.body.appendChild(overlay);
+    }
+    const r = el.getBoundingClientRect();
+    overlay.style.left = `${r.left}px`;
+    overlay.style.top = `${r.top}px`;
+    overlay.style.width = `${r.width}px`;
+    overlay.style.height = `${r.height}px`;
+    overlay.style.display = "block";
+  }
+  function hideHighlight() {
+    if (overlay) overlay.style.display = "none";
+  }
+
+  // src/review/review.ts
+  var CHANNEL = "surface-review";
+  var VERSION = 1;
+  var log = createLogger("SurfaceReview");
+  function initReview() {
+    const token = new URLSearchParams(window.location.search).get(
+      "surface_review"
+    );
+    if (!token || window.parent === window) return;
+    let parentOrigin = null;
+    let reviewing = false;
+    let raf = 0;
+    let pinnedEl = null;
+    function send(payload) {
+      if (!parentOrigin) return;
+      window.parent.postMessage({ ...payload, channel: CHANNEL }, parentOrigin);
+    }
+    function onMessage(e) {
+      const m = e.data;
+      if (!m || m.channel !== CHANNEL) return;
+      if (m.type === "hello") {
+        if (m.token !== token) return;
+        parentOrigin = e.origin;
+        window.addEventListener("scroll", onViewport, true);
+        window.addEventListener("resize", onViewport);
+        document.addEventListener("click", onNavClick, true);
+        log.info("ready");
+        send({ type: "ready", version: VERSION });
+        return;
+      }
+      if (e.origin !== parentOrigin) return;
+      if (m.type === "enter-review") enter();
+      else if (m.type === "exit-review") exit();
+      else if (m.type === "resume-review") resume();
+      else if (m.type === "request-rects") {
+        send({ type: "rects", rects: (m.selectors ?? []).map(rectFor) });
+      } else if (m.type === "scroll-to") {
+        scrollToSelector(m.selector);
+      }
+    }
+    function enter() {
+      if (reviewing) return;
+      reviewing = true;
+      document.documentElement.style.cursor = "crosshair";
+      document.addEventListener("mousemove", onMove, true);
+      document.addEventListener("click", onClick, true);
+    }
+    function exit() {
+      reviewing = false;
+      pinnedEl = null;
+      document.documentElement.style.cursor = "";
+      hideHighlight();
+      document.removeEventListener("mousemove", onMove, true);
+      document.removeEventListener("click", onClick, true);
+    }
+    function resume() {
+      pinnedEl = null;
+      hideHighlight();
+    }
+    function onMove(e) {
+      if (pinnedEl) return;
+      if (e.target instanceof Element) showHighlight(e.target);
+    }
+    function onClick(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (pinnedEl) return;
+      const el = e.target;
+      if (!(el instanceof Element)) return;
+      pinnedEl = el;
+      showHighlight(el);
+      const r = el.getBoundingClientRect();
+      send({
+        type: "element-clicked",
+        selector: selectorFor(el),
+        x: e.clientX,
+        y: e.clientY,
+        scrollY: window.scrollY,
+        rect: { x: r.left, y: r.top, width: r.width, height: r.height }
+      });
+    }
+    function onViewport() {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        if (pinnedEl) showHighlight(pinnedEl);
+        send({ type: "viewport" });
+      });
+    }
+    function onNavClick(e) {
+      const target = e.target;
+      const anchor = target instanceof Element ? target.closest("a[href]") : null;
+      if (!anchor) return;
+      const href = anchor.getAttribute("href");
+      if (!href || href.charAt(0) === "#") return;
+      let dest;
+      try {
+        dest = new URL(href, window.location.href);
+      } catch {
+        return;
+      }
+      if (dest.href.split("#")[0] === window.location.href.split("#")[0]) return;
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    window.addEventListener("message", onMessage);
+  }
+
   // src/index.ts
   var scriptTag = document.currentScript;
   var environmentId2 = getSiteIdFromScript(scriptTag);
@@ -2031,4 +2217,5 @@
   w.SurfaceGetLeadDataWithTTL = getLeadDataWithTTL;
   w.SurfaceGetSiteIdFromScript = getSiteIdFromScript;
   void resolveOpenTriggersOnLoad(environmentId2);
+  initReview();
 })();
