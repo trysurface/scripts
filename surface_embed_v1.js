@@ -2080,7 +2080,12 @@
     };
   }
   function scrollToSelector(selector) {
-    const el = document.querySelector(selector);
+    let el;
+    try {
+      el = document.querySelector(selector);
+    } catch {
+      return;
+    }
     if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
   }
   var overlay = null;

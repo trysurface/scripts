@@ -81,7 +81,12 @@ export function rectFor(selector: string): SelectorRect {
 }
 
 export function scrollToSelector(selector: string): void {
-  const el = document.querySelector(selector);
+  let el: Element | null;
+  try {
+    el = document.querySelector(selector);
+  } catch {
+    return; // malformed selector — stay well-formed
+  }
   if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
 }
 
