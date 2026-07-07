@@ -37,6 +37,8 @@
   var LEAD_DATA_TTL = 10 * 60 * 1e3;
   var JOURNEY_COOKIE_MAX_AGE = 5184e3;
   var RECENT_VISIT_COOKIE_MAX_AGE = 86400;
+  var FIRST_TOUCH_COOKIE_NAME = "surface_first_touch";
+  var FIRST_TOUCH_COOKIE_MAX_AGE = 2592e3;
 
   // src/utils/hash.ts
   async function getHash(input) {
@@ -325,6 +327,88 @@
     return getCookie(SURFACE_USER_JOURNEY_COOKIE_NAME);
   }
 
+  // src/store/first-touch.ts
+  var ATTRIBUTION_PARAMS = [
+    "utm_source",
+    "utm_medium",
+    "utm_campaign",
+    "utm_term",
+    "utm_content",
+    "gclid",
+    "fbclid",
+    "li_fat_id",
+    "msclkid",
+    "ttclid"
+  ];
+  var QUALIFYING_PARAMS = [
+    "utm_source",
+    "utm_medium",
+    "gclid",
+    "fbclid",
+    "li_fat_id",
+    "msclkid",
+    "ttclid"
+  ];
+  var MAX_VALUE_LENGTH = 256;
+  var MAX_ENCODED_COOKIE_BYTES = 3500;
+  var FALLBACK_VALUE_LENGTH = 64;
+  function isInternalNavigation() {
+    if (!document.referrer) return false;
+    try {
+      return new URL(document.referrer).origin === window.location.origin;
+    } catch {
+      return false;
+    }
+  }
+  function captureFirstTouch() {
+    if (getCookie(FIRST_TOUCH_COOKIE_NAME)) return;
+    if (isInternalNavigation()) return;
+    const urlParams = getUrlParams();
+    if (!QUALIFYING_PARAMS.some((key) => urlParams[key])) return;
+    const params = {};
+    ATTRIBUTION_PARAMS.forEach((key) => {
+      const value = urlParams[key];
+      if (value) params[key] = value.slice(0, MAX_VALUE_LENGTH);
+    });
+    const record = {
+      params,
+      url: window.location.href.slice(0, MAX_VALUE_LENGTH),
+      referrer: document.referrer.slice(0, MAX_VALUE_LENGTH),
+      at: (/* @__PURE__ */ new Date()).toISOString()
+    };
+    let serialized = JSON.stringify(record);
+    if (encodeURIComponent(serialized).length > MAX_ENCODED_COOKIE_BYTES) {
+      record.url = "";
+      record.referrer = "";
+      Object.keys(record.params).forEach((key) => {
+        record.params[key] = record.params[key].slice(0, FALLBACK_VALUE_LENGTH);
+      });
+      serialized = JSON.stringify(record);
+      if (encodeURIComponent(serialized).length > MAX_ENCODED_COOKIE_BYTES) return;
+    }
+    const options = {
+      maxAge: FIRST_TOUCH_COOKIE_MAX_AGE,
+      sameSite: "lax"
+    };
+    setCookie(FIRST_TOUCH_COOKIE_NAME, serialized, {
+      ...options,
+      domain: getJourneyCookieDomain()
+    });
+    if (!getCookie(FIRST_TOUCH_COOKIE_NAME)) {
+      setCookie(FIRST_TOUCH_COOKIE_NAME, serialized, options);
+    }
+  }
+  function getFirstTouchParams() {
+    const raw = getCookie(FIRST_TOUCH_COOKIE_NAME);
+    if (!raw) return {};
+    try {
+      const record = JSON.parse(raw);
+      return record?.params && typeof record.params === "object" ? record.params : {};
+    } catch {
+      return {};
+    }
+  }
+
   // src/store/user-journey.ts
   function initializeUserJourneyTracking(environmentId3, log2, getJourneyId, setJourneyId) {
     try {
@@ -470,6 +554,9 @@
       this.environmentId = environmentId3;
       this.log = createLogger("Surface Store");
       initializeMessageListener(this);
+      if (!this.isCurrentOriginSurfaceDomain()) {
+        captureFirstTouch();
+      }
       if ((this.cachedIdentifyData || !isIdentifyInProgress()) && !this.isCurrentOriginSurfaceDomain()) {
         initializeUserJourneyTracking(
           this.environmentId,
@@ -505,8 +592,6 @@
     sendPayloadToIframes(type) {
       const iframes = document.querySelectorAll("iframe");
       if (iframes.length === 0) return;
-      this.urlParams = getUrlParams();
-      this.urlParams.url = window.location.href;
       this.log.info({ message: "Updating iframe params", response: { type, iframeCount: iframes.length } });
       iframes.forEach((iframe) => this.notifyIframe(iframe, type));
     }
@@ -526,13 +611,16 @@
       return getUrlParams();
     }
     getPayload() {
+      this.urlParams = getUrlParams();
+      this.urlParams.url = window.location.href;
       return {
         windowUrl: this.windowUrl,
         referrer: this.referrer,
         cookies: Object.keys(this.cookies).length === 0 ? parseCookies() : this.cookies,
         origin: this.origin,
         questionIds: this.partialFilledData,
-        urlParams: this.urlParams,
+        // First-touch attribution fills gaps; current-page params always win.
+        urlParams: { ...getFirstTouchParams(), ...this.urlParams },
         surfaceLeadData: getLeadDataWithTTL(),
         userJourneyId: this.userJourneyId
       };

@@ -26,3 +26,6 @@ export const VALID_EMBED_TYPES = [
 export const LEAD_DATA_TTL = 10 * 60 * 1000; // 10 minutes
 export const JOURNEY_COOKIE_MAX_AGE = 5184000; // 60 days
 export const RECENT_VISIT_COOKIE_MAX_AGE = 86400; // 1 day
+
+export const FIRST_TOUCH_COOKIE_NAME = "surface_first_touch";
+export const FIRST_TOUCH_COOKIE_MAX_AGE = 2592000; // 30 days

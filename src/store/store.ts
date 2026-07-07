@@ -6,6 +6,7 @@ import { getUrlParams } from "../utils/url";
 import { onRouteChange } from "../utils/route-observer";
 import { getLeadDataWithTTL, isIdentifyInProgress } from "../lead/identify";
 import { initializeMessageListener } from "./message-listener";
+import { captureFirstTouch, getFirstTouchParams } from "./first-touch";
 import {
   initializeUserJourneyTracking,
   updateUserJourneyOnRouteChange,
@@ -49,6 +50,10 @@ export class SurfaceStore {
 
     initializeMessageListener(this);
 
+    if (!this.isCurrentOriginSurfaceDomain()) {
+      captureFirstTouch();
+    }
+
     if (
       (this.cachedIdentifyData || !isIdentifyInProgress()) &&
       !this.isCurrentOriginSurfaceDomain()
@@ -90,9 +95,6 @@ export class SurfaceStore {
     const iframes = document.querySelectorAll("iframe");
     if (iframes.length === 0) return;
 
-    this.urlParams = getUrlParams();
-    this.urlParams.url = window.location.href;
-
     this.log.info({ message: "Updating iframe params", response: { type, iframeCount: iframes.length } });
 
     iframes.forEach((iframe) => this.notifyIframe(iframe, type));
@@ -117,6 +119,12 @@ export class SurfaceStore {
   }
 
   getPayload(): StorePayload {
+    // Read params fresh: the direct notifyIframe() path can run before
+    // sendPayloadToIframes() ever refreshed this.urlParams, and after an SPA
+    // route change the cached value may belong to the previous page.
+    this.urlParams = getUrlParams();
+    this.urlParams.url = window.location.href;
+
     return {
       windowUrl: this.windowUrl,
       referrer: this.referrer,
@@ -126,7 +134,8 @@ export class SurfaceStore {
           : this.cookies,
       origin: this.origin,
       questionIds: this.partialFilledData,
-      urlParams: this.urlParams,
+      // First-touch attribution fills gaps; current-page params always win.
+      urlParams: { ...getFirstTouchParams(), ...this.urlParams },
       surfaceLeadData: getLeadDataWithTTL(),
       userJourneyId: this.userJourneyId,
     };

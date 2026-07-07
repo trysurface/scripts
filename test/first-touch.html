@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="X-UA-Compatible" content="ie=edge" />
+    <title>First-Touch UTM Persistence Test - Surface Tag</title>
+    <link rel="stylesheet" href="common.css">
+    <script src="../surface_tag.js" site-id="cllo318mt0003mb08hnp0f5zy"></script>
+  </head>
+  <body>
+    <div class="container">
+      <h1>First-Touch UTM Persistence Test</h1>
+      <p><a href="index.html">&larr; Back to Test Suite</a></p>
+
+      <div class="config-section">
+        <strong>How to test:</strong>
+        <ol>
+          <li><strong>Capture:</strong> paste this into the address bar (a real ad landing has no same-origin referrer; clicking a link here would trip the internal-navigation guard):<br><code>first-touch.html?utm_source=linkedin&amp;utm_medium=paid_social&amp;utm_campaign=Test+Campaign&amp;li_fat_id=test-123</code><br>The cookie panel should populate.</li>
+          <li><strong>Persistence:</strong> then <a href="first-touch.html?utm_content=home_homepage-hero">navigate with only an internal tag</a> — merged params should keep <code>utm_source=linkedin</code>, with <code>utm_content</code> from the current page winning.</li>
+          <li><strong>Internal-tag guard:</strong> clear the cookie, then click the internal-tag link above (same-origin referrer) — the cookie must NOT be written, even if the link carries <code>utm_source</code>.</li>
+          <li><strong>Write-once:</strong> with the cookie set, land again with <code>?utm_source=google&gclid=x</code> — the stored record must not change.</li>
+        </ol>
+      </div>
+
+      <h2>surface_first_touch cookie</h2>
+      <div class="button-group">
+        <button class="clear-log" onclick="clearFirstTouchCookie()">Clear Cookie</button>
+        <button class="secondary" onclick="render()">Refresh</button>
+      </div>
+      <pre class="events-log" id="cookiePanel"></pre>
+
+      <h2>Merged payload urlParams (what iframes receive)</h2>
+      <pre class="events-log" id="payloadPanel"></pre>
+    </div>
+
+    <script>
+      function getFirstTouchCookie() {
+        const match = document.cookie
+          .split(";")
+          .map((c) => c.trim())
+          .find((c) => c.startsWith("surface_first_touch="));
+        if (!match) return null;
+        try {
+          return JSON.parse(decodeURIComponent(match.split("=").slice(1).join("=")));
+        } catch {
+          return "<unparseable>";
+        }
+      }
+
+      function clearFirstTouchCookie() {
+        const hostname = window.location.hostname;
+        const parts = hostname.split(".");
+        const domain =
+          hostname.includes(".")
+            ? "." + (parts.length === 2 ? hostname : parts.slice(1).join("."))
+            : null;
+        document.cookie = "surface_first_touch=; path=/; max-age=0; samesite=lax" + (domain ? "; domain=" + domain : "");
+        document.cookie = "surface_first_touch=; path=/; max-age=0; samesite=lax";
+        render();
+      }
+
+      function render() {
+        const cookie = getFirstTouchCookie();
+        document.getElementById("cookiePanel").textContent = cookie
+          ? JSON.stringify(cookie, null, 2)
+          : "(not set)";
+
+        const store = window.SurfaceTagStore;
+        document.getElementById("payloadPanel").textContent = store
+          ? JSON.stringify(store.getPayload().urlParams, null, 2)
+          : "(SurfaceTagStore not initialized)";
+      }
+
+      window.addEventListener("load", render);
+    </script>
+  </body>
+</html>
