@@ -67,12 +67,6 @@
           : "(not set)";
 
         const store = window.SurfaceTagStore;
-        if (store) {
-          // Mirror sendPayloadToIframes(): refresh current-page params first,
-          // since this page hosts no iframe to trigger the real send path.
-          store.urlParams = store.getUrlParams();
-          store.urlParams.url = window.location.href;
-        }
         document.getElementById("payloadPanel").textContent = store
           ? JSON.stringify(store.getPayload().urlParams, null, 2)
           : "(SurfaceTagStore not initialized)";

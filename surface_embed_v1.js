@@ -350,6 +350,8 @@
     "ttclid"
   ];
   var MAX_VALUE_LENGTH = 256;
+  var MAX_ENCODED_COOKIE_BYTES = 3500;
+  var FALLBACK_VALUE_LENGTH = 64;
   function isInternalNavigation() {
     if (!document.referrer) return false;
     try {
@@ -374,11 +376,27 @@
       referrer: document.referrer.slice(0, MAX_VALUE_LENGTH),
       at: (/* @__PURE__ */ new Date()).toISOString()
     };
-    setCookie(FIRST_TOUCH_COOKIE_NAME, JSON.stringify(record), {
+    let serialized = JSON.stringify(record);
+    if (encodeURIComponent(serialized).length > MAX_ENCODED_COOKIE_BYTES) {
+      record.url = "";
+      record.referrer = "";
+      Object.keys(record.params).forEach((key) => {
+        record.params[key] = record.params[key].slice(0, FALLBACK_VALUE_LENGTH);
+      });
+      serialized = JSON.stringify(record);
+      if (encodeURIComponent(serialized).length > MAX_ENCODED_COOKIE_BYTES) return;
+    }
+    const options = {
       maxAge: FIRST_TOUCH_COOKIE_MAX_AGE,
-      sameSite: "lax",
+      sameSite: "lax"
+    };
+    setCookie(FIRST_TOUCH_COOKIE_NAME, serialized, {
+      ...options,
       domain: getJourneyCookieDomain()
     });
+    if (!getCookie(FIRST_TOUCH_COOKIE_NAME)) {
+      setCookie(FIRST_TOUCH_COOKIE_NAME, serialized, options);
+    }
   }
   function getFirstTouchParams() {
     const raw = getCookie(FIRST_TOUCH_COOKIE_NAME);
@@ -574,8 +592,6 @@
     sendPayloadToIframes(type) {
       const iframes = document.querySelectorAll("iframe");
       if (iframes.length === 0) return;
-      this.urlParams = getUrlParams();
-      this.urlParams.url = window.location.href;
       this.log.info({ message: "Updating iframe params", response: { type, iframeCount: iframes.length } });
       iframes.forEach((iframe) => this.notifyIframe(iframe, type));
     }
@@ -595,6 +611,8 @@
       return getUrlParams();
     }
     getPayload() {
+      this.urlParams = getUrlParams();
+      this.urlParams.url = window.location.href;
       return {
         windowUrl: this.windowUrl,
         referrer: this.referrer,

@@ -34,6 +34,10 @@ const QUALIFYING_PARAMS = [
 ] as const;
 
 const MAX_VALUE_LENGTH = 256;
+// Browsers cap a cookie (name + encoded value + attributes) at ~4093 bytes;
+// stay well under so the write is never silently rejected.
+const MAX_ENCODED_COOKIE_BYTES = 3500;
+const FALLBACK_VALUE_LENGTH = 64;
 
 interface FirstTouchRecord {
   params: Record<string, string>;
@@ -80,11 +84,34 @@ export function captureFirstTouch(): void {
     at: new Date().toISOString(),
   };
 
-  setCookie(FIRST_TOUCH_COOKIE_NAME, JSON.stringify(record), {
+  let serialized = JSON.stringify(record);
+  if (encodeURIComponent(serialized).length > MAX_ENCODED_COOKIE_BYTES) {
+    // Degrade rather than let the browser reject the oversized cookie:
+    // attribution params matter more than the diagnostic url/referrer.
+    record.url = "";
+    record.referrer = "";
+    Object.keys(record.params).forEach((key) => {
+      record.params[key] = record.params[key].slice(0, FALLBACK_VALUE_LENGTH);
+    });
+    serialized = JSON.stringify(record);
+    if (encodeURIComponent(serialized).length > MAX_ENCODED_COOKIE_BYTES) return;
+  }
+
+  const options = {
     maxAge: FIRST_TOUCH_COOKIE_MAX_AGE,
-    sameSite: "lax",
+    sameSite: "lax" as const,
+  };
+
+  setCookie(FIRST_TOUCH_COOKIE_NAME, serialized, {
+    ...options,
     domain: getJourneyCookieDomain(),
   });
+
+  // Public-suffix hosts (e.g. *.github.io) and IP hosts reject a base-domain
+  // attribute outright; retry host-only so the cookie still lands.
+  if (!getCookie(FIRST_TOUCH_COOKIE_NAME)) {
+    setCookie(FIRST_TOUCH_COOKIE_NAME, serialized, options);
+  }
 }
 
 export function getFirstTouchParams(): Record<string, string> {
