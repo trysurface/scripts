@@ -6,6 +6,7 @@ import { getUrlParams } from "../utils/url";
 import { onRouteChange } from "../utils/route-observer";
 import { getLeadDataWithTTL, isIdentifyInProgress } from "../lead/identify";
 import { initializeMessageListener } from "./message-listener";
+import { captureFirstTouch, getFirstTouchParams } from "./first-touch";
 import {
   initializeUserJourneyTracking,
   updateUserJourneyOnRouteChange,
@@ -48,6 +49,10 @@ export class SurfaceStore {
     this.log = createLogger("Surface Store");
 
     initializeMessageListener(this);
+
+    if (!this.isCurrentOriginSurfaceDomain()) {
+      captureFirstTouch();
+    }
 
     if (
       (this.cachedIdentifyData || !isIdentifyInProgress()) &&
@@ -126,7 +131,8 @@ export class SurfaceStore {
           : this.cookies,
       origin: this.origin,
       questionIds: this.partialFilledData,
-      urlParams: this.urlParams,
+      // First-touch attribution fills gaps; current-page params always win.
+      urlParams: { ...getFirstTouchParams(), ...this.urlParams },
       surfaceLeadData: getLeadDataWithTTL(),
       userJourneyId: this.userJourneyId,
     };

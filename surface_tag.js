@@ -37,6 +37,8 @@
   var LEAD_DATA_TTL = 10 * 60 * 1e3;
   var JOURNEY_COOKIE_MAX_AGE = 5184e3;
   var RECENT_VISIT_COOKIE_MAX_AGE = 86400;
+  var FIRST_TOUCH_COOKIE_NAME = "surface_first_touch";
+  var FIRST_TOUCH_COOKIE_MAX_AGE = 2592e3;
 
   // src/utils/hash.ts
   async function getHash(input) {
@@ -325,6 +327,70 @@
     return getCookie(SURFACE_USER_JOURNEY_COOKIE_NAME);
   }
 
+  // src/store/first-touch.ts
+  var ATTRIBUTION_PARAMS = [
+    "utm_source",
+    "utm_medium",
+    "utm_campaign",
+    "utm_term",
+    "utm_content",
+    "gclid",
+    "fbclid",
+    "li_fat_id",
+    "msclkid",
+    "ttclid"
+  ];
+  var QUALIFYING_PARAMS = [
+    "utm_source",
+    "utm_medium",
+    "gclid",
+    "fbclid",
+    "li_fat_id",
+    "msclkid",
+    "ttclid"
+  ];
+  var MAX_VALUE_LENGTH = 256;
+  function isInternalNavigation() {
+    if (!document.referrer) return false;
+    try {
+      return new URL(document.referrer).origin === window.location.origin;
+    } catch {
+      return false;
+    }
+  }
+  function captureFirstTouch() {
+    if (getCookie(FIRST_TOUCH_COOKIE_NAME)) return;
+    if (isInternalNavigation()) return;
+    const urlParams = getUrlParams();
+    if (!QUALIFYING_PARAMS.some((key) => urlParams[key])) return;
+    const params = {};
+    ATTRIBUTION_PARAMS.forEach((key) => {
+      const value = urlParams[key];
+      if (value) params[key] = value.slice(0, MAX_VALUE_LENGTH);
+    });
+    const record = {
+      params,
+      url: window.location.href.slice(0, MAX_VALUE_LENGTH),
+      referrer: document.referrer.slice(0, MAX_VALUE_LENGTH),
+      at: (/* @__PURE__ */ new Date()).toISOString()
+    };
+    setCookie(FIRST_TOUCH_COOKIE_NAME, JSON.stringify(record), {
+      maxAge: FIRST_TOUCH_COOKIE_MAX_AGE,
+      sameSite: "lax",
+      domain: getJourneyCookieDomain()
+    });
+  }
+  function getFirstTouchParams() {
+    const raw = getCookie(FIRST_TOUCH_COOKIE_NAME);
+    if (!raw) return {};
+    try {
+      const record = JSON.parse(raw);
+      return record?.params && typeof record.params === "object" ? record.params : {};
+    } catch {
+      return {};
+    }
+  }
+
   // src/store/user-journey.ts
   function initializeUserJourneyTracking(environmentId3, log2, getJourneyId, setJourneyId) {
     try {
@@ -470,6 +536,9 @@
       this.environmentId = environmentId3;
       this.log = createLogger("Surface Store");
       initializeMessageListener(this);
+      if (!this.isCurrentOriginSurfaceDomain()) {
+        captureFirstTouch();
+      }
       if ((this.cachedIdentifyData || !isIdentifyInProgress()) && !this.isCurrentOriginSurfaceDomain()) {
         initializeUserJourneyTracking(
           this.environmentId,
@@ -532,7 +601,8 @@
         cookies: Object.keys(this.cookies).length === 0 ? parseCookies() : this.cookies,
         origin: this.origin,
         questionIds: this.partialFilledData,
-        urlParams: this.urlParams,
+        // First-touch attribution fills gaps; current-page params always win.
+        urlParams: { ...getFirstTouchParams(), ...this.urlParams },
         surfaceLeadData: getLeadDataWithTTL(),
         userJourneyId: this.userJourneyId
       };
