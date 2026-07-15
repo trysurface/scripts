@@ -72,16 +72,17 @@ const ensureGtag = (measurementId: string) => {
     el.src = `https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(measurementId)}`;
     document.head.appendChild(el);
     win.gtag("js", new Date());
-    win.gtag("config", measurementId);
   }
+  // Register our measurement ID even when the page already runs gtag — without
+  // this the event routes only to the page's own GA4 properties. Idempotent;
+  // send_page_view off so registering never counts a phantom page view.
+  win.gtag("config", measurementId, { send_page_view: false });
 };
 
 const ensureLintrk = (partnerId: string) => {
   const win = w();
   if (!win.lintrk) {
     win._linkedin_partner_id = partnerId;
-    win._linkedin_data_partner_ids = win._linkedin_data_partner_ids || [];
-    win._linkedin_data_partner_ids.push(partnerId);
     const l: any = (win.lintrk = function (a: any, b: any) {
       l.q.push([a, b]);
     });
@@ -90,6 +91,13 @@ const ensureLintrk = (partnerId: string) => {
     el.async = true;
     el.src = "https://snap.licdn.com/li.lms-analytics/insight.min.js";
     document.head.appendChild(el);
+  }
+  // Register the partner even when the customer's Insight Tag already runs —
+  // the tag reads _linkedin_data_partner_ids dynamically and supports multiple
+  // partners; without this the track call goes to the page's own partner only.
+  win._linkedin_data_partner_ids = win._linkedin_data_partner_ids || [];
+  if (!win._linkedin_data_partner_ids.includes(partnerId)) {
+    win._linkedin_data_partner_ids.push(partnerId);
   }
 };
 
@@ -116,7 +124,12 @@ export const fireConversion = (
         return true;
       case "ga4":
         ensureGtag(event.measurement_id);
-        win.gtag("event", event.event_name, { transaction_id: ctx.response_id });
+        // send_to pins the event to our property when the page's gtag also has
+        // its own measurement IDs configured.
+        win.gtag("event", event.event_name, {
+          transaction_id: ctx.response_id,
+          send_to: event.measurement_id,
+        });
         return true;
       case "linkedin":
         ensureLintrk(event.partner_id);

@@ -23,6 +23,7 @@ interface ConversionMessage {
   li_fat_id?: string;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const isConversionMessage = (data: any): data is ConversionMessage =>
   !!data &&
   data.type === CONVERSION_MESSAGE_TYPE &&
@@ -39,8 +40,9 @@ export const handleConversionMessage = (event: MessageEvent, log: Logger): void 
   const data = event.data;
   if (!isConversionMessage(data)) return;
 
-  // Ack first — even if firing is blocked by an ad blocker, the iframe shouldn't
-  // double-fire in-frame. The pixel firing itself is best-effort.
+  // Ack unconditionally (after the best-effort fire below) — even when firing
+  // is blocked by an ad blocker, the iframe shouldn't double-fire in-frame.
+  // fireConversion swallows all errors, so the ack is always reached.
   const ack = () => {
     try {
       (event.source as WindowProxy | null)?.postMessage(

@@ -323,15 +323,13 @@
       el.src = `https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(measurementId)}`;
       document.head.appendChild(el);
       win.gtag("js", /* @__PURE__ */ new Date());
-      win.gtag("config", measurementId);
     }
+    win.gtag("config", measurementId, { send_page_view: false });
   };
   var ensureLintrk = (partnerId) => {
     const win = w();
     if (!win.lintrk) {
       win._linkedin_partner_id = partnerId;
-      win._linkedin_data_partner_ids = win._linkedin_data_partner_ids || [];
-      win._linkedin_data_partner_ids.push(partnerId);
       const l = win.lintrk = function(a, b) {
         l.q.push([a, b]);
       };
@@ -340,6 +338,10 @@
       el.async = true;
       el.src = "https://snap.licdn.com/li.lms-analytics/insight.min.js";
       document.head.appendChild(el);
+    }
+    win._linkedin_data_partner_ids = win._linkedin_data_partner_ids || [];
+    if (!win._linkedin_data_partner_ids.includes(partnerId)) {
+      win._linkedin_data_partner_ids.push(partnerId);
     }
   };
   var fireConversion = (provider, event, ctx) => {
@@ -360,7 +362,10 @@
           return true;
         case "ga4":
           ensureGtag(event.measurement_id);
-          win.gtag("event", event.event_name, { transaction_id: ctx.response_id });
+          win.gtag("event", event.event_name, {
+            transaction_id: ctx.response_id,
+            send_to: event.measurement_id
+          });
           return true;
         case "linkedin":
           ensureLintrk(event.partner_id);
