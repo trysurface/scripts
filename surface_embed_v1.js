@@ -276,10 +276,150 @@
     };
   }
 
+  // src/conversions/providers.ts
+  var w = () => window;
+  var ensureTwq = (pixelId) => {
+    const win = w();
+    if (!win.twq) {
+      const s = win.twq = function(...args) {
+        s.exe ? s.exe.apply(s, args) : s.queue.push(args);
+      };
+      s.version = "1.1";
+      s.queue = [];
+      const el = document.createElement("script");
+      el.async = true;
+      el.src = "https://static.ads-twitter.com/uwt.js";
+      document.head.appendChild(el);
+    }
+    win.twq("config", pixelId);
+  };
+  var ensureFbq = (pixelId) => {
+    const win = w();
+    if (!win.fbq) {
+      const n = win.fbq = function(...args) {
+        n.callMethod ? n.callMethod.apply(n, args) : n.queue.push(args);
+      };
+      if (!win._fbq) win._fbq = n;
+      n.push = n;
+      n.loaded = true;
+      n.version = "2.0";
+      n.queue = [];
+      const el = document.createElement("script");
+      el.async = true;
+      el.src = "https://connect.facebook.net/en_US/fbevents.js";
+      document.head.appendChild(el);
+    }
+    win.fbq("init", pixelId);
+  };
+  var ensureGtag = (measurementId) => {
+    const win = w();
+    if (!win.gtag) {
+      win.dataLayer = win.dataLayer || [];
+      win.gtag = function(...args) {
+        win.dataLayer.push(args);
+      };
+      const el = document.createElement("script");
+      el.async = true;
+      el.src = `https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(measurementId)}`;
+      document.head.appendChild(el);
+      win.gtag("js", /* @__PURE__ */ new Date());
+      win.gtag("config", measurementId);
+    }
+  };
+  var ensureLintrk = (partnerId) => {
+    const win = w();
+    if (!win.lintrk) {
+      win._linkedin_partner_id = partnerId;
+      win._linkedin_data_partner_ids = win._linkedin_data_partner_ids || [];
+      win._linkedin_data_partner_ids.push(partnerId);
+      const l = win.lintrk = function(a, b) {
+        l.q.push([a, b]);
+      };
+      l.q = [];
+      const el = document.createElement("script");
+      el.async = true;
+      el.src = "https://snap.licdn.com/li.lms-analytics/insight.min.js";
+      document.head.appendChild(el);
+    }
+  };
+  var fireConversion = (provider, event, ctx) => {
+    const win = w();
+    try {
+      switch (provider) {
+        case "x":
+          ensureTwq(event.pixel_id);
+          win.twq("event", event.event_id, {
+            conversion_id: ctx.response_id,
+            ...ctx.twclid ? { twclid: ctx.twclid } : {},
+            ...ctx.email ? { email_address: ctx.email } : {}
+          });
+          return true;
+        case "meta":
+          ensureFbq(event.pixel_id);
+          win.fbq("track", event.event_name, {}, { eventID: ctx.response_id });
+          return true;
+        case "ga4":
+          ensureGtag(event.measurement_id);
+          win.gtag("event", event.event_name, { transaction_id: ctx.response_id });
+          return true;
+        case "linkedin":
+          ensureLintrk(event.partner_id);
+          win.lintrk("track", { conversion_id: event.conversion_id });
+          return true;
+        default:
+          return false;
+      }
+    } catch {
+      return false;
+    }
+  };
+
+  // src/conversions/conversion-listener.ts
+  var CONVERSION_MESSAGE_TYPE = "surface:conversion";
+  var CONVERSION_ACK_TYPE = "surface:conversion:ack";
+  var VALID_PROVIDERS = ["x", "meta", "ga4", "linkedin"];
+  var firedIds = /* @__PURE__ */ new Set();
+  var isConversionMessage = (data) => !!data && data.type === CONVERSION_MESSAGE_TYPE && typeof data.id === "string" && VALID_PROVIDERS.includes(data.provider) && !!data.event && typeof data.response_id === "string";
+  var handleConversionMessage = (event, log2) => {
+    const data = event.data;
+    if (!isConversionMessage(data)) return;
+    const ack = () => {
+      try {
+        event.source?.postMessage(
+          { type: CONVERSION_ACK_TYPE, id: data.id },
+          event.origin
+        );
+      } catch {
+      }
+    };
+    if (firedIds.has(data.id)) {
+      ack();
+      return;
+    }
+    firedIds.add(data.id);
+    const fired = fireConversion(data.provider, data.event, {
+      response_id: data.response_id,
+      email: data.email,
+      twclid: data.twclid,
+      fbclid: data.fbclid,
+      gclid: data.gclid,
+      li_fat_id: data.li_fat_id
+    });
+    log2.info({
+      message: "Conversion handled",
+      response: { provider: data.provider, responseId: data.response_id, fired }
+    });
+    ack();
+  };
+
   // src/store/message-listener.ts
   function initializeMessageListener(store) {
     const handleMessage = (event) => {
       if (!event.origin || !SURFACE_DOMAINS.includes(event.origin)) {
+        return;
+      }
+      if (event.data?.type === "surface:conversion") {
+        handleConversionMessage(event, store.log);
         return;
       }
       if (event.data.type === "SEND_DATA") {
@@ -1960,8 +2100,8 @@
     }
   }
   async function fetchOpenTriggersMap(environmentId3) {
-    const w2 = window;
-    if (w2.__SURFACE_OPEN_TRIGGERS_MAP) return w2.__SURFACE_OPEN_TRIGGERS_MAP;
+    const w3 = window;
+    if (w3.__SURFACE_OPEN_TRIGGERS_MAP) return w3.__SURFACE_OPEN_TRIGGERS_MAP;
     const sessionKey = SESSION_PREFIX + environmentId3;
     try {
       const cached2 = sessionStorage.getItem(sessionKey);
@@ -1973,7 +2113,7 @@
       }
     } catch {
     }
-    const base = w2.__SURFACE_OPEN_TRIGGERS_BASE || EXTERNAL_FORM_API;
+    const base = w3.__SURFACE_OPEN_TRIGGERS_BASE || EXTERNAL_FORM_API;
     const response = await fetch(`${base}/environments/${encodeURIComponent(environmentId3)}/open-triggers`);
     if (!response.ok) return null;
     const json = await response.json();
@@ -2220,14 +2360,14 @@
   var environmentId2 = getSiteIdFromScript(scriptTag);
   setEnvironmentId(environmentId2);
   var SurfaceTagStore = new SurfaceStore(environmentId2);
-  var w = window;
-  w.SurfaceEmbed = SurfaceEmbed;
-  w.SurfaceExternalForm = SurfaceExternalForm;
-  w.SurfaceTagStore = SurfaceTagStore;
-  w.SurfaceIdentifyLead = identifyLead;
-  w.SurfaceSetLeadDataWithTTL = setLeadDataWithTTL;
-  w.SurfaceGetLeadDataWithTTL = getLeadDataWithTTL;
-  w.SurfaceGetSiteIdFromScript = getSiteIdFromScript;
+  var w2 = window;
+  w2.SurfaceEmbed = SurfaceEmbed;
+  w2.SurfaceExternalForm = SurfaceExternalForm;
+  w2.SurfaceTagStore = SurfaceTagStore;
+  w2.SurfaceIdentifyLead = identifyLead;
+  w2.SurfaceSetLeadDataWithTTL = setLeadDataWithTTL;
+  w2.SurfaceGetLeadDataWithTTL = getLeadDataWithTTL;
+  w2.SurfaceGetSiteIdFromScript = getSiteIdFromScript;
   void resolveOpenTriggersOnLoad(environmentId2);
   initReview();
 })();
