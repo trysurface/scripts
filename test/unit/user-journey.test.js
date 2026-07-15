@@ -133,6 +133,10 @@ test("sendBeacon serializes a page-view referrer unchanged", async () => {
       },
     },
   });
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => {
+    assert.fail("sendBeacon path should have been taken");
+  };
 
   try {
     const { trackToRedis } = await loadUserJourney();
@@ -156,6 +160,7 @@ test("sendBeacon serializes a page-view referrer unchanged", async () => {
     const event = JSON.parse(await serializedPayload);
     assert.equal(event.data.payload.referrer, "https://www.google.com/");
   } finally {
+    globalThis.fetch = originalFetch;
     restore();
   }
 });

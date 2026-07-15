@@ -37,7 +37,7 @@ function createPageViewEvent(
       payload: {
         url,
         timestamp: new Date().toISOString(),
-        // Preserve the browser's native value (including an empty direct visit).
+        // Native referrer stays fixed to the hard-navigation source across SPA routes.
         referrer: getBrowserReferrer(),
       },
     },

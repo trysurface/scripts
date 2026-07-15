@@ -347,7 +347,7 @@
         payload: {
           url,
           timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-          // Preserve the browser's native value (including an empty direct visit).
+          // Native referrer stays fixed to the hard-navigation source across SPA routes.
           referrer: getBrowserReferrer()
         }
       },
