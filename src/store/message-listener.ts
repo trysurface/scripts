@@ -1,10 +1,16 @@
 import { SURFACE_DOMAINS } from "../constants";
+import { handleConversionMessage } from "../conversions/conversion-listener";
 import { identifyLead, getEnvironmentId } from "../lead/identify";
 import type { SurfaceStore } from "./store";
 
 export function initializeMessageListener(store: SurfaceStore): void {
   const handleMessage = (event: MessageEvent) => {
     if (!event.origin || !(SURFACE_DOMAINS as readonly string[]).includes(event.origin)) {
+      return;
+    }
+
+    if (event.data?.type === "surface:conversion") {
+      handleConversionMessage(event, store.log);
       return;
     }
 
