@@ -11,7 +11,42 @@ import {
   refreshJourneyCookie,
   getExistingJourneyId,
 } from "./journey-cookies";
-import type { Logger, JourneyTrackEvent } from "../types";
+import type { LeadData, Logger, JourneyTrackEvent } from "../types";
+
+function getBrowserReferrer(): string {
+  return typeof document === "undefined" ? "" : document.referrer || "";
+}
+
+function getSurfaceLeadDataSafely(): LeadData | null {
+  try {
+    if (typeof localStorage === "undefined") return null;
+
+    return getLeadDataWithTTL();
+  } catch {
+    return null;
+  }
+}
+
+function createPageViewEvent(
+  url: string,
+  environmentId: string | null
+): JourneyTrackEvent {
+  return {
+    data: {
+      type: "page_view",
+      payload: {
+        url,
+        timestamp: new Date().toISOString(),
+        // Native referrer stays fixed to the hard-navigation source across SPA routes.
+        referrer: getBrowserReferrer(),
+      },
+    },
+    metadata: {
+      ...(environmentId ? { environmentId } : {}),
+      ...(getSurfaceLeadDataSafely() ?? {}),
+    },
+  };
+}
 
 export function initializeUserJourneyTracking(
   environmentId: string | null,
@@ -20,6 +55,8 @@ export function initializeUserJourneyTracking(
   setJourneyId: (id: string | null) => void
 ): void {
   try {
+    if (typeof window === "undefined") return;
+
     const existingId = getExistingJourneyId();
     setJourneyId(existingId);
     log.info({ message: "Existing journey ID", response: { id: existingId || "none" } });
@@ -32,23 +69,8 @@ export function initializeUserJourneyTracking(
       return;
     }
 
-    const surfaceLeadData = getLeadDataWithTTL();
-
     trackToRedis(
-      {
-        data: {
-          type: "page_view",
-          payload: {
-            url: currentUrl,
-            timestamp: new Date().toISOString(),
-            referrer: document.referrer || "",
-          },
-        },
-        metadata: {
-          ...(environmentId ? { environmentId } : {}),
-          ...(surfaceLeadData ?? {}),
-        },
-      },
+      createPageViewEvent(currentUrl, environmentId),
       log,
       getJourneyId,
       setJourneyId
@@ -79,7 +101,7 @@ export async function trackToRedis(
 
     log.info({ message: "Tracking to Redis", response: payload });
 
-    if (journeyId && navigator.sendBeacon) {
+    if (journeyId && typeof navigator !== "undefined" && navigator.sendBeacon) {
       const blob = new Blob([JSON.stringify(payload)], {
         type: "application/json",
       });
@@ -126,6 +148,8 @@ export function updateUserJourneyOnRouteChange(
   setJourneyId: (id: string | null) => void
 ): void {
   try {
+    if (typeof window === "undefined") return;
+
     const currentUrl = newUrl || window.location.href;
     const recentVisit = getCookie(SURFACE_USER_JOURNEY_RECENT_VISIT_COOKIE_NAME);
 
@@ -134,22 +158,8 @@ export function updateUserJourneyOnRouteChange(
       return;
     }
 
-    const surfaceLeadData = getLeadDataWithTTL();
-
     trackToRedis(
-      {
-        data: {
-          type: "page_view",
-          payload: {
-            url: currentUrl,
-            timestamp: new Date().toISOString(),
-          },
-        },
-        metadata: {
-          ...(environmentId ? { environmentId } : {}),
-          ...(surfaceLeadData ?? {}),
-        },
-      },
+      createPageViewEvent(currentUrl, environmentId),
       log,
       getJourneyId,
       setJourneyId

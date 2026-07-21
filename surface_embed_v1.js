@@ -202,6 +202,7 @@
   // src/utils/cookies.ts
   function parseCookies() {
     const cookies = {};
+    if (typeof document === "undefined") return cookies;
     document.cookie.split(";").forEach((cookie) => {
       const trimmed = cookie.trim();
       const eqIndex = trimmed.indexOf("=");
@@ -218,6 +219,7 @@
     return cookies;
   }
   function setCookie(name, value, options = {}) {
+    if (typeof document === "undefined") return;
     const encoded = encodeURIComponent(value);
     const path = options.path || "/";
     const maxAge = options.maxAge ?? 604800;
@@ -230,6 +232,7 @@
     return cookies[name] || null;
   }
   function deleteCookie(name, options = {}) {
+    if (typeof document === "undefined") return;
     const domainAttr = options.domain ? `; domain=${options.domain}` : "";
     document.cookie = `${name}=; path=/; max-age=0; samesite=lax${domainAttr}`;
   }
@@ -471,8 +474,37 @@
   }
 
   // src/store/user-journey.ts
+  function getBrowserReferrer() {
+    return typeof document === "undefined" ? "" : document.referrer || "";
+  }
+  function getSurfaceLeadDataSafely() {
+    try {
+      if (typeof localStorage === "undefined") return null;
+      return getLeadDataWithTTL();
+    } catch {
+      return null;
+    }
+  }
+  function createPageViewEvent(url, environmentId3) {
+    return {
+      data: {
+        type: "page_view",
+        payload: {
+          url,
+          timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+          // Native referrer stays fixed to the hard-navigation source across SPA routes.
+          referrer: getBrowserReferrer()
+        }
+      },
+      metadata: {
+        ...environmentId3 ? { environmentId: environmentId3 } : {},
+        ...getSurfaceLeadDataSafely() ?? {}
+      }
+    };
+  }
   function initializeUserJourneyTracking(environmentId3, log2, getJourneyId, setJourneyId) {
     try {
+      if (typeof window === "undefined") return;
       const existingId = getExistingJourneyId();
       setJourneyId(existingId);
       log2.info({ message: "Existing journey ID", response: { id: existingId || "none" } });
@@ -482,22 +514,8 @@
         log2.info({ message: "Skipping duplicate page view (same as recent visit)" });
         return;
       }
-      const surfaceLeadData = getLeadDataWithTTL();
       trackToRedis(
-        {
-          data: {
-            type: "page_view",
-            payload: {
-              url: currentUrl2,
-              timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-              referrer: document.referrer || ""
-            }
-          },
-          metadata: {
-            ...environmentId3 ? { environmentId: environmentId3 } : {},
-            ...surfaceLeadData ?? {}
-          }
-        },
+        createPageViewEvent(currentUrl2, environmentId3),
         log2,
         getJourneyId,
         setJourneyId
@@ -518,7 +536,7 @@
       const payload = { ...event };
       if (journeyId) payload.id = journeyId;
       log2.info({ message: "Tracking to Redis", response: payload });
-      if (journeyId && navigator.sendBeacon) {
+      if (journeyId && typeof navigator !== "undefined" && navigator.sendBeacon) {
         const blob = new Blob([JSON.stringify(payload)], {
           type: "application/json"
         });
@@ -553,27 +571,15 @@
   }
   function updateUserJourneyOnRouteChange(environmentId3, newUrl, log2, getJourneyId, setJourneyId) {
     try {
+      if (typeof window === "undefined") return;
       const currentUrl2 = newUrl || window.location.href;
       const recentVisit = getCookie(SURFACE_USER_JOURNEY_RECENT_VISIT_COOKIE_NAME);
       if (recentVisit === currentUrl2) {
         log2.info({ message: "Skipping duplicate page view on route change" });
         return;
       }
-      const surfaceLeadData = getLeadDataWithTTL();
       trackToRedis(
-        {
-          data: {
-            type: "page_view",
-            payload: {
-              url: currentUrl2,
-              timestamp: (/* @__PURE__ */ new Date()).toISOString()
-            }
-          },
-          metadata: {
-            ...environmentId3 ? { environmentId: environmentId3 } : {},
-            ...surfaceLeadData ?? {}
-          }
-        },
+        createPageViewEvent(currentUrl2, environmentId3),
         log2,
         getJourneyId,
         setJourneyId

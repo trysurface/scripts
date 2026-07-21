@@ -3,6 +3,8 @@ import type { CookieOptions } from "../types";
 export function parseCookies(): Record<string, string> {
   const cookies: Record<string, string> = {};
 
+  if (typeof document === "undefined") return cookies;
+
   document.cookie.split(";").forEach((cookie) => {
     const trimmed = cookie.trim();
     const eqIndex = trimmed.indexOf("=");
@@ -27,6 +29,8 @@ export function setCookie(
   value: string,
   options: CookieOptions = {}
 ): void {
+  if (typeof document === "undefined") return;
+
   const encoded = encodeURIComponent(value);
   const path = options.path || "/";
   const maxAge = options.maxAge ?? 604800;
@@ -44,6 +48,8 @@ export function deleteCookie(
   name: string,
   options: Pick<CookieOptions, "domain"> = {}
 ): void {
+  if (typeof document === "undefined") return;
+
   const domainAttr = options.domain ? `; domain=${options.domain}` : "";
   document.cookie = `${name}=; path=/; max-age=0; samesite=lax${domainAttr}`;
 }
