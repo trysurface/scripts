@@ -14,6 +14,20 @@
         const params = new URLSearchParams(window.location.search);
         if (params.has("noTag")) return;
         const delay = Number(params.get("tagDelay") ?? 0);
+        // Wrap notifyIframe the instant index.ts exposes the store — the tag
+        // defers its initial push by one task, so hooking on assignment (not
+        // script onload, which fires later) makes that push observable here.
+        Object.defineProperty(window, "SurfaceTagStore", {
+          configurable: true,
+          set(value) {
+            delete window.SurfaceTagStore;
+            window.SurfaceTagStore = value;
+            if (window.hookTagSentEvents) window.hookTagSentEvents();
+          },
+          get() {
+            return undefined;
+          },
+        });
         setTimeout(() => {
           const s = document.createElement("script");
           s.src = "../surface_tag.js?t=" + Date.now();
@@ -21,7 +35,6 @@
             "site-id",
             params.get("siteId") || "cllo318mt0003mb08hnp0f5zy"
           );
-          s.onload = () => window.hookTagSentEvents && window.hookTagSentEvents();
           document.head.appendChild(s);
           const el = document.getElementById("tagStatus");
           if (el) el.textContent = `injected after ${delay}ms`;

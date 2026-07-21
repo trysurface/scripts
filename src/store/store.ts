@@ -4,7 +4,7 @@ import { createLogger } from "../utils/logger";
 import { parseCookies } from "../utils/cookies";
 import { getUrlParams } from "../utils/url";
 import { onRouteChange } from "../utils/route-observer";
-import { getLeadDataWithTTL, isIdentifyInProgress } from "../lead/identify";
+import { identifyLead, getLeadDataWithTTL, isIdentifyInProgress } from "../lead/identify";
 import { initializeMessageListener } from "./message-listener";
 import {
   initializeUserJourneyTracking,
@@ -57,24 +57,47 @@ export class SurfaceStore {
         this.environmentId,
         this.log,
         () => this.userJourneyId,
-        (id) => { this.userJourneyId = id; }
+        (id) => {
+          const resolved = !!id && id !== this.userJourneyId;
+          this.userJourneyId = id;
+          // The journey id resolves async — iframes that already received a
+          // STORE_UPDATE need a refresh to stitch this pageview.
+          if (resolved) this.sendPayloadToIframes("STORE_UPDATE");
+        }
       );
       this.setupRouteChangeDetection();
     }
 
     // Direct-iframe embeds may have posted SEND_DATA before this script was
-    // listening; push once so they don't depend on that request being heard.
-    // LEAD_DATA_UPDATE only from cache — identify stays SEND_DATA-driven so the
-    // tag never creates a lead on pages where no form asked for one.
+    // listening. A Surface iframe already in the DOM implies a form whose
+    // request we may have missed, so drive the same path SEND_DATA would
+    // have: push the store now, then identify and push lead data. Pages
+    // without a Surface iframe stay quiet — the tag never creates a lead
+    // on pages where no form asked for one.
     const pushInitialData = () => {
+      if (!this.hasSurfaceIframe()) return;
       this.sendPayloadToIframes("STORE_UPDATE");
-      if (getLeadDataWithTTL()) this.sendPayloadToIframes("LEAD_DATA_UPDATE");
+      if (this.environmentId) {
+        identifyLead(this.environmentId)
+          .then(() => this.sendPayloadToIframes("LEAD_DATA_UPDATE"))
+          .catch((e) => this.log.error({ message: "Initial identify failed", error: e }));
+      } else if (getLeadDataWithTTL()) {
+        this.sendPayloadToIframes("LEAD_DATA_UPDATE");
+      }
     };
     if (document.readyState === "loading") {
       document.addEventListener("DOMContentLoaded", pushInitialData);
     } else {
-      pushInitialData();
+      // Defer past the current task so index.ts exposes the store first —
+      // lets pages and tests observe the push by wrapping notifyIframe.
+      setTimeout(pushInitialData, 0);
     }
+  }
+
+  private hasSurfaceIframe(): boolean {
+    return Array.from(document.querySelectorAll("iframe")).some((iframe) =>
+      SURFACE_DOMAINS.some((domain) => iframe.src.includes(domain))
+    );
   }
 
   private isCurrentOriginSurfaceDomain(): boolean {
