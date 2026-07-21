@@ -441,14 +441,8 @@
         store.clearUserJourney();
       }
     };
-    if (typeof document === "undefined") return;
-    if (document.readyState === "loading") {
-      document.addEventListener("DOMContentLoaded", () => {
-        window.addEventListener("message", handleMessage);
-      });
-    } else {
-      window.addEventListener("message", handleMessage);
-    }
+    if (typeof window === "undefined") return;
+    window.addEventListener("message", handleMessage);
   }
 
   // src/store/journey-cookies.ts
@@ -625,6 +619,15 @@
           }
         );
         this.setupRouteChangeDetection();
+      }
+      const pushInitialData = () => {
+        this.sendPayloadToIframes("STORE_UPDATE");
+        if (getLeadDataWithTTL()) this.sendPayloadToIframes("LEAD_DATA_UPDATE");
+      };
+      if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", pushInitialData);
+      } else {
+        pushInitialData();
       }
     }
     isCurrentOriginSurfaceDomain() {

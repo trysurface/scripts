@@ -61,6 +61,20 @@ export class SurfaceStore {
       );
       this.setupRouteChangeDetection();
     }
+
+    // Direct-iframe embeds may have posted SEND_DATA before this script was
+    // listening; push once so they don't depend on that request being heard.
+    // LEAD_DATA_UPDATE only from cache — identify stays SEND_DATA-driven so the
+    // tag never creates a lead on pages where no form asked for one.
+    const pushInitialData = () => {
+      this.sendPayloadToIframes("STORE_UPDATE");
+      if (getLeadDataWithTTL()) this.sendPayloadToIframes("LEAD_DATA_UPDATE");
+    };
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", pushInitialData);
+    } else {
+      pushInitialData();
+    }
   }
 
   private isCurrentOriginSurfaceDomain(): boolean {
