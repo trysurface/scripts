@@ -114,7 +114,13 @@ export class SurfaceStore {
         newUrl,
         this.log,
         () => this.userJourneyId,
-        (id) => { this.userJourneyId = id; }
+        (id) => {
+          const resolved = !!id && id !== this.userJourneyId;
+          this.userJourneyId = id;
+          // A journey created/refreshed during the route change resolves after
+          // the push below — refresh iframes so they get the new id.
+          if (resolved) this.sendPayloadToIframes("STORE_UPDATE");
+        }
       );
 
       this.sendPayloadToIframes("STORE_UPDATE");

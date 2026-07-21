@@ -655,7 +655,9 @@
           this.log,
           () => this.userJourneyId,
           (id) => {
+            const resolved = !!id && id !== this.userJourneyId;
             this.userJourneyId = id;
+            if (resolved) this.sendPayloadToIframes("STORE_UPDATE");
           }
         );
         this.sendPayloadToIframes("STORE_UPDATE");
