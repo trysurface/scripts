@@ -16,7 +16,7 @@
         const delay = Number(params.get("tagDelay") ?? 0);
         setTimeout(() => {
           const s = document.createElement("script");
-          s.src = "../surface_tag.js";
+          s.src = "../surface_tag.js?t=" + Date.now();
           s.setAttribute(
             "site-id",
             params.get("siteId") || "cllo318mt0003mb08hnp0f5zy"
