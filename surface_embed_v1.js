@@ -444,14 +444,8 @@
         store.clearUserJourney();
       }
     };
-    if (typeof document === "undefined") return;
-    if (document.readyState === "loading") {
-      document.addEventListener("DOMContentLoaded", () => {
-        window.addEventListener("message", handleMessage);
-      });
-    } else {
-      window.addEventListener("message", handleMessage);
-    }
+    if (typeof window === "undefined") return;
+    window.addEventListener("message", handleMessage);
   }
 
   // src/store/journey-cookies.ts
@@ -627,11 +621,32 @@
           this.log,
           () => this.userJourneyId,
           (id) => {
+            const resolved = !!id && id !== this.userJourneyId;
             this.userJourneyId = id;
+            if (resolved) this.sendPayloadToIframes("STORE_UPDATE");
           }
         );
         this.setupRouteChangeDetection();
       }
+      const pushInitialData = () => {
+        if (!this.hasSurfaceIframe()) return;
+        this.sendPayloadToIframes("STORE_UPDATE");
+        if (this.environmentId) {
+          identifyLead(this.environmentId).then(() => this.sendPayloadToIframes("LEAD_DATA_UPDATE")).catch((e) => this.log.error({ message: "Initial identify failed", error: e }));
+        } else if (getLeadDataWithTTL()) {
+          this.sendPayloadToIframes("LEAD_DATA_UPDATE");
+        }
+      };
+      if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", pushInitialData);
+      } else {
+        setTimeout(pushInitialData, 0);
+      }
+    }
+    hasSurfaceIframe() {
+      return Array.from(document.querySelectorAll("iframe")).some(
+        (iframe) => SURFACE_DOMAINS.some((domain) => iframe.src.includes(domain))
+      );
     }
     isCurrentOriginSurfaceDomain() {
       const hostname = window.location?.hostname ?? "";
@@ -646,7 +661,9 @@
           this.log,
           () => this.userJourneyId,
           (id) => {
+            const resolved = !!id && id !== this.userJourneyId;
             this.userJourneyId = id;
+            if (resolved) this.sendPayloadToIframes("STORE_UPDATE");
           }
         );
         this.sendPayloadToIframes("STORE_UPDATE");

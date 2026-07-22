@@ -110,32 +110,39 @@ function exportEvents() {
   URL.revokeObjectURL(url);
 }
 
+// Monitor messages sent to iframes by intercepting notifyIframe.
+// Separate from initializeEventMonitoring so pages that load the tag late
+// (direct-iframe.html) can hook it once the tag script has executed.
+function hookTagSentEvents() {
+  if (typeof SurfaceTagStore === 'undefined' || SurfaceTagStore.__monitored) return;
+  SurfaceTagStore.__monitored = true;
+  const originalNotifyIframe = SurfaceTagStore.notifyIframe;
+  SurfaceTagStore.notifyIframe = function(iframe, type) {
+    const result = originalNotifyIframe.call(this, iframe, type);
+
+    // Get the payload that would be sent
+    const payload = this.getPayload();
+    logEvent({
+      type: type,
+      payload: payload,
+      sender: 'surface_tag'
+    }, 'sent');
+
+    return result;
+  };
+}
+
 // Initialize event monitoring
 function initializeEventMonitoring() {
-  // Monitor messages sent to iframes by intercepting notifyIframe
-  if (typeof SurfaceTagStore !== 'undefined') {
-    const originalNotifyIframe = SurfaceTagStore.notifyIframe;
-    SurfaceTagStore.notifyIframe = function(iframe, type) {
-      const result = originalNotifyIframe.call(this, iframe, type);
-      
-      // Get the payload that would be sent
-      const payload = this.getPayload();
-      logEvent({
-        type: type,
-        payload: payload,
-        sender: 'surface_tag'
-      }, 'sent');
-      
-      return result;
-    };
-  }
+  hookTagSentEvents();
 
   // Monitor messages received from iframes
   window.addEventListener('message', function(event) {
     const surfaceDomains = [
       "https://forms.withsurface.com",
       "https://app.withsurface.com",
-      "https://dev.withsurface.com"
+      "https://dev.withsurface.com",
+      "http://localhost:3000"
     ];
     
     if (surfaceDomains.includes(event.origin) && event.data) {
@@ -162,6 +169,7 @@ function initializeEventMonitoring() {
 }
 
 // Make functions globally available
+window.hookTagSentEvents = hookTagSentEvents;
 window.logEvent = logEvent;
 window.clearEventLog = clearEventLog;
 window.exportEvents = exportEvents;

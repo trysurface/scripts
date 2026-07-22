@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="X-UA-Compatible" content="ie=edge" />
+    <title>Direct Iframe Test - Surface Form</title>
+    <link rel="stylesheet" href="common.css">
+    <!-- No tag script here on purpose: this page reproduces the race where the
+         customer embeds the form iframe directly and the tag loads late (or not
+         at all). Control it with ?tagDelay=<ms> and ?noTag=1. -->
+    <script>
+      (() => {
+        const params = new URLSearchParams(window.location.search);
+        if (params.has("noTag")) return;
+        const delay = Number(params.get("tagDelay") ?? 0);
+        // Wrap notifyIframe the instant index.ts exposes the store — the tag
+        // defers its initial push by one task, so hooking on assignment (not
+        // script onload, which fires later) makes that push observable here.
+        Object.defineProperty(window, "SurfaceTagStore", {
+          configurable: true,
+          set(value) {
+            delete window.SurfaceTagStore;
+            window.SurfaceTagStore = value;
+            if (window.hookTagSentEvents) window.hookTagSentEvents();
+          },
+          get() {
+            return undefined;
+          },
+        });
+        setTimeout(() => {
+          const s = document.createElement("script");
+          s.src = "../surface_tag.js?t=" + Date.now();
+          s.setAttribute(
+            "site-id",
+            params.get("siteId") || "cllo318mt0003mb08hnp0f5zy"
+          );
+          document.head.appendChild(s);
+          const el = document.getElementById("tagStatus");
+          if (el) el.textContent = `injected after ${delay}ms`;
+        }, delay);
+      })();
+    </script>
+  </head>
+  <body>
+    <div class="container">
+      <h1>Direct Iframe Test</h1>
+      <p><a href="index.html">&larr; Back to Test Suite</a></p>
+
+      <div class="config-section">
+        <strong>Configuration:</strong><br>
+        Form Source: <code id="formSrc"></code><br>
+        Environment ID: <code id="environmentId">cllo318mt0003mb08hnp0f5zy</code><br>
+        Surface Tag: <code id="tagStatus">not injected yet</code><br>
+        Debug Mode: <code id="debugMode">false</code> (add <code>?surfaceDebug=true</code> to enable)<br>
+        <hr style="margin: 16px 0; border: none; border-top: 1px solid #e0e0e0;">
+        Scenarios: <code>?tagDelay=1000</code> (slow tag), <code>?tagDelay=3000</code> (very slow tag),
+        <code>?noTag=1</code> (tag blocked, e.g. by cookie consent)
+      </div>
+
+      <h2>Events Summary</h2>
+      <div class="events-summary">
+        <div class="summary-card"><div class="summary-count" id="totalEvents">0</div><div class="summary-label">Total Events</div></div>
+        <div class="summary-card"><div class="summary-count" id="sentEvents">0</div><div class="summary-label">Sent to Iframe</div></div>
+        <div class="summary-card"><div class="summary-count" id="receivedEvents">0</div><div class="summary-label">Received from Iframe</div></div>
+        <div class="summary-card"><div class="summary-count" id="storeUpdateEvents">0</div><div class="summary-label">STORE_UPDATE</div></div>
+        <div class="summary-card"><div class="summary-count" id="leadDataEvents">0</div><div class="summary-label">LEAD_DATA_UPDATE</div></div>
+        <div class="summary-card"><div class="summary-count" id="sendDataEvents">0</div><div class="summary-label">SEND_DATA</div></div>
+      </div>
+
+      <h2>Events Log</h2>
+      <div class="button-group">
+        <button class="clear-log" onclick="clearEventLog()">Clear Log</button>
+        <button class="secondary" onclick="exportEvents()">Export Events</button>
+        <button class="secondary" onclick="history.pushState({}, '', '?spaRouteChange=' + Date.now())">Simulate SPA Route Change</button>
+      </div>
+      <div class="events-log" id="eventsLog"></div>
+
+      <div class="section">
+        <h2>Directly Embedded Iframe (no tag involvement)</h2>
+        <iframe id="directIframe" style="width: 100%; height: 600px; border: 1px solid #e0e0e0; border-radius: 6px;"></iframe>
+      </div>
+    </div>
+
+    <script src="event-monitor.js"></script>
+    <script src="config.js"></script>
+    <script>
+      initializeEventMonitoring();
+      document.getElementById("directIframe").src = window.surfaceTestConfig.formSrc;
+    </script>
+  </body>
+</html>

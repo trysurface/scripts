@@ -33,13 +33,9 @@ export function initializeMessageListener(store: SurfaceStore): void {
     }
   };
 
-  if (typeof document === "undefined") return;
+  if (typeof window === "undefined") return;
 
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", () => {
-      window.addEventListener("message", handleMessage);
-    });
-  } else {
-    window.addEventListener("message", handleMessage);
-  }
+  // Attach immediately — nothing in the handler needs the DOM, and deferring
+  // to DOMContentLoaded silently drops SEND_DATA from fast-booting iframes.
+  window.addEventListener("message", handleMessage);
 }
