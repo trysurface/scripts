@@ -5,7 +5,7 @@ import { fireConversion, type ConversionProvider } from "./providers";
 const CONVERSION_MESSAGE_TYPE = "surface:conversion";
 const CONVERSION_ACK_TYPE = "surface:conversion:ack";
 
-const VALID_PROVIDERS: ConversionProvider[] = ["x", "meta", "ga4", "linkedin"];
+const VALID_PROVIDERS: ConversionProvider[] = ["x", "meta", "openai", "ga4", "linkedin"];
 
 // Idempotency: a form may retry a send; only fire once per message id.
 const firedIds = new Set<string>();

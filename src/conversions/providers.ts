@@ -6,11 +6,11 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-export type ConversionProvider = "x" | "meta" | "ga4" | "linkedin";
+export type ConversionProvider = "x" | "meta" | "openai" | "ga4" | "linkedin";
 
 export type ConversionEventPayload =
   | { event_id: string; pixel_id: string } // x
-  | { pixel_id: string; event_name: string } // meta
+  | { pixel_id: string; event_name: string } // meta / openai
   | { measurement_id: string; event_name: string } // ga4
   | { partner_id: string; conversion_id: string }; // linkedin
 
@@ -58,6 +58,21 @@ const ensureFbq = (pixelId: string) => {
     document.head.appendChild(el);
   }
   win.fbq("init", pixelId);
+};
+
+const ensureOaiq = (pixelId: string) => {
+  const win = w();
+  if (!win.oaiq) {
+    const q: any = (win.oaiq = function (...args: any[]) {
+      q.q.push(args);
+    });
+    q.q = [];
+    const el = document.createElement("script");
+    el.async = true;
+    el.src = "https://bzrcdn.openai.com/sdk/oaiq.min.js";
+    document.head.appendChild(el);
+  }
+  win.oaiq("init", { pixelId });
 };
 
 const ensureGtag = (measurementId: string) => {
@@ -121,6 +136,11 @@ export const fireConversion = (
       case "meta":
         ensureFbq(event.pixel_id);
         win.fbq("track", event.event_name, {}, { eventID: ctx.response_id });
+        return true;
+      case "openai":
+        ensureOaiq(event.pixel_id);
+        // event_id is the platform dedupe key (matches browser + server sends).
+        win.oaiq("measure", event.event_name, { type: "customer_action" }, { event_id: ctx.response_id });
         return true;
       case "ga4":
         ensureGtag(event.measurement_id);
