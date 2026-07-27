@@ -314,6 +314,20 @@
     }
     win.fbq("init", pixelId);
   };
+  var ensureOaiq = (pixelId) => {
+    const win = w();
+    if (!win.oaiq) {
+      const q = win.oaiq = function(...args) {
+        q.q.push(args);
+      };
+      q.q = [];
+      const el = document.createElement("script");
+      el.async = true;
+      el.src = "https://bzrcdn.openai.com/sdk/oaiq.min.js";
+      document.head.appendChild(el);
+    }
+    win.oaiq("init", { pixelId });
+  };
   var ensureGtag = (measurementId) => {
     const win = w();
     if (!win.gtag) {
@@ -363,6 +377,10 @@
           ensureFbq(event.pixel_id);
           win.fbq("track", event.event_name, {}, { eventID: ctx.response_id });
           return true;
+        case "openai":
+          ensureOaiq(event.pixel_id);
+          win.oaiq("measure", event.event_name, { type: "customer_action" }, { event_id: ctx.response_id });
+          return true;
         case "ga4":
           ensureGtag(event.measurement_id);
           win.gtag("event", event.event_name, {
@@ -385,7 +403,7 @@
   // src/conversions/conversion-listener.ts
   var CONVERSION_MESSAGE_TYPE = "surface:conversion";
   var CONVERSION_ACK_TYPE = "surface:conversion:ack";
-  var VALID_PROVIDERS = ["x", "meta", "ga4", "linkedin"];
+  var VALID_PROVIDERS = ["x", "meta", "openai", "ga4", "linkedin"];
   var firedIds = /* @__PURE__ */ new Set();
   var isConversionMessage = (data) => !!data && data.type === CONVERSION_MESSAGE_TYPE && typeof data.id === "string" && VALID_PROVIDERS.includes(data.provider) && !!data.event && typeof data.response_id === "string";
   var handleConversionMessage = (event, log2) => {
