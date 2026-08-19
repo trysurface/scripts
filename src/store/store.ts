@@ -1,4 +1,4 @@
-import { SURFACE_DOMAINS, VALID_EMBED_TYPES } from "../constants";
+import { VALID_EMBED_TYPES } from "../constants";
 import { isDebugMode } from "../utils/debug";
 import { createLogger } from "../utils/logger";
 import { parseCookies } from "../utils/cookies";
@@ -12,6 +12,10 @@ import {
   clearUserJourney as clearJourney,
 } from "./user-journey";
 import type { Logger, StorePayload, PartialFilledData, LeadData } from "../types";
+import {
+  getSurfaceRuntimeConfig,
+  type SurfaceRuntimeConfig,
+} from "../runtime-config";
 
 export class SurfaceStore {
   windowUrl: string;
@@ -28,9 +32,13 @@ export class SurfaceStore {
   userJourney: unknown[];
   cachedIdentifyData: LeadData | null;
   environmentId: string | null;
+  config: SurfaceRuntimeConfig;
   log: Logger;
 
-  constructor(environmentId: string | null = null) {
+  constructor(
+    environmentId: string | null = null,
+    config: SurfaceRuntimeConfig = getSurfaceRuntimeConfig()
+  ) {
     this.windowUrl = new URL(window.location.href).toString();
     this.origin = new URL(window.location.href).origin.toString();
     this.referrer = document.referrer || "";
@@ -40,7 +48,8 @@ export class SurfaceStore {
     this.partialFilledData = {};
     this.validEmbedTypes = VALID_EMBED_TYPES;
     this.debugMode = isDebugMode();
-    this.surfaceDomains = SURFACE_DOMAINS;
+    this.config = config;
+    this.surfaceDomains = config.surfaceDomains;
     this.userJourneyId = null;
     this.userJourney = [];
     this.cachedIdentifyData = getLeadDataWithTTL();
@@ -63,7 +72,8 @@ export class SurfaceStore {
           // The journey id resolves async — iframes that already received a
           // STORE_UPDATE need a refresh to stitch this pageview.
           if (resolved) this.sendPayloadToIframes("STORE_UPDATE");
-        }
+        },
+        this.config
       );
       this.setupRouteChangeDetection();
     }
@@ -78,7 +88,7 @@ export class SurfaceStore {
       if (!this.hasSurfaceIframe()) return;
       this.sendPayloadToIframes("STORE_UPDATE");
       if (this.environmentId) {
-        identifyLead(this.environmentId)
+        identifyLead(this.environmentId, this.config)
           .then(() => this.sendPayloadToIframes("LEAD_DATA_UPDATE"))
           .catch((e) => this.log.error({ message: "Initial identify failed", error: e }));
       } else if (getLeadDataWithTTL()) {
@@ -95,14 +105,18 @@ export class SurfaceStore {
   }
 
   private hasSurfaceIframe(): boolean {
-    return Array.from(document.querySelectorAll("iframe")).some((iframe) =>
-      SURFACE_DOMAINS.some((domain) => iframe.src.includes(domain))
-    );
+    return Array.from(document.querySelectorAll("iframe")).some((iframe) => {
+      try {
+        return this.surfaceDomains.includes(new URL(iframe.src).origin);
+      } catch {
+        return false;
+      }
+    });
   }
 
   private isCurrentOriginSurfaceDomain(): boolean {
-    const hostname = window.location?.hostname ?? "";
-    return SURFACE_DOMAINS.some((url) => new URL(url).hostname === hostname);
+    const origin = window.location?.origin ?? "";
+    return this.surfaceDomains.includes(origin);
   }
 
   private setupRouteChangeDetection(): void {
@@ -120,7 +134,8 @@ export class SurfaceStore {
           // A journey created/refreshed during the route change resolves after
           // the push below — refresh iframes so they get the new id.
           if (resolved) this.sendPayloadToIframes("STORE_UPDATE");
-        }
+        },
+        this.config
       );
 
       this.sendPayloadToIframes("STORE_UPDATE");
@@ -145,14 +160,17 @@ export class SurfaceStore {
     const target = iframe || document.querySelector<HTMLIFrameElement>("#surface-iframe");
     if (!target) return;
 
-    SURFACE_DOMAINS.forEach((domain) => {
-      if (target.src.includes(domain)) {
-        target.contentWindow?.postMessage(
-          { type, payload: this.getPayload(), sender: "surface_tag" },
-          domain
-        );
-      }
-    });
+    try {
+      const targetOrigin = new URL(target.src).origin;
+      if (!this.surfaceDomains.includes(targetOrigin)) return;
+
+      target.contentWindow?.postMessage(
+        { type, payload: this.getPayload(), sender: "surface_tag" },
+        targetOrigin
+      );
+    } catch {
+      // Ignore invalid iframe URLs.
+    }
   }
 
   getUrlParams(): Record<string, string> {

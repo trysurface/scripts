@@ -1,7 +1,6 @@
 import {
   SURFACE_USER_JOURNEY_COOKIE_NAME,
   SURFACE_USER_JOURNEY_RECENT_VISIT_COOKIE_NAME,
-  USER_JOURNEY_TRACKING_API,
   RECENT_VISIT_COOKIE_MAX_AGE,
 } from "../constants";
 import { setCookie, getCookie, deleteCookie } from "../utils/cookies";
@@ -12,6 +11,10 @@ import {
   getExistingJourneyId,
 } from "./journey-cookies";
 import type { LeadData, Logger, JourneyTrackEvent } from "../types";
+import {
+  getSurfaceRuntimeConfig,
+  type SurfaceRuntimeConfig,
+} from "../runtime-config";
 
 function getBrowserReferrer(): string {
   return typeof document === "undefined" ? "" : document.referrer || "";
@@ -52,7 +55,8 @@ export function initializeUserJourneyTracking(
   environmentId: string | null,
   log: Logger,
   getJourneyId: () => string | null,
-  setJourneyId: (id: string | null) => void
+  setJourneyId: (id: string | null) => void,
+  config: SurfaceRuntimeConfig = getSurfaceRuntimeConfig()
 ): void {
   try {
     if (typeof window === "undefined") return;
@@ -73,7 +77,8 @@ export function initializeUserJourneyTracking(
       createPageViewEvent(currentUrl, environmentId),
       log,
       getJourneyId,
-      setJourneyId
+      setJourneyId,
+      config
     );
 
     setCookie(SURFACE_USER_JOURNEY_RECENT_VISIT_COOKIE_NAME, currentUrl, {
@@ -92,7 +97,8 @@ export async function trackToRedis(
   event: JourneyTrackEvent,
   log: Logger,
   getJourneyId: () => string | null,
-  setJourneyId: (id: string | null) => void
+  setJourneyId: (id: string | null) => void,
+  config: SurfaceRuntimeConfig = getSurfaceRuntimeConfig()
 ): Promise<Record<string, unknown> | null> {
   try {
     const journeyId = getJourneyId();
@@ -105,7 +111,7 @@ export async function trackToRedis(
       const blob = new Blob([JSON.stringify(payload)], {
         type: "application/json",
       });
-      const sent = navigator.sendBeacon(USER_JOURNEY_TRACKING_API, blob);
+      const sent = navigator.sendBeacon(config.userJourneyTrackingApi, blob);
       if (sent) {
         refreshJourneyCookie(journeyId);
         log.info({ message: "Tracking sent via sendBeacon", response: { sent } });
@@ -114,7 +120,7 @@ export async function trackToRedis(
       log.warn({ message: "sendBeacon failed, falling back to fetch" });
     }
 
-    const response = await fetch(USER_JOURNEY_TRACKING_API, {
+    const response = await fetch(config.userJourneyTrackingApi, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -145,7 +151,8 @@ export function updateUserJourneyOnRouteChange(
   newUrl: string,
   log: Logger,
   getJourneyId: () => string | null,
-  setJourneyId: (id: string | null) => void
+  setJourneyId: (id: string | null) => void,
+  config: SurfaceRuntimeConfig = getSurfaceRuntimeConfig()
 ): void {
   try {
     if (typeof window === "undefined") return;
@@ -162,7 +169,8 @@ export function updateUserJourneyOnRouteChange(
       createPageViewEvent(currentUrl, environmentId),
       log,
       getJourneyId,
-      setJourneyId
+      setJourneyId,
+      config
     );
 
     setCookie(SURFACE_USER_JOURNEY_RECENT_VISIT_COOKIE_NAME, currentUrl, {

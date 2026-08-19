@@ -35,7 +35,7 @@ const isConversionMessage = (data: any): data is ConversionMessage =>
 // Handles a `surface:conversion` message from a Surface form iframe: fires the
 // pixel in this (parent) page, then acks so the iframe knows not to fall back to
 // in-frame firing. The caller guarantees the origin is already trusted (checked
-// in the shared message listener against SURFACE_DOMAINS).
+// in the shared message listener against the runtime Surface-domain allowlist).
 export const handleConversionMessage = (event: MessageEvent, log: Logger): void => {
   const data = event.data;
   if (!isConversionMessage(data)) return;

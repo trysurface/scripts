@@ -1,11 +1,10 @@
-import { SURFACE_DOMAINS } from "../constants";
 import { handleConversionMessage } from "../conversions/conversion-listener";
 import { identifyLead, getEnvironmentId } from "../lead/identify";
 import type { SurfaceStore } from "./store";
 
 export function initializeMessageListener(store: SurfaceStore): void {
   const handleMessage = (event: MessageEvent) => {
-    if (!event.origin || !(SURFACE_DOMAINS as readonly string[]).includes(event.origin)) {
+    if (!event.origin || !store.surfaceDomains.includes(event.origin)) {
       return;
     }
 
@@ -19,7 +18,7 @@ export function initializeMessageListener(store: SurfaceStore): void {
 
       const envId = getEnvironmentId();
       if (envId) {
-        identifyLead(envId)
+        identifyLead(envId, store.config)
           .then(() => store.sendPayloadToIframes("LEAD_DATA_UPDATE"))
           .catch((e) => console.log("Failed identify", e));
       } else {

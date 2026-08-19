@@ -1,7 +1,10 @@
-import { EXTERNAL_FORM_API } from "../constants";
 import { SurfaceEmbed } from "../embed/embed";
 import { openTriggerOverlay } from "./open-trigger-overlay";
 import { OpenTriggerEntry, OpenTriggersMap, pickOpenTrigger } from "./resolve";
+import {
+  getSurfaceRuntimeConfig,
+  type SurfaceRuntimeConfig,
+} from "../runtime-config";
 
 const SESSION_PREFIX = "surface_open_triggers:";
 // Self-healing cache: re-fetch the map after this long so a slug retargeted/disabled
@@ -30,12 +33,15 @@ interface OverridableWindow {
  * present as `?<slug>=true`. Opens a form even if it isn't already embedded on the
  * page. No params → zero network. Always fails safe (never breaks the host page).
  */
-export async function resolveOpenTriggersOnLoad(environmentId: string | null): Promise<void> {
+export async function resolveOpenTriggersOnLoad(
+  environmentId: string | null,
+  config: SurfaceRuntimeConfig = getSurfaceRuntimeConfig()
+): Promise<void> {
   try {
     if (!environmentId) return;
     if (!window.location.search) return;
 
-    const map = await fetchOpenTriggersMap(environmentId);
+    const map = await fetchOpenTriggersMap(environmentId, config);
     const entry = pickOpenTrigger(window.location.search, map);
     if (!entry) return;
 
@@ -45,13 +51,16 @@ export async function resolveOpenTriggersOnLoad(environmentId: string | null): P
   }
 }
 
-async function fetchOpenTriggersMap(environmentId: string): Promise<OpenTriggersMap | null> {
+async function fetchOpenTriggersMap(
+  environmentId: string,
+  config: SurfaceRuntimeConfig
+): Promise<OpenTriggersMap | null> {
   const w = window as unknown as OverridableWindow;
 
   // Test/escape hatch: a directly-injected map bypasses the network entirely.
   if (w.__SURFACE_OPEN_TRIGGERS_MAP) return w.__SURFACE_OPEN_TRIGGERS_MAP;
 
-  const sessionKey = SESSION_PREFIX + environmentId;
+  const sessionKey = `${SESSION_PREFIX}${config.apiBaseUrl}:${environmentId}`;
   try {
     const cached = sessionStorage.getItem(sessionKey);
     if (cached) {
@@ -64,7 +73,7 @@ async function fetchOpenTriggersMap(environmentId: string): Promise<OpenTriggers
     // sessionStorage unavailable / malformed (e.g. privacy mode) — fall through to a live fetch.
   }
 
-  const base = w.__SURFACE_OPEN_TRIGGERS_BASE || EXTERNAL_FORM_API;
+  const base = w.__SURFACE_OPEN_TRIGGERS_BASE || config.apiBaseUrl;
   const response = await fetch(`${base}/environments/${encodeURIComponent(environmentId)}/open-triggers`);
   if (!response.ok) return null;
 

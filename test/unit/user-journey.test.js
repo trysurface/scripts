@@ -165,6 +165,43 @@ test("sendBeacon serializes a page-view referrer unchanged", async () => {
   }
 });
 
+test("sendBeacon uses the configured custom-domain tracking endpoint", async () => {
+  let beaconUrl;
+  const restore = installBrowserGlobals({
+    url: "https://example.com/landing",
+    referrer: "",
+    navigatorValue: {
+      sendBeacon: (url) => {
+        beaconUrl = url;
+        return true;
+      },
+    },
+  });
+
+  try {
+    const { trackToRedis } = await loadUserJourney();
+    await trackToRedis(
+      {
+        data: {
+          type: "page_view",
+          payload: { url: "https://example.com/landing" },
+        },
+        metadata: {},
+      },
+      createLogger(),
+      () => "journey_123",
+      () => {},
+      {
+        userJourneyTrackingApi: "https://demo.example.com/api/v1/lead/track",
+      }
+    );
+
+    assert.equal(beaconUrl, "https://demo.example.com/api/v1/lead/track");
+  } finally {
+    restore();
+  }
+});
+
 test("SPA page views include the browser referrer", async () => {
   const restore = installBrowserGlobals({
     url: "https://example.com/next?utm_campaign=summer",
