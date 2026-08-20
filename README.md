@@ -31,6 +31,26 @@ cd test && ./serve.sh
 
 Open `http://localhost:8000/test/index.html` to test all embed types.
 
+## Custom Domains
+
+Add `data-custom-domain` to the Surface tag when an environment uses a verified
+custom domain:
+
+```html
+<script
+  src="https://cdn.jsdelivr.net/.../surface_tag.min.js"
+  site-id="your-environment-id"
+  data-custom-domain="demo.example.com">
+</script>
+```
+
+The tag sends lead identification, journey tracking, external-form events, and
+open-trigger requests to `https://demo.example.com/api/v1`. It also trusts form
+iframe messages from `https://demo.example.com`. The value must be an HTTPS
+hostname or origin without a path, query string, credentials, or fragment. If
+the attribute is absent or invalid, the tag continues to use
+`https://forms.withsurface.com`.
+
 ## Embedding Types
 
 - **Popup** -- modal overlay triggered by button click

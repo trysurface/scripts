@@ -1,6 +1,10 @@
-import { LEAD_DATA_TTL, LEAD_IDENTIFY_API } from "../constants";
+import { LEAD_DATA_TTL } from "../constants";
 import { getBrowserFingerprint } from "./fingerprint";
 import type { LeadData } from "../types";
+import {
+  getSurfaceRuntimeConfig,
+  type SurfaceRuntimeConfig,
+} from "../runtime-config";
 
 let environmentId: string | null = null;
 let identifyInProgress = false;
@@ -49,7 +53,8 @@ export function getLeadDataWithTTL(): LeadData | null {
 }
 
 export async function identifyLead(
-  envId: string
+  envId: string,
+  config: SurfaceRuntimeConfig = getSurfaceRuntimeConfig()
 ): Promise<LeadData | null> {
   if (identifyInProgress) {
     return waitForCachedData();
@@ -66,7 +71,7 @@ export async function identifyLead(
     const fingerprint = await getBrowserFingerprint(envId);
     const parentUrl = new URL(window.location.href);
 
-    const response = await fetch(LEAD_IDENTIFY_API, {
+    const response = await fetch(config.leadIdentifyApi, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

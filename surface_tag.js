@@ -71,6 +71,51 @@
     return { ...fingerprint, id };
   }
 
+  // src/runtime-config.ts
+  var CUSTOM_DOMAIN_ATTRIBUTE = "data-custom-domain";
+  var DEFAULT_SURFACE_RUNTIME_CONFIG = {
+    apiBaseUrl: EXTERNAL_FORM_API,
+    leadIdentifyApi: LEAD_IDENTIFY_API,
+    userJourneyTrackingApi: USER_JOURNEY_TRACKING_API,
+    surfaceDomains: SURFACE_DOMAINS,
+    customOrigin: null
+  };
+  var runtimeConfig = DEFAULT_SURFACE_RUNTIME_CONFIG;
+  function normalizeCustomOrigin(value) {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    try {
+      const url = new URL(trimmed.includes("://") ? trimmed : `https://${trimmed}`);
+      if (url.protocol !== "https:" || url.username || url.password || url.pathname !== "/" || url.search || url.hash) {
+        return null;
+      }
+      return url.origin;
+    } catch {
+      return null;
+    }
+  }
+  function resolveSurfaceRuntimeConfig(scriptElement) {
+    const customOrigin = normalizeCustomOrigin(
+      scriptElement?.getAttribute(CUSTOM_DOMAIN_ATTRIBUTE) ?? ""
+    );
+    if (!customOrigin) return DEFAULT_SURFACE_RUNTIME_CONFIG;
+    const apiBaseUrl = `${customOrigin}/api/v1`;
+    return {
+      apiBaseUrl,
+      leadIdentifyApi: `${apiBaseUrl}/lead/identify`,
+      userJourneyTrackingApi: `${apiBaseUrl}/lead/track`,
+      surfaceDomains: Array.from(/* @__PURE__ */ new Set([...SURFACE_DOMAINS, customOrigin])),
+      customOrigin
+    };
+  }
+  function initializeSurfaceRuntimeConfig(scriptElement) {
+    runtimeConfig = resolveSurfaceRuntimeConfig(scriptElement);
+    return runtimeConfig;
+  }
+  function getSurfaceRuntimeConfig() {
+    return runtimeConfig;
+  }
+
   // src/lead/identify.ts
   var environmentId = null;
   var identifyInProgress = false;
@@ -111,7 +156,7 @@
       return null;
     }
   }
-  async function identifyLead(envId) {
+  async function identifyLead(envId, config = getSurfaceRuntimeConfig()) {
     if (identifyInProgress) {
       return waitForCachedData();
     }
@@ -123,7 +168,7 @@
     try {
       const fingerprint = await getBrowserFingerprint(envId);
       const parentUrl = new URL(window.location.href);
-      const response = await fetch(LEAD_IDENTIFY_API, {
+      const response = await fetch(config.leadIdentifyApi, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -441,7 +486,8 @@
   // src/store/message-listener.ts
   function initializeMessageListener(store) {
     const handleMessage = (event) => {
-      if (!event.origin || !SURFACE_DOMAINS.includes(event.origin)) {
+      const surfaceDomains = store.surfaceDomains ?? SURFACE_DOMAINS;
+      if (!event.origin || !surfaceDomains.includes(event.origin)) {
         return;
       }
       if (event.data?.type === "surface:conversion") {
@@ -452,7 +498,8 @@
         store.sendPayloadToIframes("STORE_UPDATE");
         const envId = getEnvironmentId();
         if (envId) {
-          identifyLead(envId).then(() => store.sendPayloadToIframes("LEAD_DATA_UPDATE")).catch((e) => console.log("Failed identify", e));
+          const identify = store.config?.customOrigin ? identifyLead(envId, store.config) : identifyLead(envId);
+          identify.then(() => store.sendPayloadToIframes("LEAD_DATA_UPDATE")).catch((e) => console.log("Failed identify", e));
         } else {
           store.sendPayloadToIframes("LEAD_DATA_UPDATE");
         }
@@ -514,7 +561,7 @@
       }
     };
   }
-  function initializeUserJourneyTracking(environmentId3, log2, getJourneyId, setJourneyId) {
+  function initializeUserJourneyTracking(environmentId3, log2, getJourneyId, setJourneyId, config = getSurfaceRuntimeConfig()) {
     try {
       if (typeof window === "undefined") return;
       const existingId = getExistingJourneyId();
@@ -530,7 +577,8 @@
         createPageViewEvent(currentUrl2, environmentId3),
         log2,
         getJourneyId,
-        setJourneyId
+        setJourneyId,
+        config
       );
       setCookie(SURFACE_USER_JOURNEY_RECENT_VISIT_COOKIE_NAME, currentUrl2, {
         maxAge: RECENT_VISIT_COOKIE_MAX_AGE,
@@ -542,7 +590,7 @@
       log2.error({ message: "Error initializing user journey tracking", error });
     }
   }
-  async function trackToRedis(event, log2, getJourneyId, setJourneyId) {
+  async function trackToRedis(event, log2, getJourneyId, setJourneyId, config = getSurfaceRuntimeConfig()) {
     try {
       const journeyId = getJourneyId();
       const payload = { ...event };
@@ -552,7 +600,7 @@
         const blob = new Blob([JSON.stringify(payload)], {
           type: "application/json"
         });
-        const sent = navigator.sendBeacon(USER_JOURNEY_TRACKING_API, blob);
+        const sent = navigator.sendBeacon(config.userJourneyTrackingApi, blob);
         if (sent) {
           refreshJourneyCookie(journeyId);
           log2.info({ message: "Tracking sent via sendBeacon", response: { sent } });
@@ -560,7 +608,7 @@
         }
         log2.warn({ message: "sendBeacon failed, falling back to fetch" });
       }
-      const response = await fetch(USER_JOURNEY_TRACKING_API, {
+      const response = await fetch(config.userJourneyTrackingApi, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
@@ -581,7 +629,7 @@
       return null;
     }
   }
-  function updateUserJourneyOnRouteChange(environmentId3, newUrl, log2, getJourneyId, setJourneyId) {
+  function updateUserJourneyOnRouteChange(environmentId3, newUrl, log2, getJourneyId, setJourneyId, config = getSurfaceRuntimeConfig()) {
     try {
       if (typeof window === "undefined") return;
       const currentUrl2 = newUrl || window.location.href;
@@ -594,7 +642,8 @@
         createPageViewEvent(currentUrl2, environmentId3),
         log2,
         getJourneyId,
-        setJourneyId
+        setJourneyId,
+        config
       );
       setCookie(SURFACE_USER_JOURNEY_RECENT_VISIT_COOKIE_NAME, currentUrl2, {
         maxAge: RECENT_VISIT_COOKIE_MAX_AGE,
@@ -616,7 +665,7 @@
 
   // src/store/store.ts
   var SurfaceStore = class {
-    constructor(environmentId3 = null) {
+    constructor(environmentId3 = null, config = getSurfaceRuntimeConfig()) {
       this.windowUrl = new URL(window.location.href).toString();
       this.origin = new URL(window.location.href).origin.toString();
       this.referrer = document.referrer || "";
@@ -626,7 +675,8 @@
       this.partialFilledData = {};
       this.validEmbedTypes = VALID_EMBED_TYPES;
       this.debugMode = isDebugMode();
-      this.surfaceDomains = SURFACE_DOMAINS;
+      this.config = config;
+      this.surfaceDomains = config.surfaceDomains;
       this.userJourneyId = null;
       this.userJourney = [];
       this.cachedIdentifyData = getLeadDataWithTTL();
@@ -642,7 +692,8 @@
             const resolved = !!id && id !== this.userJourneyId;
             this.userJourneyId = id;
             if (resolved) this.sendPayloadToIframes("STORE_UPDATE");
-          }
+          },
+          this.config
         );
         this.setupRouteChangeDetection();
       }
@@ -650,7 +701,8 @@
         if (!this.hasSurfaceIframe()) return;
         this.sendPayloadToIframes("STORE_UPDATE");
         if (this.environmentId) {
-          identifyLead(this.environmentId).then(() => this.sendPayloadToIframes("LEAD_DATA_UPDATE")).catch((e) => this.log.error({ message: "Initial identify failed", error: e }));
+          const identify = this.config.customOrigin ? identifyLead(this.environmentId, this.config) : identifyLead(this.environmentId);
+          identify.then(() => this.sendPayloadToIframes("LEAD_DATA_UPDATE")).catch((e) => this.log.error({ message: "Initial identify failed", error: e }));
         } else if (getLeadDataWithTTL()) {
           this.sendPayloadToIframes("LEAD_DATA_UPDATE");
         }
@@ -662,13 +714,17 @@
       }
     }
     hasSurfaceIframe() {
-      return Array.from(document.querySelectorAll("iframe")).some(
-        (iframe) => SURFACE_DOMAINS.some((domain) => iframe.src.includes(domain))
-      );
+      return Array.from(document.querySelectorAll("iframe")).some((iframe) => {
+        try {
+          return this.surfaceDomains.includes(new URL(iframe.src).origin);
+        } catch {
+          return false;
+        }
+      });
     }
     isCurrentOriginSurfaceDomain() {
-      const hostname = window.location?.hostname ?? "";
-      return SURFACE_DOMAINS.some((url) => new URL(url).hostname === hostname);
+      const origin = window.location?.origin ?? "";
+      return this.surfaceDomains.includes(origin);
     }
     setupRouteChangeDetection() {
       onRouteChange((newUrl) => {
@@ -682,7 +738,8 @@
             const resolved = !!id && id !== this.userJourneyId;
             this.userJourneyId = id;
             if (resolved) this.sendPayloadToIframes("STORE_UPDATE");
-          }
+          },
+          this.config
         );
         this.sendPayloadToIframes("STORE_UPDATE");
         this.log.info({ message: "Route changed, updated journey", response: { url: newUrl } });
@@ -699,14 +756,15 @@
     notifyIframe(iframe, type) {
       const target = iframe || document.querySelector("#surface-iframe");
       if (!target) return;
-      SURFACE_DOMAINS.forEach((domain) => {
-        if (target.src.includes(domain)) {
-          target.contentWindow?.postMessage(
-            { type, payload: this.getPayload(), sender: "surface_tag" },
-            domain
-          );
-        }
-      });
+      try {
+        const targetOrigin = new URL(target.src).origin;
+        if (!this.surfaceDomains.includes(targetOrigin)) return;
+        target.contentWindow?.postMessage(
+          { type, payload: this.getPayload(), sender: "surface_tag" },
+          targetOrigin
+        );
+      } catch {
+      }
     }
     getUrlParams() {
       return getUrlParams();
@@ -815,7 +873,7 @@
       this.formInitializationStatus = {};
       this.formStarted = {};
       this.config = {
-        serverBaseUrl: props?.serverBaseUrl || EXTERNAL_FORM_API,
+        serverBaseUrl: props?.serverBaseUrl || getSurfaceRuntimeConfig().apiBaseUrl,
         debugMode: isDebugMode()
       };
       this.environmentId = props?.siteId || getSiteIdFromScript(document.currentScript);
@@ -2134,21 +2192,21 @@
   var CACHE_TTL_MS = 5 * 60 * 1e3;
   var REUSE_POLL_INTERVAL_MS = 150;
   var REUSE_POLL_MAX_TRIES = 12;
-  async function resolveOpenTriggersOnLoad(environmentId3) {
+  async function resolveOpenTriggersOnLoad(environmentId3, config = getSurfaceRuntimeConfig()) {
     try {
       if (!environmentId3) return;
       if (!window.location.search) return;
-      const map = await fetchOpenTriggersMap(environmentId3);
+      const map = await fetchOpenTriggersMap(environmentId3, config);
       const entry = pickOpenTrigger(window.location.search, map);
       if (!entry) return;
       openTriggerForm(entry);
     } catch {
     }
   }
-  async function fetchOpenTriggersMap(environmentId3) {
+  async function fetchOpenTriggersMap(environmentId3, config) {
     const w3 = window;
     if (w3.__SURFACE_OPEN_TRIGGERS_MAP) return w3.__SURFACE_OPEN_TRIGGERS_MAP;
-    const sessionKey = SESSION_PREFIX + environmentId3;
+    const sessionKey = `${SESSION_PREFIX}${config.apiBaseUrl}:${environmentId3}`;
     try {
       const cached2 = sessionStorage.getItem(sessionKey);
       if (cached2) {
@@ -2159,7 +2217,7 @@
       }
     } catch {
     }
-    const base = w3.__SURFACE_OPEN_TRIGGERS_BASE || EXTERNAL_FORM_API;
+    const base = w3.__SURFACE_OPEN_TRIGGERS_BASE || config.apiBaseUrl;
     const response = await fetch(`${base}/environments/${encodeURIComponent(environmentId3)}/open-triggers`);
     if (!response.ok) return null;
     const json = await response.json();
@@ -2403,9 +2461,10 @@
 
   // src/index.ts
   var scriptTag = document.currentScript;
+  var runtimeConfig2 = initializeSurfaceRuntimeConfig(scriptTag);
   var environmentId2 = getSiteIdFromScript(scriptTag);
   setEnvironmentId(environmentId2);
-  var SurfaceTagStore = new SurfaceStore(environmentId2);
+  var SurfaceTagStore = new SurfaceStore(environmentId2, runtimeConfig2);
   var w2 = window;
   w2.SurfaceEmbed = SurfaceEmbed;
   w2.SurfaceExternalForm = SurfaceExternalForm;
@@ -2414,6 +2473,6 @@
   w2.SurfaceSetLeadDataWithTTL = setLeadDataWithTTL;
   w2.SurfaceGetLeadDataWithTTL = getLeadDataWithTTL;
   w2.SurfaceGetSiteIdFromScript = getSiteIdFromScript;
-  void resolveOpenTriggersOnLoad(environmentId2);
+  void resolveOpenTriggersOnLoad(environmentId2, runtimeConfig2);
   initReview();
 })();

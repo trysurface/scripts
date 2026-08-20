@@ -1,9 +1,9 @@
-import { EXTERNAL_FORM_API } from "../constants";
 import { isDebugMode } from "../utils/debug";
 import { sendBeacon } from "../utils/beacon";
 import { getSiteIdFromScript } from "../lead/site-id";
 import { attachFormHandlers } from "./form-handlers";
 import type { ExternalFormProps } from "../types";
+import { getSurfaceRuntimeConfig } from "../runtime-config";
 
 export class SurfaceExternalForm {
   initialRenderTime: Date;
@@ -27,7 +27,7 @@ export class SurfaceExternalForm {
     this.formStarted = {};
 
     this.config = {
-      serverBaseUrl: props?.serverBaseUrl || EXTERNAL_FORM_API,
+      serverBaseUrl: props?.serverBaseUrl || getSurfaceRuntimeConfig().apiBaseUrl,
       debugMode: isDebugMode(),
     };
 
