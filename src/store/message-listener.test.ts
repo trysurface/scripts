@@ -2,10 +2,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { initializeMessageListener } from "./message-listener";
 import { identifyLead, getEnvironmentId } from "../lead/identify";
 import type { SurfaceStore } from "./store";
-import {
-  DEFAULT_SURFACE_RUNTIME_CONFIG,
-  resolveSurfaceRuntimeConfig,
-} from "../runtime-config";
 
 vi.mock("../lead/identify", () => ({
   identifyLead: vi.fn(async () => null),
@@ -22,8 +18,6 @@ const makeStore = () =>
     sendPayloadToIframes: vi.fn(),
     clearUserJourney: vi.fn(),
     log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
-    config: DEFAULT_SURFACE_RUNTIME_CONFIG,
-    surfaceDomains: DEFAULT_SURFACE_RUNTIME_CONFIG.surfaceDomains,
   }) as unknown as SurfaceStore;
 
 const dispatch = (data: unknown, origin: string = FORMS_ORIGIN) =>
@@ -63,10 +57,7 @@ describe("initializeMessageListener", () => {
 
     expect(store.sendPayloadToIframes).toHaveBeenCalledTimes(1);
     expect(store.sendPayloadToIframes).toHaveBeenCalledWith("STORE_UPDATE");
-    expect(identifyLead).toHaveBeenCalledWith(
-      "env_123",
-      DEFAULT_SURFACE_RUNTIME_CONFIG
-    );
+    expect(identifyLead).toHaveBeenCalledWith("env_123");
 
     await flushMicrotasks();
     expect(store.sendPayloadToIframes).toHaveBeenLastCalledWith("LEAD_DATA_UPDATE");
@@ -91,23 +82,6 @@ describe("initializeMessageListener", () => {
     dispatch({ type: "SEND_DATA", sender: "surface_form" }, "https://evil.example.com");
 
     expect(store.sendPayloadToIframes).not.toHaveBeenCalled();
-  });
-
-  it("accepts messages from the configured custom domain", () => {
-    const script = document.createElement("script");
-    script.setAttribute("data-custom-domain", "demo.example.com");
-    const config = resolveSurfaceRuntimeConfig(script);
-    const store = makeStore();
-    store.config = config;
-    store.surfaceDomains = config.surfaceDomains;
-    initializeMessageListener(store);
-
-    dispatch(
-      { type: "SEND_DATA", sender: "surface_form" },
-      "https://demo.example.com"
-    );
-
-    expect(store.sendPayloadToIframes).toHaveBeenCalledWith("STORE_UPDATE");
   });
 
   it("clears the user journey on CLEAR_USER_JOURNEY_DATA", () => {

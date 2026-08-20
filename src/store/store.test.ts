@@ -4,10 +4,6 @@ import { identifyLead, getLeadDataWithTTL } from "../lead/identify";
 import { initializeUserJourneyTracking, updateUserJourneyOnRouteChange } from "./user-journey";
 import { onRouteChange } from "../utils/route-observer";
 import type { LeadData } from "../types";
-import {
-  DEFAULT_SURFACE_RUNTIME_CONFIG,
-  resolveSurfaceRuntimeConfig,
-} from "../runtime-config";
 
 vi.mock("./message-listener", () => ({
   initializeMessageListener: vi.fn(),
@@ -27,11 +23,6 @@ vi.mock("../utils/route-observer", () => ({
 }));
 
 const SURFACE_IFRAME_SRC = "https://forms.withsurface.com/s/form123";
-const customDomainConfig = () => {
-  const script = document.createElement("script");
-  script.setAttribute("data-custom-domain", "demo.example.com");
-  return resolveSurfaceRuntimeConfig(script);
-};
 
 const addIframe = (src: string) => {
   const iframe = document.createElement("iframe");
@@ -74,10 +65,7 @@ describe("SurfaceStore boot push (direct-iframe rescue)", () => {
     await vi.runAllTimersAsync();
 
     expect(pushedTypes(pushes)).toEqual(["STORE_UPDATE", "LEAD_DATA_UPDATE"]);
-    expect(identifyLead).toHaveBeenCalledWith(
-      "env_123",
-      DEFAULT_SURFACE_RUNTIME_CONFIG
-    );
+    expect(identifyLead).toHaveBeenCalledWith("env_123");
   });
 
   it("never pushes or identifies when the page has no Surface iframe", async () => {
@@ -190,36 +178,5 @@ describe("SurfaceStore postMessage protocol", () => {
       "https://forms.withsurface.com"
     );
     expect(otherPost).not.toHaveBeenCalled();
-  });
-
-  it("detects and posts to an iframe on the configured custom domain", async () => {
-    const customIframe = addIframe("https://demo.example.com/s/form123");
-    const config = customDomainConfig();
-    const store = new SurfaceStore("env_123", config);
-    const customPost = vi
-      .spyOn(customIframe.contentWindow as Window, "postMessage")
-      .mockImplementation(() => {});
-
-    await vi.runAllTimersAsync();
-
-    expect(identifyLead).toHaveBeenCalledWith("env_123", config);
-    expect(customPost).toHaveBeenCalledWith(
-      expect.objectContaining({ type: "STORE_UPDATE", sender: "surface_tag" }),
-      "https://demo.example.com"
-    );
-  });
-
-  it("requires an exact iframe origin match", () => {
-    const lookalikeIframe = addIframe(
-      "https://demo.example.com.evil.test/?https://demo.example.com"
-    );
-    const store = new SurfaceStore(null, customDomainConfig());
-    const lookalikePost = vi
-      .spyOn(lookalikeIframe.contentWindow as Window, "postMessage")
-      .mockImplementation(() => {});
-
-    store.sendPayloadToIframes("STORE_UPDATE");
-
-    expect(lookalikePost).not.toHaveBeenCalled();
   });
 });

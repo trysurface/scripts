@@ -88,7 +88,10 @@ export class SurfaceStore {
       if (!this.hasSurfaceIframe()) return;
       this.sendPayloadToIframes("STORE_UPDATE");
       if (this.environmentId) {
-        identifyLead(this.environmentId, this.config)
+        const identify = this.config.customOrigin
+          ? identifyLead(this.environmentId, this.config)
+          : identifyLead(this.environmentId);
+        identify
           .then(() => this.sendPayloadToIframes("LEAD_DATA_UPDATE"))
           .catch((e) => this.log.error({ message: "Initial identify failed", error: e }));
       } else if (getLeadDataWithTTL()) {
