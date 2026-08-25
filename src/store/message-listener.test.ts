@@ -16,6 +16,7 @@ const FORMS_ORIGIN = "https://forms.withsurface.com";
 const makeStore = () =>
   ({
     sendPayloadToIframes: vi.fn(),
+    sendConsentToIframes: vi.fn(),
     clearUserJourney: vi.fn(),
     log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
   }) as unknown as SurfaceStore;
@@ -46,6 +47,15 @@ describe("initializeMessageListener", () => {
     dispatch({ type: "SEND_DATA", sender: "surface_form" });
 
     expect(store.sendPayloadToIframes).toHaveBeenCalledWith("STORE_UPDATE");
+  });
+
+  it("re-sends consent on the handshake, so a late-mounting form learns the page's answer", () => {
+    const store = makeStore();
+    initializeMessageListener(store);
+
+    dispatch({ type: "SEND_DATA", sender: "surface_form" });
+
+    expect(store.sendConsentToIframes).toHaveBeenCalledTimes(1);
   });
 
   it("with an environment id: pushes STORE_UPDATE, identifies, then pushes LEAD_DATA_UPDATE", async () => {

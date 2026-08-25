@@ -4,6 +4,7 @@ import { identifyLead, getLeadDataWithTTL } from "../lead/identify";
 import { initializeUserJourneyTracking, updateUserJourneyOnRouteChange } from "./user-journey";
 import { onRouteChange } from "../utils/route-observer";
 import type { LeadData } from "../types";
+import { setSurfaceConsent } from "../consent/consent";
 
 vi.mock("./message-listener", () => ({
   initializeMessageListener: vi.fn(),
@@ -175,6 +176,35 @@ describe("SurfaceStore postMessage protocol", () => {
 
     expect(surfacePost).toHaveBeenCalledWith(
       expect.objectContaining({ type: "STORE_UPDATE", sender: "surface_tag" }),
+      "https://forms.withsurface.com"
+    );
+    expect(otherPost).not.toHaveBeenCalled();
+  });
+
+  it("relays consent only to Surface iframes, and only once the page has answered", () => {
+    const surfaceIframe = addIframe(SURFACE_IFRAME_SRC);
+    const otherIframe = addIframe("https://example.com/embed");
+    const store = new SurfaceStore(null);
+
+    const surfacePost = vi
+      .spyOn(surfaceIframe.contentWindow as Window, "postMessage")
+      .mockImplementation(() => {});
+    const otherPost = vi
+      .spyOn(otherIframe.contentWindow as Window, "postMessage")
+      .mockImplementation(() => {});
+
+    store.sendConsentToIframes();
+    expect(surfacePost).not.toHaveBeenCalled();
+
+    setSurfaceConsent({ adTracking: true });
+    store.sendConsentToIframes();
+
+    expect(surfacePost).toHaveBeenCalledWith(
+      {
+        type: "surface:consent",
+        sender: "surface_tag",
+        consent: { adTracking: true, surfaceAnalytics: false },
+      },
       "https://forms.withsurface.com"
     );
     expect(otherPost).not.toHaveBeenCalled();

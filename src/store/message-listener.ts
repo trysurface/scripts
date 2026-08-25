@@ -17,6 +17,8 @@ export function initializeMessageListener(store: SurfaceStore): void {
 
     if (event.data.type === "SEND_DATA") {
       store.sendPayloadToIframes("STORE_UPDATE");
+      // A form that booted after the banner was answered learns consent here.
+      store.sendConsentToIframes();
 
       const envId = getEnvironmentId();
       if (envId) {
