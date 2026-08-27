@@ -78,8 +78,24 @@ No automated tests, linter, or CI pipeline. Testing is manual and browser-based.
 
 ### PostMessage Protocol
 
-- **To iframe:** `STORE_UPDATE` (cookies, URL params, partial fill data), `LEAD_DATA_UPDATE` (leadId, sessionId, fingerprint)
-- **From iframe:** `SEND_DATA` (iframe requests current store data)
+- **To iframe:** `STORE_UPDATE` (cookies, URL params, partial fill data), `LEAD_DATA_UPDATE` (leadId, sessionId, fingerprint), `surface:consent` (which third-party categories the visitor consented to)
+- **From iframe:** `SEND_DATA` (iframe requests current store data), `surface:conversion` (iframe asks the parent to fire an ad pixel first-party)
+
+### Consent (`src/consent/`)
+
+Forms whose Privacy settings put a category on "On consent" load no scripts for
+it until the host page reports the visitor's answer:
+
+```js
+window.SurfaceSetConsent({ adTracking: true, surfaceAnalytics: true });
+```
+
+`consent.ts` holds the answer in module state and notifies `src/index.ts`, which
+relays `surface:consent` to every Surface iframe (and re-sends it on each
+`SEND_DATA` handshake, for forms that mount after the banner was answered).
+Omitted categories count as not granted. The categories mirror the form-render
+gate in `surface_forms` (`lib/client/thirdParty/`) — keep the message shape in
+sync with its `hostConsent.ts`.
 
 ### Key APIs
 

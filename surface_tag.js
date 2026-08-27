@@ -216,6 +216,22 @@
     return null;
   }
 
+  // src/consent/consent.ts
+  var SURFACE_CONSENT_MESSAGE_TYPE = "surface:consent";
+  var consent = null;
+  var onChange = null;
+  var getSurfaceConsent = () => consent;
+  var onSurfaceConsentChange = (callback) => {
+    onChange = callback;
+  };
+  var setSurfaceConsent = (granted) => {
+    consent = {
+      adTracking: granted?.adTracking === true,
+      surfaceAnalytics: granted?.surfaceAnalytics === true
+    };
+    onChange?.();
+  };
+
   // src/utils/debug.ts
   var cached = null;
   function isDebugMode() {
@@ -496,6 +512,7 @@
       }
       if (event.data.type === "SEND_DATA") {
         store.sendPayloadToIframes("STORE_UPDATE");
+        store.sendConsentToIframes();
         const envId = getEnvironmentId();
         if (envId) {
           const identify = store.config?.customOrigin ? identifyLead(envId, store.config) : identifyLead(envId);
@@ -756,15 +773,33 @@
     notifyIframe(iframe, type) {
       const target = iframe || document.querySelector("#surface-iframe");
       if (!target) return;
+      this.postToSurfaceIframe(target, {
+        type,
+        payload: this.getPayload(),
+        sender: "surface_tag"
+      });
+    }
+    postToSurfaceIframe(target, message) {
       try {
         const targetOrigin = new URL(target.src).origin;
         if (!this.surfaceDomains.includes(targetOrigin)) return;
-        target.contentWindow?.postMessage(
-          { type, payload: this.getPayload(), sender: "surface_tag" },
-          targetOrigin
-        );
+        target.contentWindow?.postMessage(message, targetOrigin);
       } catch {
       }
+    }
+    // Relays the page's consent answer to every Surface form on it. Forms with a
+    // category set to "On consent" stay dark until this arrives, so it is also
+    // re-sent on each SEND_DATA handshake for frames that mount later.
+    sendConsentToIframes() {
+      const consent2 = getSurfaceConsent();
+      if (!consent2) return;
+      document.querySelectorAll("iframe").forEach(
+        (iframe) => this.postToSurfaceIframe(iframe, {
+          type: SURFACE_CONSENT_MESSAGE_TYPE,
+          sender: "surface_tag",
+          consent: consent2
+        })
+      );
     }
     getUrlParams() {
       return getUrlParams();
@@ -2473,6 +2508,11 @@
   w2.SurfaceSetLeadDataWithTTL = setLeadDataWithTTL;
   w2.SurfaceGetLeadDataWithTTL = getLeadDataWithTTL;
   w2.SurfaceGetSiteIdFromScript = getSiteIdFromScript;
+  w2.SurfaceSetConsent = setSurfaceConsent;
+  onSurfaceConsentChange(() => {
+    SurfaceTagStore.sendConsentToIframes();
+    SurfaceTagStore.sendPayloadToIframes("STORE_UPDATE");
+  });
   void resolveOpenTriggersOnLoad(environmentId2, runtimeConfig2);
   initReview();
 })();

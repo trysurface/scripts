@@ -1,4 +1,8 @@
 import { VALID_EMBED_TYPES } from "../constants";
+import {
+  getSurfaceConsent,
+  SURFACE_CONSENT_MESSAGE_TYPE,
+} from "../consent/consent";
 import { isDebugMode } from "../utils/debug";
 import { createLogger } from "../utils/logger";
 import { parseCookies } from "../utils/cookies";
@@ -163,17 +167,38 @@ export class SurfaceStore {
     const target = iframe || document.querySelector<HTMLIFrameElement>("#surface-iframe");
     if (!target) return;
 
+    this.postToSurfaceIframe(target, {
+      type,
+      payload: this.getPayload(),
+      sender: "surface_tag",
+    });
+  }
+
+  private postToSurfaceIframe(target: HTMLIFrameElement, message: unknown): void {
     try {
       const targetOrigin = new URL(target.src).origin;
       if (!this.surfaceDomains.includes(targetOrigin)) return;
 
-      target.contentWindow?.postMessage(
-        { type, payload: this.getPayload(), sender: "surface_tag" },
-        targetOrigin
-      );
+      target.contentWindow?.postMessage(message, targetOrigin);
     } catch {
       // Ignore invalid iframe URLs.
     }
+  }
+
+  // Relays the page's consent answer to every Surface form on it. Forms with a
+  // category set to "On consent" stay dark until this arrives, so it is also
+  // re-sent on each SEND_DATA handshake for frames that mount later.
+  sendConsentToIframes(): void {
+    const consent = getSurfaceConsent();
+    if (!consent) return;
+
+    document.querySelectorAll("iframe").forEach((iframe) =>
+      this.postToSurfaceIframe(iframe, {
+        type: SURFACE_CONSENT_MESSAGE_TYPE,
+        sender: "surface_tag",
+        consent,
+      })
+    );
   }
 
   getUrlParams(): Record<string, string> {

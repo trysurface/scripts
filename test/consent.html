@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="X-UA-Compatible" content="ie=edge" />
+    <title>Consent Mode Test - Surface Form</title>
+    <link rel="stylesheet" href="common.css">
+    <link rel="stylesheet" href="consent.css">
+    <script>
+      // Resolve config before anything loads: in tag mode the script element
+      // needs its site-id and (for a non-production form origin such as a
+      // preview deploy) data-custom-domain set at load time, because the tag
+      // reads them off document.currentScript.
+      (() => {
+        const PRODUCTION_ORIGINS = [
+          "https://forms.withsurface.com",
+          "https://app.withsurface.com",
+          "https://dev.withsurface.com",
+        ];
+        const params = new URLSearchParams(window.location.search);
+        const formSrc = (
+          params.get("formSrc") || "https://dev.withsurface.com/s/cmmv0dvhf0001ju040jfogjrz"
+        ).trim();
+
+        let formOrigin = "";
+        try {
+          formOrigin = new URL(formSrc).origin;
+        } catch {
+          /* reported in the config panel below */
+        }
+
+        const config = {
+          formSrc,
+          formOrigin,
+          siteId: params.get("siteId") || "cllo318mt0003mb08hnp0f5zy",
+          // "tag": the page calls window.SurfaceSetConsent and the tag relays.
+          // "iframe": no tag at all, the page posts to the frame itself.
+          mode: params.get("mode") === "iframe" ? "iframe" : "tag",
+          tagStatus: "not loaded (direct iframe mode)",
+        };
+        window.consentTestConfig = config;
+
+        if (config.mode !== "tag" || !formOrigin) return;
+
+        const script = document.createElement("script");
+        script.src = "../surface_tag.js";
+        script.setAttribute("site-id", config.siteId);
+        // The tag only posts to origins on its allowlist. Production origins are
+        // built in; a preview deploy or custom domain has to be declared.
+        if (!PRODUCTION_ORIGINS.includes(formOrigin)) {
+          script.setAttribute("data-custom-domain", formOrigin);
+          config.customDomain = formOrigin;
+        }
+        document.head.appendChild(script);
+        config.tagStatus = "loaded";
+      })();
+    </script>
+  </head>
+  <body>
+    <div class="container">
+      <h1>Consent Mode Test</h1>
+      <p><a href="index.html">&larr; Back to Test Suite</a></p>
+
+      <div class="config-section">
+        <strong>Configuration:</strong><br>
+
+        <label for="formUrlInput" style="font-weight: 600; margin-top: 8px; display: inline-block;">Form URL:</label><br>
+        <input type="text" id="formUrlInput">
+        <button id="reloadWithForm">Reload</button>
+
+        <hr style="margin: 16px 0; border: none; border-top: 1px solid #e0e0e0;">
+        Consent delivery:
+        <a href="?mode=tag" id="modeTagLink"><code>Surface tag</code></a> ·
+        <a href="?mode=iframe" id="modeIframeLink"><code>Direct iframe</code></a>
+        &mdash; currently <code id="modeLabel"></code><br>
+        Environment ID: <code id="siteIdLabel"></code><br>
+        Custom domain declared to the tag: <code id="customDomainLabel"></code><br>
+        Surface Tag: <code id="tagStatus"></code><br>
+        Debug Mode: <code id="debugMode">false</code> (add <code>?surfaceDebug=true</code> to enable)
+      </div>
+
+      <div class="section">
+        <h2>How to run this test</h2>
+        <ol class="steps">
+          <li>
+            In the form's <strong>Settings &rarr; Privacy</strong> tab, set <em>Ad &amp; conversion tracking</em>
+            (and/or <em>Surface analytics</em>) to <strong>On consent</strong>.
+          </li>
+          <li>
+            Give the form something to block: a GTM container, GA4 measurement ID, Meta Pixel, or HubSpot
+            tracking ID on the other settings tabs. Surface analytics needs nothing configured.
+          </li>
+          <li>
+            Point <code>Form URL</code> above at that form and reload. Open DevTools &rarr; Network and filter on:
+            <div class="filter-row">
+              <code id="vendorFilter">googletagmanager|google-analytics|connect.facebook|facebook.com/tr|hs-scripts|posthog|vercel-scripts</code>
+              <button class="secondary" id="copyFilter">Copy</button>
+            </div>
+          </li>
+          <li>
+            <strong>Before answering the banner:</strong> no requests match. That is the whole point &mdash;
+            the form rendered, but nothing third-party loaded.
+          </li>
+          <li>
+            <strong>Accept in the banner:</strong> the matching vendor requests appear within a second, with no
+            page reload. Reject instead and the filter stays empty.
+          </li>
+        </ol>
+        <p class="note">
+          Withdrawing consent after accepting stops further calls but cannot unload scripts that already
+          started &mdash; reload the page to get back to a clean slate.
+        </p>
+      </div>
+
+      <h2>Events Summary</h2>
+      <div class="events-summary">
+        <div class="summary-card"><div class="summary-count" id="totalEvents">0</div><div class="summary-label">Total Events</div></div>
+        <div class="summary-card"><div class="summary-count" id="sentEvents">0</div><div class="summary-label">Sent to Iframe</div></div>
+        <div class="summary-card"><div class="summary-count" id="receivedEvents">0</div><div class="summary-label">Received from Iframe</div></div>
+        <div class="summary-card"><div class="summary-count" id="storeUpdateEvents">0</div><div class="summary-label">STORE_UPDATE</div></div>
+        <div class="summary-card"><div class="summary-count" id="leadDataEvents">0</div><div class="summary-label">LEAD_DATA_UPDATE</div></div>
+        <div class="summary-card"><div class="summary-count" id="sendDataEvents">0</div><div class="summary-label">SEND_DATA</div></div>
+      </div>
+
+      <h2>Events Log</h2>
+      <div class="button-group">
+        <button class="clear-log" onclick="clearEventLog()">Clear Log</button>
+        <button class="secondary" onclick="exportEvents()">Export Events</button>
+      </div>
+      <div class="events-log" id="eventsLog"></div>
+
+      <div class="section">
+        <h2>Embedded Form</h2>
+        <p class="note">
+          A plain iframe, as a customer would write it. In tag mode the tag finds it on the page and relays
+          consent to it; in direct-iframe mode this page posts to it directly.
+        </p>
+        <iframe id="consentIframe" class="consent-iframe"></iframe>
+      </div>
+    </div>
+
+    <!-- Stand-in for the customer's own cookie banner. -->
+    <div class="cookie-banner" id="cookieBanner">
+      <div class="cookie-banner-body">
+        <div class="cookie-copy">
+          <strong>We use cookies</strong>
+          <p>
+            We&rsquo;d like to use cookies for marketing and analytics. Nothing loads until you choose &mdash;
+            including the tracking on the form below.
+          </p>
+        </div>
+        <div class="cookie-actions">
+          <button class="secondary" id="managePrefs">Manage</button>
+          <button class="secondary" id="rejectAll">Reject all</button>
+          <button id="acceptAll">Accept all</button>
+        </div>
+      </div>
+      <div class="cookie-prefs" id="cookiePrefs" hidden>
+        <label><input type="checkbox" id="prefAdTracking"> Marketing &mdash; <code>adTracking</code></label>
+        <label><input type="checkbox" id="prefSurfaceAnalytics"> Analytics &mdash; <code>surfaceAnalytics</code></label>
+        <button id="savePrefs">Save choices</button>
+      </div>
+    </div>
+
+    <div class="consent-status" id="consentStatus" hidden>
+      <span id="consentStatusText"></span>
+      <button class="secondary" id="changePrefs">Change preferences</button>
+    </div>
+
+    <script src="event-monitor.js"></script>
+    <script src="consent.js"></script>
+  </body>
+</html>

@@ -6,6 +6,7 @@ import {
   setEnvironmentId,
 } from "./lead/identify";
 import { SurfaceStore } from "./store/store";
+import { onSurfaceConsentChange, setSurfaceConsent } from "./consent/consent";
 import { SurfaceExternalForm } from "./external-form/external-form";
 import { SurfaceEmbed } from "./embed/embed";
 import { resolveOpenTriggersOnLoad } from "./open-triggers/open-triggers";
@@ -29,6 +30,15 @@ w.SurfaceIdentifyLead = identifyLead;
 w.SurfaceSetLeadDataWithTTL = setLeadDataWithTTL;
 w.SurfaceGetLeadDataWithTTL = getLeadDataWithTTL;
 w.SurfaceGetSiteIdFromScript = getSiteIdFromScript;
+w.SurfaceSetConsent = setSurfaceConsent;
+
+// Relay a consent answer to the forms on the page. The store push goes with it
+// so a form that was blocked until now still gets the parent URL params it
+// needs to fire conversions in first-party context.
+onSurfaceConsentChange(() => {
+  SurfaceTagStore.sendConsentToIframes();
+  SurfaceTagStore.sendPayloadToIframes("STORE_UPDATE");
+});
 
 // Auto-open a form when the host URL carries a configured `?<slug>=true` param.
 // Fire-and-forget; only touches the network when params are present.
