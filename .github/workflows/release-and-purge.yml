@@ -41,8 +41,13 @@ jobs:
         run: |
           set -euo pipefail
           latest=$(gh api "repos/${GITHUB_REPOSITORY}/releases/latest" --jq '.tag_name' 2>/dev/null || echo "v1.1.0")
-          ver=${latest#v}                       # strip an optional leading v
-          IFS=. read -r MAJOR MINOR PATCH <<< "${ver}"
+          # Validate vMAJOR.MINOR.PATCH before the arithmetic — a malformed or pre-release latest tag
+          # would otherwise yield an invalid/duplicate tag and silently stop @latest from advancing.
+          if [[ ! "${latest}" =~ ^v?([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+            echo "::error::Latest release tag '${latest}' is not vMAJOR.MINOR.PATCH; refusing to derive the next release. Fix the latest release tag."
+            exit 1
+          fi
+          MAJOR="${BASH_REMATCH[1]}"; MINOR="${BASH_REMATCH[2]}"; PATCH="${BASH_REMATCH[3]}"
           RELEASE_TAG="v${MAJOR}.${MINOR}.$((PATCH + 1))"
           echo "Latest release ${latest}; cutting ${RELEASE_TAG} at ${GITHUB_SHA}"
           gh api -X POST "repos/${GITHUB_REPOSITORY}/releases" \
