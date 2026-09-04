@@ -40,7 +40,22 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          latest=$(gh api "repos/${GITHUB_REPOSITORY}/releases/latest" --jq '.tag_name' 2>/dev/null || echo "v1.1.0")
+          # Read the latest release tag. Only a genuine "no releases yet" (HTTP 404) may fall back to
+          # v1.1.0 — any OTHER failure (auth, rate limit, network, 5xx) must NOT fabricate a version:
+          # a fabricated low tag either collides with an existing one (hard fail AFTER the bytes are
+          # already on main, so @latest is stuck) or, when it's below the true latest, silently fails
+          # to advance @latest while this job goes green.
+          err=$(mktemp)
+          if latest=$(gh api "repos/${GITHUB_REPOSITORY}/releases/latest" --jq '.tag_name' 2>"${err}"); then
+            :
+          elif grep -q "HTTP 404" "${err}"; then
+            latest="v1.1.0"
+          else
+            cat "${err}" >&2
+            echo "::error::Could not read the latest release (not a 404). Refusing to fabricate a version and risk a stale @latest — re-run once the GitHub API is reachable."
+            exit 1
+          fi
+          rm -f "${err}"
           # Validate vMAJOR.MINOR.PATCH before the arithmetic — a malformed or pre-release latest tag
           # would otherwise yield an invalid/duplicate tag and silently stop @latest from advancing.
           if [[ ! "${latest}" =~ ^v?([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
