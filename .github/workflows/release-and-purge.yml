@@ -58,12 +58,15 @@ jobs:
           rm -f "${err}"
           # Validate vMAJOR.MINOR.PATCH before the arithmetic — a malformed or pre-release latest tag
           # would otherwise yield an invalid/duplicate tag and silently stop @latest from advancing.
-          if [[ ! "${latest}" =~ ^v?([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
-            echo "::error::Latest release tag '${latest}' is not vMAJOR.MINOR.PATCH; refusing to derive the next release. Fix the latest release tag."
+          # Each component must have NO leading zeros: a zero-padded value like 008 is not valid semver,
+          # and Bash would parse it as octal ("008" -> value-too-great-for-base) and abort the release.
+          if [[ ! "${latest}" =~ ^v?(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "::error::Latest release tag '${latest}' is not vMAJOR.MINOR.PATCH with no leading zeros; refusing to derive the next release. Fix the latest release tag."
             exit 1
           fi
           MAJOR="${BASH_REMATCH[1]}"; MINOR="${BASH_REMATCH[2]}"; PATCH="${BASH_REMATCH[3]}"
-          RELEASE_TAG="v${MAJOR}.${MINOR}.$((PATCH + 1))"
+          # Force base-10 so the increment can never be misread as octal, even if the guard above changes.
+          RELEASE_TAG="v${MAJOR}.${MINOR}.$((10#${PATCH} + 1))"
           echo "Latest release ${latest}; cutting ${RELEASE_TAG} at ${GITHUB_SHA}"
           gh api -X POST "repos/${GITHUB_REPOSITORY}/releases" \
             -f tag_name="${RELEASE_TAG}" \
