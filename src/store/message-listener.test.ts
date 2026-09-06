@@ -18,6 +18,7 @@ const makeStore = () =>
     sendPayloadToIframes: vi.fn(),
     sendConsentToIframes: vi.fn(),
     clearUserJourney: vi.fn(),
+    cookieTrackingAllowed: vi.fn(() => true),
     log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
   }) as unknown as SurfaceStore;
 
@@ -71,6 +72,19 @@ describe("initializeMessageListener", () => {
 
     await flushMicrotasks();
     expect(store.sendPayloadToIframes).toHaveBeenLastCalledWith("LEAD_DATA_UPDATE");
+  });
+
+  it("under consent mode without a cookie grant: pushes LEAD_DATA_UPDATE immediately, never identifies", () => {
+    vi.mocked(getEnvironmentId).mockReturnValue("env_123");
+    const store = makeStore();
+    vi.mocked(store.cookieTrackingAllowed).mockReturnValue(false);
+    initializeMessageListener(store);
+
+    dispatch({ type: "SEND_DATA", sender: "surface_form" });
+
+    // Listeners from earlier cases are still attached, so only this store's pushes are asserted.
+    const types = vi.mocked(store.sendPayloadToIframes).mock.calls.map((c) => c[0]);
+    expect(types).toEqual(["STORE_UPDATE", "LEAD_DATA_UPDATE"]);
   });
 
   it("without an environment id: pushes LEAD_DATA_UPDATE immediately, never identifies", () => {

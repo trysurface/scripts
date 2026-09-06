@@ -73,12 +73,14 @@
 
   // src/runtime-config.ts
   var CUSTOM_DOMAIN_ATTRIBUTE = "data-custom-domain";
+  var CONSENT_MODE_ATTRIBUTE = "data-consent-mode";
   var DEFAULT_SURFACE_RUNTIME_CONFIG = {
     apiBaseUrl: EXTERNAL_FORM_API,
     leadIdentifyApi: LEAD_IDENTIFY_API,
     userJourneyTrackingApi: USER_JOURNEY_TRACKING_API,
     surfaceDomains: SURFACE_DOMAINS,
-    customOrigin: null
+    customOrigin: null,
+    waitForCookieConsent: false
   };
   var runtimeConfig = DEFAULT_SURFACE_RUNTIME_CONFIG;
   function normalizeCustomOrigin(value) {
@@ -95,17 +97,19 @@
     }
   }
   function resolveSurfaceRuntimeConfig(scriptElement) {
+    const waitForCookieConsent = scriptElement?.hasAttribute(CONSENT_MODE_ATTRIBUTE) ?? false;
     const customOrigin = normalizeCustomOrigin(
       scriptElement?.getAttribute(CUSTOM_DOMAIN_ATTRIBUTE) ?? ""
     );
-    if (!customOrigin) return DEFAULT_SURFACE_RUNTIME_CONFIG;
+    if (!customOrigin) return { ...DEFAULT_SURFACE_RUNTIME_CONFIG, waitForCookieConsent };
     const apiBaseUrl = `${customOrigin}/api/v1`;
     return {
       apiBaseUrl,
       leadIdentifyApi: `${apiBaseUrl}/lead/identify`,
       userJourneyTrackingApi: `${apiBaseUrl}/lead/track`,
       surfaceDomains: Array.from(/* @__PURE__ */ new Set([...SURFACE_DOMAINS, customOrigin])),
-      customOrigin
+      customOrigin,
+      waitForCookieConsent
     };
   }
   function initializeSurfaceRuntimeConfig(scriptElement) {
@@ -134,6 +138,9 @@
       expiry: (/* @__PURE__ */ new Date()).getTime() + LEAD_DATA_TTL
     };
     localStorage.setItem("surfaceLeadData", JSON.stringify(item));
+  }
+  function clearLeadData() {
+    localStorage.removeItem("surfaceLeadData");
   }
   function getLeadDataWithTTL() {
     const itemStr = localStorage.getItem("surfaceLeadData");
@@ -227,7 +234,8 @@
   var setSurfaceConsent = (granted) => {
     consent = {
       adTracking: granted?.adTracking === true,
-      surfaceAnalytics: granted?.surfaceAnalytics === true
+      surfaceAnalytics: granted?.surfaceAnalytics === true,
+      cookieTracking: granted?.cookieTracking === true
     };
     onChange?.();
   };
@@ -514,7 +522,7 @@
         store.sendPayloadToIframes("STORE_UPDATE");
         store.sendConsentToIframes();
         const envId = getEnvironmentId();
-        if (envId) {
+        if (envId && store.cookieTrackingAllowed()) {
           const identify = store.config?.customOrigin ? identifyLead(envId, store.config) : identifyLead(envId);
           identify.then(() => store.sendPayloadToIframes("LEAD_DATA_UPDATE")).catch((e) => console.log("Failed identify", e));
         } else {
@@ -683,6 +691,7 @@
   // src/store/store.ts
   var SurfaceStore = class {
     constructor(environmentId3 = null, config = getSurfaceRuntimeConfig()) {
+      this.journeyStarted = false;
       this.windowUrl = new URL(window.location.href).toString();
       this.origin = new URL(window.location.href).origin.toString();
       this.referrer = document.referrer || "";
@@ -696,30 +705,21 @@
       this.surfaceDomains = config.surfaceDomains;
       this.userJourneyId = null;
       this.userJourney = [];
-      this.cachedIdentifyData = getLeadDataWithTTL();
       this.environmentId = environmentId3;
       this.log = createLogger("Surface Store");
+      this.cachedIdentifyData = this.cookieTrackingAllowed() ? getLeadDataWithTTL() : null;
       initializeMessageListener(this);
       if ((this.cachedIdentifyData || !isIdentifyInProgress()) && !this.isCurrentOriginSurfaceDomain()) {
-        initializeUserJourneyTracking(
-          this.environmentId,
-          this.log,
-          () => this.userJourneyId,
-          (id) => {
-            const resolved = !!id && id !== this.userJourneyId;
-            this.userJourneyId = id;
-            if (resolved) this.sendPayloadToIframes("STORE_UPDATE");
-          },
-          this.config
-        );
+        if (this.cookieTrackingAllowed()) this.startJourneyTracking();
         this.setupRouteChangeDetection();
       }
       const pushInitialData = () => {
         if (!this.hasSurfaceIframe()) return;
         this.sendPayloadToIframes("STORE_UPDATE");
-        if (this.environmentId) {
-          const identify = this.config.customOrigin ? identifyLead(this.environmentId, this.config) : identifyLead(this.environmentId);
-          identify.then(() => this.sendPayloadToIframes("LEAD_DATA_UPDATE")).catch((e) => this.log.error({ message: "Initial identify failed", error: e }));
+        if (!this.cookieTrackingAllowed()) {
+          this.sendPayloadToIframes("LEAD_DATA_UPDATE");
+        } else if (this.environmentId) {
+          this.identifyAndPushLeadData();
         } else if (getLeadDataWithTTL()) {
           this.sendPayloadToIframes("LEAD_DATA_UPDATE");
         }
@@ -743,21 +743,65 @@
       const origin = window.location?.origin ?? "";
       return this.surfaceDomains.includes(origin);
     }
+    /**
+     * Whether this tag may recognise the visitor: read or write the lead cache,
+     * the journey cookies and the page's cookies. Always true unless the script
+     * was loaded with `data-consent-mode`, in which case the page's banner has to
+     * grant `cookieTracking` first.
+     */
+    cookieTrackingAllowed() {
+      return !this.config.waitForCookieConsent || getSurfaceConsent()?.cookieTracking === true;
+    }
+    /** Re-evaluates host-side tracking after the page reports a consent change. */
+    applyConsent() {
+      if (!this.config.waitForCookieConsent) return;
+      if (this.cookieTrackingAllowed()) {
+        if (!this.isCurrentOriginSurfaceDomain()) this.startJourneyTracking();
+        if (this.environmentId && this.hasSurfaceIframe()) this.identifyAndPushLeadData();
+        return;
+      }
+      this.clearUserJourney();
+      this.journeyStarted = false;
+      this.cachedIdentifyData = null;
+      clearLeadData();
+    }
+    startJourneyTracking() {
+      if (this.journeyStarted) return;
+      this.journeyStarted = true;
+      initializeUserJourneyTracking(
+        this.environmentId,
+        this.log,
+        () => this.userJourneyId,
+        (id) => {
+          const resolved = !!id && id !== this.userJourneyId;
+          this.userJourneyId = id;
+          if (resolved) this.sendPayloadToIframes("STORE_UPDATE");
+        },
+        this.config
+      );
+    }
+    identifyAndPushLeadData() {
+      if (!this.environmentId) return;
+      const identify = this.config.customOrigin ? identifyLead(this.environmentId, this.config) : identifyLead(this.environmentId);
+      identify.then(() => this.sendPayloadToIframes("LEAD_DATA_UPDATE")).catch((e) => this.log.error({ message: "Initial identify failed", error: e }));
+    }
     setupRouteChangeDetection() {
       onRouteChange((newUrl) => {
         this.windowUrl = new URL(newUrl).toString();
-        updateUserJourneyOnRouteChange(
-          this.environmentId,
-          newUrl,
-          this.log,
-          () => this.userJourneyId,
-          (id) => {
-            const resolved = !!id && id !== this.userJourneyId;
-            this.userJourneyId = id;
-            if (resolved) this.sendPayloadToIframes("STORE_UPDATE");
-          },
-          this.config
-        );
+        if (this.cookieTrackingAllowed()) {
+          updateUserJourneyOnRouteChange(
+            this.environmentId,
+            newUrl,
+            this.log,
+            () => this.userJourneyId,
+            (id) => {
+              const resolved = !!id && id !== this.userJourneyId;
+              this.userJourneyId = id;
+              if (resolved) this.sendPayloadToIframes("STORE_UPDATE");
+            },
+            this.config
+          );
+        }
         this.sendPayloadToIframes("STORE_UPDATE");
         this.log.info({ message: "Route changed, updated journey", response: { url: newUrl } });
       });
@@ -805,15 +849,16 @@
       return getUrlParams();
     }
     getPayload() {
+      const allowed = this.cookieTrackingAllowed();
       return {
         windowUrl: this.windowUrl,
         referrer: this.referrer,
-        cookies: Object.keys(this.cookies).length === 0 ? parseCookies() : this.cookies,
+        cookies: !allowed ? {} : Object.keys(this.cookies).length === 0 ? parseCookies() : this.cookies,
         origin: this.origin,
         questionIds: this.partialFilledData,
         urlParams: this.urlParams,
-        surfaceLeadData: getLeadDataWithTTL(),
-        userJourneyId: this.userJourneyId
+        surfaceLeadData: allowed ? getLeadDataWithTTL() : null,
+        userJourneyId: allowed ? this.userJourneyId : null
       };
     }
     clearUserJourney() {
@@ -2510,6 +2555,7 @@
   w2.SurfaceGetSiteIdFromScript = getSiteIdFromScript;
   w2.SurfaceSetConsent = setSurfaceConsent;
   onSurfaceConsentChange(() => {
+    SurfaceTagStore.applyConsent();
     SurfaceTagStore.sendConsentToIframes();
     SurfaceTagStore.sendPayloadToIframes("STORE_UPDATE");
   });

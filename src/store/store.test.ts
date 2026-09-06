@@ -1,7 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } from "vitest";
 import { SurfaceStore } from "./store";
-import { identifyLead, getLeadDataWithTTL } from "../lead/identify";
-import { initializeUserJourneyTracking, updateUserJourneyOnRouteChange } from "./user-journey";
+import { identifyLead, getLeadDataWithTTL, clearLeadData } from "../lead/identify";
+import {
+  initializeUserJourneyTracking,
+  updateUserJourneyOnRouteChange,
+  clearUserJourney,
+} from "./user-journey";
+import { DEFAULT_SURFACE_RUNTIME_CONFIG } from "../runtime-config";
 import { onRouteChange } from "../utils/route-observer";
 import type { LeadData } from "../types";
 import { setSurfaceConsent } from "../consent/consent";
@@ -13,6 +18,7 @@ vi.mock("../lead/identify", () => ({
   identifyLead: vi.fn(async () => null),
   getLeadDataWithTTL: vi.fn((): LeadData | null => null),
   isIdentifyInProgress: vi.fn(() => false),
+  clearLeadData: vi.fn(),
 }));
 vi.mock("./user-journey", () => ({
   initializeUserJourneyTracking: vi.fn(),
@@ -203,10 +209,77 @@ describe("SurfaceStore postMessage protocol", () => {
       {
         type: "surface:consent",
         sender: "surface_tag",
-        consent: { adTracking: true, surfaceAnalytics: false },
+        consent: { adTracking: true, surfaceAnalytics: false, cookieTracking: false },
       },
       "https://forms.withsurface.com"
     );
     expect(otherPost).not.toHaveBeenCalled();
+  });
+});
+
+// `data-consent-mode` on the script: the page's banner owns cookie consent, so
+// the tag does no visitor recognition or journey work until it hears a grant.
+describe("SurfaceStore under data-consent-mode", () => {
+  const consentModeConfig = { ...DEFAULT_SURFACE_RUNTIME_CONFIG, waitForCookieConsent: true };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useFakeTimers();
+    document.body.innerHTML = "";
+    document.cookie = "hubspotutk=abc";
+    setSurfaceConsent({});
+    addIframe(SURFACE_IFRAME_SRC);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    document.cookie = "hubspotutk=; max-age=0";
+  });
+
+  it("before a grant: no journey, no identify, no lead cache read, and an empty cookie snapshot", async () => {
+    const store = new SurfaceStore("env_123", consentModeConfig);
+    const pushes = vi.spyOn(store, "sendPayloadToIframes");
+
+    await vi.runAllTimersAsync();
+
+    expect(initializeUserJourneyTracking).not.toHaveBeenCalled();
+    expect(identifyLead).not.toHaveBeenCalled();
+    expect(getLeadDataWithTTL).not.toHaveBeenCalled();
+    // The frame still gets its handshake so it can identify without recognition.
+    expect(pushedTypes(pushes)).toEqual(["STORE_UPDATE", "LEAD_DATA_UPDATE"]);
+    expect(store.getPayload()).toMatchObject({ cookies: {}, surfaceLeadData: null, userJourneyId: null });
+  });
+
+  it("a cookie grant starts the journey, identifies and forwards cookies; withdrawal clears them again", async () => {
+    const store = new SurfaceStore("env_123", consentModeConfig);
+    await vi.runAllTimersAsync();
+
+    setSurfaceConsent({ cookieTracking: true });
+    store.applyConsent();
+    await vi.runAllTimersAsync();
+
+    expect(initializeUserJourneyTracking).toHaveBeenCalledTimes(1);
+    expect(identifyLead).toHaveBeenCalledWith("env_123");
+    expect(store.getPayload().cookies).toEqual({ hubspotutk: "abc" });
+
+    setSurfaceConsent({ cookieTracking: false });
+    store.applyConsent();
+
+    expect(clearUserJourney).toHaveBeenCalledTimes(1);
+    expect(clearLeadData).toHaveBeenCalledTimes(1);
+    expect(store.getPayload()).toMatchObject({ cookies: {}, surfaceLeadData: null });
+
+    // Route changes keep pushing the store but no longer touch the journey.
+    capturedRouteChangeCallback()("http://localhost:3000/next-page");
+    expect(updateUserJourneyOnRouteChange).not.toHaveBeenCalled();
+  });
+
+  it("without the attribute the tag behaves as before, whatever the page reports", async () => {
+    const store = new SurfaceStore("env_123");
+    await vi.runAllTimersAsync();
+
+    expect(initializeUserJourneyTracking).toHaveBeenCalledTimes(1);
+    expect(identifyLead).toHaveBeenCalledWith("env_123");
+    expect(store.getPayload().cookies).toEqual({ hubspotutk: "abc" });
   });
 });

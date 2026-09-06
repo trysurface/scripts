@@ -20,7 +20,14 @@ describe("surface consent", () => {
     expect(getSurfaceConsent()).toEqual({
       adTracking: true,
       surfaceAnalytics: false,
+      cookieTracking: false,
     });
+  });
+
+  it("treats each answer as a complete snapshot, so an older two-field call denies cookies", () => {
+    setSurfaceConsent({ adTracking: true, surfaceAnalytics: true, cookieTracking: true });
+    setSurfaceConsent({ adTracking: true, surfaceAnalytics: true });
+    expect(getSurfaceConsent()?.cookieTracking).toBe(false);
   });
 
   it("ignores non-boolean values", () => {
@@ -34,6 +41,7 @@ describe("surface consent", () => {
     expect(getSurfaceConsent()).toEqual({
       adTracking: false,
       surfaceAnalytics: true,
+      cookieTracking: false,
     });
   });
 

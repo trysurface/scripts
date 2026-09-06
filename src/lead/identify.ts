@@ -29,6 +29,10 @@ export function setLeadDataWithTTL(data: Omit<LeadData, "expiry">): void {
   localStorage.setItem("surfaceLeadData", JSON.stringify(item));
 }
 
+export function clearLeadData(): void {
+  localStorage.removeItem("surfaceLeadData");
+}
+
 export function getLeadDataWithTTL(): LeadData | null {
   const itemStr = localStorage.getItem("surfaceLeadData");
   if (!itemStr) return null;

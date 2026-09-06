@@ -87,15 +87,23 @@ Forms whose Privacy settings put a category on "On consent" load no scripts for
 it until the host page reports the visitor's answer:
 
 ```js
-window.SurfaceSetConsent({ adTracking: true, surfaceAnalytics: true });
+window.SurfaceSetConsent({ adTracking: true, surfaceAnalytics: true, cookieTracking: true });
 ```
 
 `consent.ts` holds the answer in module state and notifies `src/index.ts`, which
 relays `surface:consent` to every Surface iframe (and re-sends it on each
 `SEND_DATA` handshake, for forms that mount after the banner was answered).
-Omitted categories count as not granted. The categories mirror the form-render
-gate in `surface_forms` (`lib/client/thirdParty/`) — keep the message shape in
-sync with its `hostConsent.ts`.
+Every call is a complete snapshot: omitted categories count as not granted. The
+categories mirror the form-render gate in `surface_forms`
+(`lib/client/thirdParty/`) — keep the message shape in sync with its
+`hostConsent.ts`.
+
+`cookieTracking` also gates the tag's own host-side work, but only when the
+`<script>` carries `data-consent-mode` (read in `runtime-config.ts`). Until that
+page grants it, `SurfaceStore` skips identify, the `surfaceLeadData` cache, the
+journey cookies and forwards an empty cookie snapshot; `applyConsent()` starts
+them on a grant and clears them on withdrawal. Without the attribute nothing
+changes for existing installs.
 
 ### Key APIs
 

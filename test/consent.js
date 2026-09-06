@@ -11,6 +11,7 @@ const status = document.getElementById("consentStatus");
 const statusText = document.getElementById("consentStatusText");
 const adTrackingPref = document.getElementById("prefAdTracking");
 const surfaceAnalyticsPref = document.getElementById("prefSurfaceAnalytics");
+const cookieTrackingPref = document.getElementById("prefCookieTracking");
 
 const text = (id, value) => {
   document.getElementById(id).textContent = value;
@@ -68,6 +69,7 @@ function answer(consent) {
   deliverConsent(consent);
   adTrackingPref.checked = consent.adTracking;
   surfaceAnalyticsPref.checked = consent.surfaceAnalytics;
+  cookieTrackingPref.checked = consent.cookieTracking;
   banner.hidden = true;
   status.hidden = false;
   statusText.textContent = `Consent — ${describe(consent)}`;
@@ -84,13 +86,17 @@ document.getElementById("managePrefs").addEventListener("click", () => {
   prefs.hidden = !prefs.hidden;
 });
 document.getElementById("acceptAll").addEventListener("click", () =>
-  answer({ adTracking: true, surfaceAnalytics: true })
+  answer({ adTracking: true, surfaceAnalytics: true, cookieTracking: true })
 );
 document.getElementById("rejectAll").addEventListener("click", () =>
-  answer({ adTracking: false, surfaceAnalytics: false })
+  answer({ adTracking: false, surfaceAnalytics: false, cookieTracking: false })
 );
 document.getElementById("savePrefs").addEventListener("click", () =>
-  answer({ adTracking: adTrackingPref.checked, surfaceAnalytics: surfaceAnalyticsPref.checked })
+  answer({
+    adTracking: adTrackingPref.checked,
+    surfaceAnalytics: surfaceAnalyticsPref.checked,
+    cookieTracking: cookieTrackingPref.checked,
+  })
 );
 document.getElementById("changePrefs").addEventListener("click", showBanner);
 document.getElementById("copyFilter").addEventListener("click", (event) => {

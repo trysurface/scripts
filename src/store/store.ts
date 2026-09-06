@@ -8,7 +8,7 @@ import { createLogger } from "../utils/logger";
 import { parseCookies } from "../utils/cookies";
 import { getUrlParams } from "../utils/url";
 import { onRouteChange } from "../utils/route-observer";
-import { identifyLead, getLeadDataWithTTL, isIdentifyInProgress } from "../lead/identify";
+import { identifyLead, getLeadDataWithTTL, isIdentifyInProgress, clearLeadData } from "../lead/identify";
 import { initializeMessageListener } from "./message-listener";
 import {
   initializeUserJourneyTracking,
@@ -38,6 +38,7 @@ export class SurfaceStore {
   environmentId: string | null;
   config: SurfaceRuntimeConfig;
   log: Logger;
+  private journeyStarted = false;
 
   constructor(
     environmentId: string | null = null,
@@ -56,9 +57,9 @@ export class SurfaceStore {
     this.surfaceDomains = config.surfaceDomains;
     this.userJourneyId = null;
     this.userJourney = [];
-    this.cachedIdentifyData = getLeadDataWithTTL();
     this.environmentId = environmentId;
     this.log = createLogger("Surface Store");
+    this.cachedIdentifyData = this.cookieTrackingAllowed() ? getLeadDataWithTTL() : null;
 
     initializeMessageListener(this);
 
@@ -66,19 +67,7 @@ export class SurfaceStore {
       (this.cachedIdentifyData || !isIdentifyInProgress()) &&
       !this.isCurrentOriginSurfaceDomain()
     ) {
-      initializeUserJourneyTracking(
-        this.environmentId,
-        this.log,
-        () => this.userJourneyId,
-        (id) => {
-          const resolved = !!id && id !== this.userJourneyId;
-          this.userJourneyId = id;
-          // The journey id resolves async — iframes that already received a
-          // STORE_UPDATE need a refresh to stitch this pageview.
-          if (resolved) this.sendPayloadToIframes("STORE_UPDATE");
-        },
-        this.config
-      );
+      if (this.cookieTrackingAllowed()) this.startJourneyTracking();
       this.setupRouteChangeDetection();
     }
 
@@ -91,13 +80,11 @@ export class SurfaceStore {
     const pushInitialData = () => {
       if (!this.hasSurfaceIframe()) return;
       this.sendPayloadToIframes("STORE_UPDATE");
-      if (this.environmentId) {
-        const identify = this.config.customOrigin
-          ? identifyLead(this.environmentId, this.config)
-          : identifyLead(this.environmentId);
-        identify
-          .then(() => this.sendPayloadToIframes("LEAD_DATA_UPDATE"))
-          .catch((e) => this.log.error({ message: "Initial identify failed", error: e }));
+      if (!this.cookieTrackingAllowed()) {
+        // Nothing to recognise the visitor with; release the frame's handshake anyway.
+        this.sendPayloadToIframes("LEAD_DATA_UPDATE");
+      } else if (this.environmentId) {
+        this.identifyAndPushLeadData();
       } else if (getLeadDataWithTTL()) {
         this.sendPayloadToIframes("LEAD_DATA_UPDATE");
       }
@@ -126,24 +113,78 @@ export class SurfaceStore {
     return this.surfaceDomains.includes(origin);
   }
 
+  /**
+   * Whether this tag may recognise the visitor: read or write the lead cache,
+   * the journey cookies and the page's cookies. Always true unless the script
+   * was loaded with `data-consent-mode`, in which case the page's banner has to
+   * grant `cookieTracking` first.
+   */
+  cookieTrackingAllowed(): boolean {
+    return !this.config.waitForCookieConsent || getSurfaceConsent()?.cookieTracking === true;
+  }
+
+  /** Re-evaluates host-side tracking after the page reports a consent change. */
+  applyConsent(): void {
+    if (!this.config.waitForCookieConsent) return;
+    if (this.cookieTrackingAllowed()) {
+      if (!this.isCurrentOriginSurfaceDomain()) this.startJourneyTracking();
+      if (this.environmentId && this.hasSurfaceIframe()) this.identifyAndPushLeadData();
+      return;
+    }
+    this.clearUserJourney();
+    this.journeyStarted = false;
+    this.cachedIdentifyData = null;
+    clearLeadData();
+  }
+
+  private startJourneyTracking(): void {
+    if (this.journeyStarted) return;
+    this.journeyStarted = true;
+    initializeUserJourneyTracking(
+      this.environmentId,
+      this.log,
+      () => this.userJourneyId,
+      (id) => {
+        const resolved = !!id && id !== this.userJourneyId;
+        this.userJourneyId = id;
+        // The journey id resolves async — iframes that already received a
+        // STORE_UPDATE need a refresh to stitch this pageview.
+        if (resolved) this.sendPayloadToIframes("STORE_UPDATE");
+      },
+      this.config
+    );
+  }
+
+  identifyAndPushLeadData(): void {
+    if (!this.environmentId) return;
+    const identify = this.config.customOrigin
+      ? identifyLead(this.environmentId, this.config)
+      : identifyLead(this.environmentId);
+    identify
+      .then(() => this.sendPayloadToIframes("LEAD_DATA_UPDATE"))
+      .catch((e) => this.log.error({ message: "Initial identify failed", error: e }));
+  }
+
   private setupRouteChangeDetection(): void {
     onRouteChange((newUrl) => {
       this.windowUrl = new URL(newUrl).toString();
 
-      updateUserJourneyOnRouteChange(
-        this.environmentId,
-        newUrl,
-        this.log,
-        () => this.userJourneyId,
-        (id) => {
-          const resolved = !!id && id !== this.userJourneyId;
-          this.userJourneyId = id;
-          // A journey created/refreshed during the route change resolves after
-          // the push below — refresh iframes so they get the new id.
-          if (resolved) this.sendPayloadToIframes("STORE_UPDATE");
-        },
-        this.config
-      );
+      if (this.cookieTrackingAllowed()) {
+        updateUserJourneyOnRouteChange(
+          this.environmentId,
+          newUrl,
+          this.log,
+          () => this.userJourneyId,
+          (id) => {
+            const resolved = !!id && id !== this.userJourneyId;
+            this.userJourneyId = id;
+            // A journey created/refreshed during the route change resolves after
+            // the push below — refresh iframes so they get the new id.
+            if (resolved) this.sendPayloadToIframes("STORE_UPDATE");
+          },
+          this.config
+        );
+      }
 
       this.sendPayloadToIframes("STORE_UPDATE");
 
@@ -206,18 +247,20 @@ export class SurfaceStore {
   }
 
   getPayload(): StorePayload {
+    const allowed = this.cookieTrackingAllowed();
     return {
       windowUrl: this.windowUrl,
       referrer: this.referrer,
-      cookies:
-        Object.keys(this.cookies).length === 0
+      cookies: !allowed
+        ? {}
+        : Object.keys(this.cookies).length === 0
           ? parseCookies()
           : this.cookies,
       origin: this.origin,
       questionIds: this.partialFilledData,
       urlParams: this.urlParams,
-      surfaceLeadData: getLeadDataWithTTL(),
-      userJourneyId: this.userJourneyId,
+      surfaceLeadData: allowed ? getLeadDataWithTTL() : null,
+      userJourneyId: allowed ? this.userJourneyId : null,
     };
   }
 

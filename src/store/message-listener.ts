@@ -21,7 +21,7 @@ export function initializeMessageListener(store: SurfaceStore): void {
       store.sendConsentToIframes();
 
       const envId = getEnvironmentId();
-      if (envId) {
+      if (envId && store.cookieTrackingAllowed()) {
         const identify = store.config?.customOrigin
           ? identifyLead(envId, store.config)
           : identifyLead(envId);

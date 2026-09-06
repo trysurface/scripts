@@ -46,6 +46,9 @@
         const script = document.createElement("script");
         script.src = "../surface_tag.js";
         script.setAttribute("site-id", config.siteId);
+        // This page is the consent banner, so the tag must wait for it before
+        // recognising the visitor or forwarding cookies.
+        script.setAttribute("data-consent-mode", "");
         // The tag only posts to origins on its allowlist. Production origins are
         // built in; a preview deploy or custom domain has to be declared.
         if (!PRODUCTION_ORIGINS.includes(formOrigin)) {
@@ -159,6 +162,7 @@
       <div class="cookie-prefs" id="cookiePrefs" hidden>
         <label><input type="checkbox" id="prefAdTracking"> Marketing &mdash; <code>adTracking</code></label>
         <label><input type="checkbox" id="prefSurfaceAnalytics"> Analytics &mdash; <code>surfaceAnalytics</code></label>
+        <label><input type="checkbox" id="prefCookieTracking"> Cookies &mdash; <code>cookieTracking</code></label>
         <button id="savePrefs">Save choices</button>
       </div>
     </div>

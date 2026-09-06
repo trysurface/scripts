@@ -6,6 +6,10 @@ import {
 } from "./constants";
 
 export const CUSTOM_DOMAIN_ATTRIBUTE = "data-custom-domain";
+// Present on the <script> when the page's cookie banner will call
+// SurfaceSetConsent: the tag then does no visitor recognition, journey cookies
+// or cookie forwarding until `cookieTracking` is granted.
+export const CONSENT_MODE_ATTRIBUTE = "data-consent-mode";
 
 export interface SurfaceRuntimeConfig {
   apiBaseUrl: string;
@@ -13,6 +17,7 @@ export interface SurfaceRuntimeConfig {
   userJourneyTrackingApi: string;
   surfaceDomains: readonly string[];
   customOrigin: string | null;
+  waitForCookieConsent: boolean;
 }
 
 export const DEFAULT_SURFACE_RUNTIME_CONFIG: SurfaceRuntimeConfig = {
@@ -21,6 +26,7 @@ export const DEFAULT_SURFACE_RUNTIME_CONFIG: SurfaceRuntimeConfig = {
   userJourneyTrackingApi: USER_JOURNEY_TRACKING_API,
   surfaceDomains: SURFACE_DOMAINS,
   customOrigin: null,
+  waitForCookieConsent: false,
 };
 
 let runtimeConfig = DEFAULT_SURFACE_RUNTIME_CONFIG;
@@ -51,10 +57,11 @@ function normalizeCustomOrigin(value: string): string | null {
 export function resolveSurfaceRuntimeConfig(
   scriptElement: HTMLScriptElement | null
 ): SurfaceRuntimeConfig {
+  const waitForCookieConsent = scriptElement?.hasAttribute(CONSENT_MODE_ATTRIBUTE) ?? false;
   const customOrigin = normalizeCustomOrigin(
     scriptElement?.getAttribute(CUSTOM_DOMAIN_ATTRIBUTE) ?? ""
   );
-  if (!customOrigin) return DEFAULT_SURFACE_RUNTIME_CONFIG;
+  if (!customOrigin) return { ...DEFAULT_SURFACE_RUNTIME_CONFIG, waitForCookieConsent };
 
   const apiBaseUrl = `${customOrigin}/api/v1`;
   return {
@@ -63,6 +70,7 @@ export function resolveSurfaceRuntimeConfig(
     userJourneyTrackingApi: `${apiBaseUrl}/lead/track`,
     surfaceDomains: Array.from(new Set([...SURFACE_DOMAINS, customOrigin])),
     customOrigin,
+    waitForCookieConsent,
   };
 }
 

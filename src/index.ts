@@ -34,8 +34,10 @@ w.SurfaceSetConsent = setSurfaceConsent;
 
 // Relay a consent answer to the forms on the page. The store push goes with it
 // so a form that was blocked until now still gets the parent URL params it
-// needs to fire conversions in first-party context.
+// needs to fire conversions in first-party context. Under data-consent-mode the
+// tag's own recognition and journey work start or stop here too.
 onSurfaceConsentChange(() => {
+  SurfaceTagStore.applyConsent();
   SurfaceTagStore.sendConsentToIframes();
   SurfaceTagStore.sendPayloadToIframes("STORE_UPDATE");
 });

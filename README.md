@@ -68,3 +68,24 @@ See [docs](https://docs.withsurface.com/docs/surface-tag/installation) for integ
 3. Identity API call completes in <0.5s on slow 4G; no issues if blocked/failed
 4. PostMessage to iframe: query params, prefilled email, cookies, URL/origin/referrer
 5. Form loading speed on withsurface.com
+
+## Cookie consent
+
+Pages that run a consent banner load the tag with `data-consent-mode` and report
+the visitor's answer, in full, on every load and every change:
+
+```html
+<script
+  src="https://cdn.jsdelivr.net/.../surface_tag.min.js"
+  site-id="your-environment-id"
+  data-consent-mode>
+</script>
+<script>
+  window.SurfaceSetConsent({ adTracking: true, surfaceAnalytics: true, cookieTracking: true });
+</script>
+```
+
+With the attribute, the tag does no visitor recognition, sets no journey cookies
+and forwards no page cookies to Surface forms until `cookieTracking` is granted.
+Form rendering and submission work regardless. Without the attribute the tag
+behaves exactly as before. See `CLAUDE.md` for the message contract.
