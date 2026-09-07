@@ -467,7 +467,7 @@
   var VALID_PROVIDERS = ["x", "meta", "openai", "ga4", "linkedin"];
   var firedIds = /* @__PURE__ */ new Set();
   var isConversionMessage = (data) => !!data && data.type === CONVERSION_MESSAGE_TYPE && typeof data.id === "string" && VALID_PROVIDERS.includes(data.provider) && !!data.event && typeof data.response_id === "string";
-  var handleConversionMessage = (event, log2) => {
+  var handleConversionMessage = (event, log3) => {
     const data = event.data;
     if (!isConversionMessage(data)) return;
     const ack = () => {
@@ -492,7 +492,7 @@
       gclid: data.gclid,
       li_fat_id: data.li_fat_id
     });
-    log2.info({
+    log3.info({
       message: "Conversion handled",
       response: { provider: data.provider, responseId: data.response_id, fired }
     });
@@ -578,21 +578,21 @@
       }
     };
   }
-  function initializeUserJourneyTracking(environmentId3, log2, getJourneyId, setJourneyId, config = getSurfaceRuntimeConfig()) {
+  function initializeUserJourneyTracking(environmentId3, log3, getJourneyId, setJourneyId, config = getSurfaceRuntimeConfig()) {
     try {
       if (typeof window === "undefined") return;
       const existingId = getExistingJourneyId();
       setJourneyId(existingId);
-      log2.info({ message: "Existing journey ID", response: { id: existingId || "none" } });
+      log3.info({ message: "Existing journey ID", response: { id: existingId || "none" } });
       const currentUrl2 = window.location.href;
       const recentVisit = getCookie(SURFACE_USER_JOURNEY_RECENT_VISIT_COOKIE_NAME);
       if (recentVisit === currentUrl2) {
-        log2.info({ message: "Skipping duplicate page view (same as recent visit)" });
+        log3.info({ message: "Skipping duplicate page view (same as recent visit)" });
         return;
       }
       trackToRedis(
         createPageViewEvent(currentUrl2, environmentId3),
-        log2,
+        log3,
         getJourneyId,
         setJourneyId,
         config
@@ -602,17 +602,17 @@
         sameSite: "lax",
         domain: getJourneyCookieDomain()
       });
-      log2.info({ message: "User journey tracking initialized" });
+      log3.info({ message: "User journey tracking initialized" });
     } catch (error) {
-      log2.error({ message: "Error initializing user journey tracking", error });
+      log3.error({ message: "Error initializing user journey tracking", error });
     }
   }
-  async function trackToRedis(event, log2, getJourneyId, setJourneyId, config = getSurfaceRuntimeConfig()) {
+  async function trackToRedis(event, log3, getJourneyId, setJourneyId, config = getSurfaceRuntimeConfig()) {
     try {
       const journeyId = getJourneyId();
       const payload = { ...event };
       if (journeyId) payload.id = journeyId;
-      log2.info({ message: "Tracking to Redis", response: payload });
+      log3.info({ message: "Tracking to Redis", response: payload });
       if (journeyId && typeof navigator !== "undefined" && navigator.sendBeacon) {
         const blob = new Blob([JSON.stringify(payload)], {
           type: "application/json"
@@ -620,10 +620,10 @@
         const sent = navigator.sendBeacon(config.userJourneyTrackingApi, blob);
         if (sent) {
           refreshJourneyCookie(journeyId);
-          log2.info({ message: "Tracking sent via sendBeacon", response: { sent } });
+          log3.info({ message: "Tracking sent via sendBeacon", response: { sent } });
           return { success: true };
         }
-        log2.warn({ message: "sendBeacon failed, falling back to fetch" });
+        log3.warn({ message: "sendBeacon failed, falling back to fetch" });
       }
       const response = await fetch(config.userJourneyTrackingApi, {
         method: "POST",
@@ -631,33 +631,33 @@
         body: JSON.stringify(payload)
       });
       if (!response.ok) {
-        log2.warn({ message: "Tracking API returned status", response: { status: response.status } });
+        log3.warn({ message: "Tracking API returned status", response: { status: response.status } });
         return null;
       }
       const data = await response.json();
       if (data?.data?.id) {
         setJourneyId(data.data.id);
-        log2.info({ message: "Journey ID stored", response: { id: data.data.id } });
+        log3.info({ message: "Journey ID stored", response: { id: data.data.id } });
       }
       refreshJourneyCookie(getJourneyId());
       return data;
     } catch (error) {
-      log2.error({ message: "Error tracking to Redis", error });
+      log3.error({ message: "Error tracking to Redis", error });
       return null;
     }
   }
-  function updateUserJourneyOnRouteChange(environmentId3, newUrl, log2, getJourneyId, setJourneyId, config = getSurfaceRuntimeConfig()) {
+  function updateUserJourneyOnRouteChange(environmentId3, newUrl, log3, getJourneyId, setJourneyId, config = getSurfaceRuntimeConfig()) {
     try {
       if (typeof window === "undefined") return;
       const currentUrl2 = newUrl || window.location.href;
       const recentVisit = getCookie(SURFACE_USER_JOURNEY_RECENT_VISIT_COOKIE_NAME);
       if (recentVisit === currentUrl2) {
-        log2.info({ message: "Skipping duplicate page view on route change" });
+        log3.info({ message: "Skipping duplicate page view on route change" });
         return;
       }
       trackToRedis(
         createPageViewEvent(currentUrl2, environmentId3),
-        log2,
+        log3,
         getJourneyId,
         setJourneyId,
         config
@@ -667,17 +667,17 @@
         sameSite: "lax",
         domain: getJourneyCookieDomain()
       });
-      log2.info({ message: "User journey updated on route change", response: { url: currentUrl2 } });
+      log3.info({ message: "User journey updated on route change", response: { url: currentUrl2 } });
     } catch (error) {
-      log2.error({ message: "Error updating user journey on route change", error });
+      log3.error({ message: "Error updating user journey on route change", error });
     }
   }
-  function clearUserJourney(log2, setJourneyId) {
+  function clearUserJourney(log3, setJourneyId) {
     const domain = getJourneyCookieDomain();
     deleteCookie(SURFACE_USER_JOURNEY_COOKIE_NAME, { domain });
     deleteCookie(SURFACE_USER_JOURNEY_RECENT_VISIT_COOKIE_NAME, { domain });
     setJourneyId(null);
-    log2.info({ message: "User journey cleared" });
+    log3.info({ message: "User journey cleared" });
   }
 
   // src/store/store.ts
@@ -1052,25 +1052,25 @@
     { name: "md", min: 768 },
     { name: "sm", min: 0 }
   ];
-  function resolveEmbedType(input, log2) {
+  function resolveEmbedType(input, log3) {
     if (typeof input === "string") return input;
-    if (typeof input === "object") return resolveResponsiveType(input, log2);
-    log2.error({ message: "Invalid embed type: must be string or object" });
+    if (typeof input === "object") return resolveResponsiveType(input, log3);
+    log3.error({ message: "Invalid embed type: must be string or object" });
     return null;
   }
-  function resolveResponsiveType(config, log2) {
+  function resolveResponsiveType(config, log3) {
     const withDefault = ensureDefault(config);
     const breakpoint = getCurrentBreakpoint();
     if (!breakpoint) {
-      log2.info({ message: "No matching breakpoint, using default embed type" });
+      log3.info({ message: "No matching breakpoint, using default embed type" });
       return withDefault.default;
     }
     const embedType = withDefault[breakpoint];
     if (embedType) {
-      log2.info({ message: "Using breakpoint embed type", response: { breakpoint, embedType } });
+      log3.info({ message: "Using breakpoint embed type", response: { breakpoint, embedType } });
       return embedType;
     }
-    log2.warn({ message: "No embed type for breakpoint, using default", response: { breakpoint } });
+    log3.warn({ message: "No embed type for breakpoint, using default", response: { breakpoint } });
     return withDefault.default;
   }
   function ensureDefault(config) {
@@ -1947,7 +1947,7 @@
       this.src = new URL(src);
       this.log = createLogger("Surface Embed");
       this.store = window.SurfaceTagStore;
-      this.currentQuestionId = document.currentScript?.getAttribute("data-question-id") || null;
+      this.currentQuestionId = options.questionId || document.currentScript?.getAttribute("data-question-id") || null;
       _SurfaceEmbed._instances.push(this);
       if (this._isFormPreviewMode()) {
         this.log.info({ message: "Form is in preview mode" });
@@ -2494,6 +2494,52 @@
     window.addEventListener("message", onMessage);
   }
 
+  // src/stub-queue.ts
+  var RELAYED_METHODS = [
+    "showSurfaceForm",
+    "hideSurfaceForm",
+    "initializeEmbed"
+  ];
+  var log2 = createLogger("Surface Stub Queue");
+  function drainStubQueue() {
+    const w3 = window;
+    if (!Array.isArray(w3.SurfaceTagQueue)) return;
+    const entries = w3.SurfaceTagQueue;
+    w3.SurfaceTagQueue = { push: processEntry };
+    entries.forEach(processEntry);
+  }
+  function processEntry(entry) {
+    try {
+      if (entry?.type === "consent") {
+        setSurfaceConsent(entry.args?.[0] ?? {});
+        return;
+      }
+      if (entry?.type !== "embed") return;
+      const [src, embedType, targetClass, options] = Array.from(entry.args ?? []);
+      const embed = new SurfaceEmbed(
+        src,
+        embedType,
+        targetClass,
+        {
+          // The captured script attribute only fills in when the caller didn't
+          // pass questionId explicitly — same precedence as direct construction.
+          ...entry.questionId ? { questionId: entry.questionId } : {},
+          ...options ?? {}
+        }
+      );
+      for (const method of entry.calls ?? []) {
+        if (RELAYED_METHODS.includes(method)) embed[method]();
+      }
+      if (entry.stub && typeof entry.stub === "object") {
+        for (const method of RELAYED_METHODS) {
+          entry.stub[method] = () => embed[method]();
+        }
+      }
+    } catch (error) {
+      log2.error({ message: "Failed to replay queued call", error });
+    }
+  }
+
   // src/index.ts
   var scriptTag = document.currentScript;
   var runtimeConfig2 = initializeSurfaceRuntimeConfig(scriptTag);
@@ -2515,4 +2561,5 @@
   });
   void resolveOpenTriggersOnLoad(environmentId2, runtimeConfig2);
   initReview();
+  drainStubQueue();
 })();
