@@ -27,10 +27,7 @@ jobs:
 
       - name: Unit tests
         run: pnpm test
-
-      # surface_tag.js / surface_embed_v1.js are committed CDN artifacts.
-      # Fail if src/ was edited without rebuilding them.
-      - name: Bundle is up to date
-        run: |
-          pnpm run build
-          git diff --exit-code surface_tag.js surface_embed_v1.js
+      # NOTE: the "Bundle is up to date" build-guard was removed — surface-forms
+      # (packages/surface-scripts) now owns the tag source and pushes the built
+      # surface_tag.js / surface_embed_v1.js here, so rebuilding from this repo's
+      # (now non-authoritative) src/ would diff against the pushed bytes and fail main.
