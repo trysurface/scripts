@@ -17,7 +17,22 @@ export interface SurfaceConsent {
   cookieTracking: boolean;
 }
 
-let consent: SurfaceConsent | null = null;
+// Shared with the Forms SDK when both run in one document: the latest snapshot
+// lives on `window.__SURFACE_CONSENT__` and every change dispatches this event.
+export const SURFACE_CONSENT_EVENT = "surface:consent";
+type ConsentWindow = Window & { __SURFACE_CONSENT__?: SurfaceConsent };
+
+const normalize = (granted: Partial<SurfaceConsent> | undefined): SurfaceConsent => ({
+  adTracking: granted?.adTracking === true,
+  surfaceAnalytics: granted?.surfaceAnalytics === true,
+  cookieTracking: granted?.cookieTracking === true,
+});
+
+// An SDK that loaded first may already hold the page's answer.
+let consent: SurfaceConsent | null =
+  typeof window !== "undefined" && (window as ConsentWindow).__SURFACE_CONSENT__
+    ? normalize((window as ConsentWindow).__SURFACE_CONSENT__)
+    : null;
 let onChange: (() => void) | null = null;
 
 /** Null until the page has answered — forms treat that as nothing granted. */
@@ -40,10 +55,10 @@ export const onSurfaceConsentChange = (callback: () => void): void => {
  * scripts a form already started.
  */
 export const setSurfaceConsent = (granted: Partial<SurfaceConsent>): void => {
-  consent = {
-    adTracking: granted?.adTracking === true,
-    surfaceAnalytics: granted?.surfaceAnalytics === true,
-    cookieTracking: granted?.cookieTracking === true,
-  };
+  consent = normalize(granted);
+  if (typeof window !== "undefined") {
+    (window as ConsentWindow).__SURFACE_CONSENT__ = { ...consent };
+    window.dispatchEvent(new CustomEvent(SURFACE_CONSENT_EVENT, { detail: { ...consent } }));
+  }
   onChange?.();
 };

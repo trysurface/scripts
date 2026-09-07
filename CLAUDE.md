@@ -98,6 +98,10 @@ categories mirror the form-render gate in `surface_forms`
 (`lib/client/thirdParty/`) — keep the message shape in sync with its
 `hostConsent.ts`.
 
+Each answer is also written to `window.__SURFACE_CONSENT__` and dispatched as a
+`surface:consent` DOM event, which is how a Forms SDK form on the same page hears
+it; the tag reads a snapshot the SDK left there if the SDK loaded first.
+
 `cookieTracking` also gates the tag's own host-side work, but only when the
 `<script>` carries `data-consent-mode` (read in `runtime-config.ts`). Until that
 page grants it, `SurfaceStore` skips identify, the `surfaceLeadData` cache, the

@@ -225,18 +225,24 @@
 
   // src/consent/consent.ts
   var SURFACE_CONSENT_MESSAGE_TYPE = "surface:consent";
-  var consent = null;
+  var SURFACE_CONSENT_EVENT = "surface:consent";
+  var normalize = (granted) => ({
+    adTracking: granted?.adTracking === true,
+    surfaceAnalytics: granted?.surfaceAnalytics === true,
+    cookieTracking: granted?.cookieTracking === true
+  });
+  var consent = typeof window !== "undefined" && window.__SURFACE_CONSENT__ ? normalize(window.__SURFACE_CONSENT__) : null;
   var onChange = null;
   var getSurfaceConsent = () => consent;
   var onSurfaceConsentChange = (callback) => {
     onChange = callback;
   };
   var setSurfaceConsent = (granted) => {
-    consent = {
-      adTracking: granted?.adTracking === true,
-      surfaceAnalytics: granted?.surfaceAnalytics === true,
-      cookieTracking: granted?.cookieTracking === true
-    };
+    consent = normalize(granted);
+    if (typeof window !== "undefined") {
+      window.__SURFACE_CONSENT__ = { ...consent };
+      window.dispatchEvent(new CustomEvent(SURFACE_CONSENT_EVENT, { detail: { ...consent } }));
+    }
     onChange?.();
   };
 

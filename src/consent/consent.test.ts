@@ -45,6 +45,18 @@ describe("surface consent", () => {
     });
   });
 
+  it("shares each answer with an SDK in the same document", () => {
+    const heard: unknown[] = [];
+    const listener = (event: Event) => heard.push((event as CustomEvent).detail);
+    window.addEventListener("surface:consent", listener);
+    setSurfaceConsent({ cookieTracking: true });
+    window.removeEventListener("surface:consent", listener);
+
+    const snapshot = { adTracking: false, surfaceAnalytics: false, cookieTracking: true };
+    expect(heard).toEqual([snapshot]);
+    expect((window as Window & { __SURFACE_CONSENT__?: unknown }).__SURFACE_CONSENT__).toEqual(snapshot);
+  });
+
   it("notifies the relay on every answer", () => {
     const onChange = vi.fn();
     onSurfaceConsentChange(onChange);
