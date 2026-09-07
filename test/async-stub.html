@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="X-UA-Compatible" content="ie=edge" />
+    <title>Async Stub QA - Surface Form</title>
+    <link rel="stylesheet" href="common.css">
+
+    <!-- The stub from the install snippet: queues calls made before the async
+         tag arrives. Keep in sync with src/stub-queue.ts. -->
+    <script>
+      window.SurfaceTagQueue = window.SurfaceTagQueue || [];
+      window.SurfaceEmbed = window.SurfaceEmbed || function () {
+        var entry = { type: "embed", args: arguments, calls: [], stub: this,
+          questionId: document.currentScript && document.currentScript.getAttribute("data-question-id") };
+        var stub = this;
+        ["showSurfaceForm", "hideSurfaceForm", "initializeEmbed"].forEach(function (method) {
+          stub[method] = function () { entry.calls.push(method); };
+        });
+        window.SurfaceTagQueue.push(entry);
+      };
+      window.SurfaceSetConsent = window.SurfaceSetConsent || function (consent) {
+        window.SurfaceTagQueue.push({ type: "consent", args: [consent] });
+      };
+    </script>
+
+    <!-- The tag is injected dynamically (async by nature) after ?tagDelay=<ms>,
+         reproducing a fast site with a slow tag. ?noTag=1 never injects it. -->
+    <script>
+      (() => {
+        const params = new URLSearchParams(window.location.search);
+        if (params.has("noTag")) return;
+        const delay = Number(params.get("tagDelay") ?? 0);
+        // The tag loads after event-monitor.js runs, so hook its sent-events
+        // wrapper the moment the tag exposes the store (same trick as
+        // direct-iframe.html) — otherwise "Sent to Iframe" never counts.
+        Object.defineProperty(window, "SurfaceTagStore", {
+          configurable: true,
+          set(value) {
+            delete window.SurfaceTagStore;
+            window.SurfaceTagStore = value;
+            if (window.hookTagSentEvents) window.hookTagSentEvents();
+          },
+          get() {
+            return undefined;
+          },
+        });
+        setTimeout(() => {
+          const s = document.createElement("script");
+          s.src = "../surface_tag.js?t=" + Date.now();
+          s.setAttribute("site-id", params.get("siteId") || "cllo318mt0003mb08hnp0f5zy");
+          document.head.appendChild(s);
+          const el = document.getElementById("tagStatus");
+          if (el) el.textContent = `injected after ${delay}ms`;
+        }, delay);
+      })();
+    </script>
+  </head>
+  <body>
+    <div class="container">
+      <h1>Async Stub QA</h1>
+      <p><a href="index.html">&larr; Back to Test Suite</a></p>
+
+      <div class="config-section">
+        <strong>What this page verifies:</strong> every embed below is constructed
+        <em>before</em> the async tag loads — the stub queues the calls and the tag
+        replays them on arrival. Covers embedding (slideover / popup / inline),
+        pre-filling, the email input trigger, pre-loading, and an early
+        <code>SurfaceSetConsent</code> call.<br><br>
+        Scenarios: <code>?tagDelay=3000</code> (slow tag on a fast site),
+        <code>?tagDelay=8000</code> (interact before the tag exists),
+        <code>?noTag=1</code> (tag never loads — page must stay functional,
+        forms simply don't open).
+        <hr style="margin: 16px 0; border: none; border-top: 1px solid #e0e0e0;">
+        Form Source: <code id="formSrc"></code><br>
+        Environment ID: <code id="environmentId"></code><br>
+        Debug Mode: <code id="debugMode">false</code> (add <code>&amp;surfaceDebug=true</code> to enable)
+      </div>
+
+      <h2>Stub status</h2>
+      <div class="section">
+        <p>Tag script: <code id="tagStatus">not injected yet</code></p>
+        <p>Calls queued before tag load: <code id="queuedCount">?</code></p>
+        <p>Tag drained the queue: <code id="drained">waiting…</code></p>
+        <p>Stub references re-pointed at real embeds: <code id="repointed">waiting…</code></p>
+        <p>Surface iframes in DOM (watch pre-loading kick in after page load): <code id="iframeCount">0</code></p>
+        <p>Embeds after drain: <code id="instanceStatus">—</code></p>
+      </div>
+
+      <h2>Events Summary</h2>
+      <div class="events-summary">
+        <div class="summary-card"><div class="summary-count" id="totalEvents">0</div><div class="summary-label">Total Events</div></div>
+        <div class="summary-card"><div class="summary-count" id="sentEvents">0</div><div class="summary-label">Sent to Iframe</div></div>
+        <div class="summary-card"><div class="summary-count" id="receivedEvents">0</div><div class="summary-label">Received from Iframe</div></div>
+        <div class="summary-card"><div class="summary-count" id="storeUpdateEvents">0</div><div class="summary-label">STORE_UPDATE</div></div>
+        <div class="summary-card"><div class="summary-count" id="leadDataEvents">0</div><div class="summary-label">LEAD_DATA_UPDATE</div></div>
+        <div class="summary-card"><div class="summary-count" id="sendDataEvents">0</div><div class="summary-label">SEND_DATA</div></div>
+      </div>
+
+      <h2>Events Log</h2>
+      <div class="button-group">
+        <button class="clear-log" onclick="clearEventLog()">Clear Log</button>
+        <button class="secondary" onclick="exportEvents()">Export Events</button>
+      </div>
+      <div class="events-log" id="eventsLog"></div>
+
+      <div class="section">
+        <h2>1. Slideover embedding</h2>
+        <p>Constructed pre-load. With <code>?tagDelay=8000</code>: the trigger button is
+           inert until the tag arrives (expected — no handler exists yet), but the kept
+           stub reference queues the call and the slideover opens right after the drain.</p>
+        <div class="button-group">
+          <button class="surface-slideover-trigger">Open Slideover</button>
+          <button onclick="window.stubSlideover.showSurfaceForm()">Open via kept stub reference</button>
+        </div>
+      </div>
+
+      <div class="section">
+        <h2>2. Popup embedding + pre-filling</h2>
+        <p>Constructed pre-load with <code>prefillData</code>. Open it and check the
+           pre-filled answer; the STORE_UPDATE payload in the log carries it as
+           <code>questionIds</code>. Override with
+           <code>?prefillQid=&lt;questionId&gt;&amp;prefillVal=&lt;value&gt;</code>
+           to target a real question on your form.</p>
+        <div class="button-group">
+          <button class="surface-popup-trigger">Open Popup (pre-filled)</button>
+        </div>
+      </div>
+
+      <div class="section">
+        <h2>3. Email input trigger</h2>
+        <p>Constructed pre-load as an <code>input-trigger</code> embed. Enter an email
+           and submit — the form opens with the email pre-filled.</p>
+        <div class="form-input-trigger">
+          <form class="surface-form-handler">
+            <label for="email-input">Email Address:</label>
+            <input type="email" id="email-input" placeholder="Enter your email" required />
+            <button type="submit">Submit &amp; Open Form</button>
+          </form>
+        </div>
+      </div>
+
+      <div class="section">
+        <h2>4. Inline embedding</h2>
+        <p>Constructed pre-load. The form must appear below on its own once the tag
+           drains the queue — no interaction needed.</p>
+        <div class="surface-inline-target" style="min-height: 420px; border: 1px dashed #ccc;"></div>
+      </div>
+
+      <div class="section">
+        <h2>5. Pre-loading</h2>
+        <p>All embeds above use the default <code>preload: "true"</code> (page load +
+           idle). Without clicking anything, the iframe count in the status panel
+           should rise shortly after the tag loads — that is pre-loading working
+           through the async path.</p>
+      </div>
+    </div>
+
+    <script src="event-monitor.js"></script>
+    <script src="config.js"></script>
+    <script>
+      // All of this runs at end-of-body parse — before the injected tag whenever
+      // tagDelay > 0 (and usually even at 0) — exactly like a customer page.
+      initializeEventMonitoring();
+
+      (function () {
+        const params = new URLSearchParams(window.location.search);
+        const formSrc = window.surfaceTestConfig.formSrc;
+        const prefillQid = params.get("prefillQid") || "email";
+        const prefillVal = params.get("prefillVal") || "qa+prefill@withsurface.com";
+
+        window.SurfaceSetConsent({ adTracking: true, surfaceAnalytics: true });
+
+        window.stubSlideover = new SurfaceEmbed(formSrc, "slideover", "surface-slideover-trigger");
+        window.stubPopup = new SurfaceEmbed(formSrc, "popup", "surface-popup-trigger", {
+          prefillData: { [prefillQid]: prefillVal },
+        });
+        window.stubInputTrigger = new SurfaceEmbed(formSrc, "input-trigger", "surface-form-button");
+        window.stubInline = new SurfaceEmbed(formSrc, "inline", "surface-inline-target");
+
+        document.getElementById("queuedCount").textContent = Array.isArray(window.SurfaceTagQueue)
+          ? String(window.SurfaceTagQueue.length)
+          : "0 (tag loaded first — stub unused)";
+
+        setInterval(function () {
+          document.getElementById("iframeCount").textContent = String(
+            document.querySelectorAll('iframe[src*="withsurface.com"]').length
+          );
+
+          if (Array.isArray(window.SurfaceTagQueue)) return;
+          document.getElementById("drained").textContent = "yes";
+
+          const method = window.stubSlideover && window.stubSlideover.showSurfaceForm;
+          document.getElementById("repointed").textContent =
+            typeof method === "function" && !String(method).includes("entry.calls") ? "yes" : "NO";
+
+          const instances = window.SurfaceEmbed._instances || [];
+          document.getElementById("instanceStatus").textContent = instances
+            .map((i) => `${i.embed_type}:${i.initialized ? "initialized" : "lazy"}`)
+            .join("  ");
+        }, 250);
+      })();
+    </script>
+  </body>
+</html>
