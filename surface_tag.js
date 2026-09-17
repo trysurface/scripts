@@ -968,7 +968,8 @@
         method: "POST",
         headers: { "Content-Type": "text/plain" },
         body: JSON.stringify(payload),
-        keepalive: true
+        keepalive: true,
+        priority: "low"
       });
       if (!response.ok) {
         throw new Error("Network response was not ok");
@@ -1862,6 +1863,7 @@
       this.showSurfaceForm();
     });
     whenBody(() => {
+      if (this.destroyed) return;
       document.body.appendChild(button);
       injectStyle(getWidgetStyles(this.widgetStyle));
     });
@@ -2060,7 +2062,9 @@
     const claimants = embed.constructor._instances.filter(
       (instance) => instance._inputTriggerFallback
     );
-    return claimants[claimants.length - 1] === embed;
+    const triggers = claimants.filter((instance) => instance.embed_type === "input-trigger");
+    const owners = triggers.length ? triggers : claimants;
+    return owners[owners.length - 1] === embed;
   }
   function createKeyDownHandler(form) {
     return (e) => {
@@ -2123,12 +2127,12 @@
     }
     if (this._widgetButton && !this._widgetButton.isConnected) {
       const button = this._widgetButton;
-      whenBody(() => document.body.appendChild(button));
+      whenBody(() => !this.destroyed && document.body.appendChild(button));
     }
     if (this.initialized && this.surface_popup_reference && !this.surface_popup_reference.isConnected) {
       const container = this.surface_popup_reference;
       this._iframePreloaded = false;
-      whenBody(() => document.body.appendChild(container));
+      whenBody(() => !this.destroyed && document.body.appendChild(container));
     }
     if (this.embed_type === "inline" && this.initialized) this.embedInline();
     if (!this.embed_type || !this.target_element_class) return;
@@ -2144,6 +2148,7 @@
     });
     this._formHandlers = null;
     this._observer?.disconnect();
+    this._bodyObserver?.disconnect();
     clearTimeout(this._reinitTimeout);
     if (this._routeHandler) offRouteChange(this._routeHandler);
     this.hideSurfaceForm();
@@ -2187,6 +2192,8 @@
       this._formHandlers = null;
       this._escHandler = null;
       this._observer = null;
+      // Observes <html> until <body> exists; only then does _observer start.
+      this._bodyObserver = null;
       this._routeHandler = null;
       this._widgetButton = null;
       // Set when this embed bound unlabelled input-trigger forms by fallback.
@@ -2264,11 +2271,12 @@
       }
     }
     initializeEmbed() {
-      if (this.initialized) return;
+      if (this.initialized || this.destroyed) return;
       this.embedSurfaceForm();
       this.initialized = true;
     }
     showSurfaceForm() {
+      if (this.destroyed) return;
       if (!this.initialized) this.initializeEmbed();
       this.shouldShowSurfaceForm();
     }
@@ -2343,11 +2351,11 @@
           observer.observe(document.body, { childList: true, subtree: true });
         } else {
           const bodyObserver = new MutationObserver(() => {
-            if (document.body) {
-              observer.observe(document.body, { childList: true, subtree: true });
-              bodyObserver.disconnect();
-            }
+            if (!document.body) return;
+            if (!this.destroyed) observer.observe(document.body, { childList: true, subtree: true });
+            bodyObserver.disconnect();
           });
+          this._bodyObserver = bodyObserver;
           bodyObserver.observe(document.documentElement, { childList: true });
         }
       }
