@@ -46,9 +46,23 @@
     const hashArray = Array.from(new Uint8Array(hashBuffer));
     return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
   }
+  function hashString(input) {
+    let h1 = 3735928559;
+    let h2 = 1103547991;
+    for (let i = 0; i < input.length; i++) {
+      const ch = input.charCodeAt(i);
+      h1 = Math.imul(h1 ^ ch, 2654435761);
+      h2 = Math.imul(h2 ^ ch, 1597334677);
+    }
+    h1 = Math.imul(h1 ^ h1 >>> 16, 2246822507);
+    h1 ^= Math.imul(h2 ^ h2 >>> 13, 3266489909);
+    h2 = Math.imul(h2 ^ h2 >>> 16, 2246822507);
+    h2 ^= Math.imul(h1 ^ h1 >>> 13, 3266489909);
+    return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);
+  }
 
   // src/lead/fingerprint.ts
-  async function getBrowserFingerprint(environmentId3) {
+  async function getBrowserFingerprint(environmentId2) {
     const fingerprint = {};
     fingerprint.deviceType = /Mobi|Android/i.test(navigator.userAgent) ? "Mobile" : "Desktop";
     fingerprint.screen = {
@@ -65,7 +79,7 @@
       fingerprint.plugins = Array.from(navigator.plugins).map((p) => p.name);
     }
     fingerprint.timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    fingerprint.environmentId = environmentId3;
+    fingerprint.environmentId = environmentId2;
     const fingerprintString = JSON.stringify(fingerprint);
     const id = await getHash(fingerprintString);
     return { ...fingerprint, id };
@@ -129,23 +143,44 @@
   function isIdentifyInProgress() {
     return identifyInProgress;
   }
+  var storage = {
+    get: (key) => {
+      try {
+        return localStorage.getItem(key);
+      } catch {
+        return null;
+      }
+    },
+    set: (key, value) => {
+      try {
+        localStorage.setItem(key, value);
+      } catch {
+      }
+    },
+    remove: (key) => {
+      try {
+        localStorage.removeItem(key);
+      } catch {
+      }
+    }
+  };
   function setLeadDataWithTTL(data) {
     const item = {
       ...data,
       expiry: (/* @__PURE__ */ new Date()).getTime() + LEAD_DATA_TTL
     };
-    localStorage.setItem("surfaceLeadData", JSON.stringify(item));
+    storage.set("surfaceLeadData", JSON.stringify(item));
   }
   function clearLeadData() {
-    localStorage.removeItem("surfaceLeadData");
+    storage.remove("surfaceLeadData");
   }
   function getLeadDataWithTTL() {
-    const itemStr = localStorage.getItem("surfaceLeadData");
+    const itemStr = storage.get("surfaceLeadData");
     if (!itemStr) return null;
     try {
       const item = JSON.parse(itemStr);
       if ((/* @__PURE__ */ new Date()).getTime() > (item.expiry ?? 0)) {
-        localStorage.removeItem("surfaceLeadData");
+        storage.remove("surfaceLeadData");
         return null;
       }
       return {
@@ -174,7 +209,8 @@
       const parentUrl = new URL(window.location.href);
       const response = await fetch(config.leadIdentifyApi, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "text/plain" },
+        priority: "low",
         body: JSON.stringify({
           fingerprint: fingerprint.id,
           environmentId: envId,
@@ -343,11 +379,15 @@
       installed = true;
     }
   }
+  function offRouteChange(callback) {
+    const index = callbacks.indexOf(callback);
+    if (index !== -1) callbacks.splice(index, 1);
+  }
   function notify() {
     const newUrl = window.location.href;
     if (newUrl === currentUrl) return;
     currentUrl = newUrl;
-    callbacks.forEach((cb) => cb(newUrl));
+    callbacks.slice().forEach((cb) => cb(newUrl));
   }
   function install() {
     currentUrl = window.location.href;
@@ -534,7 +574,7 @@
         handleConversionMessage(event, store.log);
         return;
       }
-      if (event.data.type === "SEND_DATA") {
+      if (event.data?.type === "SEND_DATA") {
         store.sendPayloadToIframes("STORE_UPDATE");
         store.sendConsentToIframes();
         if (store.environmentId && store.cookieTrackingAllowed()) {
@@ -543,7 +583,7 @@
           store.sendPayloadToIframes("LEAD_DATA_UPDATE");
         }
       }
-      if (event.data.event === "CLEAR_USER_JOURNEY_DATA") {
+      if (event.data?.event === "CLEAR_USER_JOURNEY_DATA") {
         store.log.info({ message: "Clearing user journey" });
         store.clearUserJourney();
       }
@@ -559,19 +599,35 @@
     const parts = hostname.split(".");
     return "." + (parts.length === 2 ? hostname : parts.slice(1).join("."));
   }
+  function setJourneyCookie(name, value, maxAge) {
+    const domain = getJourneyCookieDomain();
+    if (domain) {
+      setCookie(name, value, { maxAge, sameSite: "lax", domain });
+      if (getCookie(name) === value) return;
+    }
+    setCookie(name, value, { maxAge, sameSite: "lax" });
+  }
+  function deleteJourneyCookie(name) {
+    deleteCookie(name, { domain: getJourneyCookieDomain() });
+    deleteCookie(name);
+  }
   function refreshJourneyCookie(journeyId) {
     if (!journeyId) return;
-    setCookie(SURFACE_USER_JOURNEY_COOKIE_NAME, journeyId, {
-      maxAge: JOURNEY_COOKIE_MAX_AGE,
-      sameSite: "lax",
-      domain: getJourneyCookieDomain()
-    });
+    setJourneyCookie(SURFACE_USER_JOURNEY_COOKIE_NAME, journeyId, JOURNEY_COOKIE_MAX_AGE);
   }
   function getExistingJourneyId() {
     return getCookie(SURFACE_USER_JOURNEY_COOKIE_NAME);
   }
 
   // src/store/user-journey.ts
+  var RECENT_VISIT_MAX_URL_LENGTH = 1024;
+  function recentVisitValue(url) {
+    return url.length > RECENT_VISIT_MAX_URL_LENGTH ? hashString(url) : url;
+  }
+  function isRecentVisit(url) {
+    const recent = getCookie(SURFACE_USER_JOURNEY_RECENT_VISIT_COOKIE_NAME);
+    return recent !== null && (recent === url || recent === hashString(url));
+  }
   function getBrowserReferrer() {
     return typeof document === "undefined" ? "" : document.referrer || "";
   }
@@ -583,7 +639,7 @@
       return null;
     }
   }
-  function createPageViewEvent(url, environmentId3) {
+  function createPageViewEvent(url, environmentId2) {
     return {
       data: {
         type: "page_view",
@@ -595,36 +651,31 @@
         }
       },
       metadata: {
-        ...environmentId3 ? { environmentId: environmentId3 } : {},
+        ...environmentId2 ? { environmentId: environmentId2 } : {},
         ...getSurfaceLeadDataSafely() ?? {}
       }
     };
   }
-  function initializeUserJourneyTracking(environmentId3, log3, getJourneyId, setJourneyId, config = getSurfaceRuntimeConfig(), isAllowed = () => true) {
+  function initializeUserJourneyTracking(environmentId2, log3, getJourneyId, setJourneyId, config = getSurfaceRuntimeConfig(), isAllowed = () => true) {
     try {
       if (typeof window === "undefined") return;
       const existingId = getExistingJourneyId();
       setJourneyId(existingId);
       log3.info({ message: "Existing journey ID", response: { id: existingId || "none" } });
       const currentUrl2 = window.location.href;
-      const recentVisit = getCookie(SURFACE_USER_JOURNEY_RECENT_VISIT_COOKIE_NAME);
-      if (recentVisit === currentUrl2) {
+      if (isRecentVisit(currentUrl2)) {
         log3.info({ message: "Skipping duplicate page view (same as recent visit)" });
         return;
       }
       trackToRedis(
-        createPageViewEvent(currentUrl2, environmentId3),
+        createPageViewEvent(currentUrl2, environmentId2),
         log3,
         getJourneyId,
         setJourneyId,
         config,
         isAllowed
       );
-      setCookie(SURFACE_USER_JOURNEY_RECENT_VISIT_COOKIE_NAME, currentUrl2, {
-        maxAge: RECENT_VISIT_COOKIE_MAX_AGE,
-        sameSite: "lax",
-        domain: getJourneyCookieDomain()
-      });
+      setJourneyCookie(SURFACE_USER_JOURNEY_RECENT_VISIT_COOKIE_NAME, recentVisitValue(currentUrl2), RECENT_VISIT_COOKIE_MAX_AGE);
       log3.info({ message: "User journey tracking initialized" });
     } catch (error) {
       log3.error({ message: "Error initializing user journey tracking", error });
@@ -660,7 +711,8 @@
         method: "POST",
         headers: { "Content-Type": "text/plain" },
         body: JSON.stringify(payload),
-        priority: "low"
+        priority: "low",
+        keepalive: true
       });
       if (!response.ok) {
         log3.warn({ message: "Tracking API returned status", response: { status: response.status } });
@@ -678,44 +730,38 @@
       return null;
     }
   }
-  function updateUserJourneyOnRouteChange(environmentId3, newUrl, log3, getJourneyId, setJourneyId, config = getSurfaceRuntimeConfig(), isAllowed = () => true) {
+  function updateUserJourneyOnRouteChange(environmentId2, newUrl, log3, getJourneyId, setJourneyId, config = getSurfaceRuntimeConfig(), isAllowed = () => true) {
     try {
       if (typeof window === "undefined") return;
       const currentUrl2 = newUrl || window.location.href;
-      const recentVisit = getCookie(SURFACE_USER_JOURNEY_RECENT_VISIT_COOKIE_NAME);
-      if (recentVisit === currentUrl2) {
+      if (isRecentVisit(currentUrl2)) {
         log3.info({ message: "Skipping duplicate page view on route change" });
         return;
       }
       trackToRedis(
-        createPageViewEvent(currentUrl2, environmentId3),
+        createPageViewEvent(currentUrl2, environmentId2),
         log3,
         getJourneyId,
         setJourneyId,
         config,
         isAllowed
       );
-      setCookie(SURFACE_USER_JOURNEY_RECENT_VISIT_COOKIE_NAME, currentUrl2, {
-        maxAge: RECENT_VISIT_COOKIE_MAX_AGE,
-        sameSite: "lax",
-        domain: getJourneyCookieDomain()
-      });
+      setJourneyCookie(SURFACE_USER_JOURNEY_RECENT_VISIT_COOKIE_NAME, recentVisitValue(currentUrl2), RECENT_VISIT_COOKIE_MAX_AGE);
       log3.info({ message: "User journey updated on route change", response: { url: currentUrl2 } });
     } catch (error) {
       log3.error({ message: "Error updating user journey on route change", error });
     }
   }
   function clearUserJourney(log3, setJourneyId) {
-    const domain = getJourneyCookieDomain();
-    deleteCookie(SURFACE_USER_JOURNEY_COOKIE_NAME, { domain });
-    deleteCookie(SURFACE_USER_JOURNEY_RECENT_VISIT_COOKIE_NAME, { domain });
+    deleteJourneyCookie(SURFACE_USER_JOURNEY_COOKIE_NAME);
+    deleteJourneyCookie(SURFACE_USER_JOURNEY_RECENT_VISIT_COOKIE_NAME);
     setJourneyId(null);
     log3.info({ message: "User journey cleared" });
   }
 
   // src/store/store.ts
   var SurfaceStore = class {
-    constructor(environmentId3 = null, config = getSurfaceRuntimeConfig()) {
+    constructor(environmentId2 = null, config = getSurfaceRuntimeConfig()) {
       this.journeyStarted = false;
       this.windowUrl = new URL(window.location.href).toString();
       this.origin = new URL(window.location.href).origin.toString();
@@ -730,7 +776,7 @@
       this.surfaceDomains = config.surfaceDomains;
       this.userJourneyId = null;
       this.userJourney = [];
-      this.environmentId = environmentId3;
+      this.environmentId = environmentId2;
       this.log = createLogger("Surface Store");
       this.cachedIdentifyData = this.cookieTrackingAllowed() ? getLeadDataWithTTL() : null;
       initializeMessageListener(this);
@@ -741,6 +787,7 @@
       const pushInitialData = () => {
         if (!this.hasSurfaceIframe()) return;
         this.sendPayloadToIframes("STORE_UPDATE");
+        this.sendConsentToIframes();
         if (!this.cookieTrackingAllowed()) {
           this.sendPayloadToIframes("LEAD_DATA_UPDATE");
         } else if (this.environmentId) {
@@ -911,7 +958,7 @@
   async function sendBeacon(url, payload) {
     try {
       const blob = new Blob([JSON.stringify(payload)], {
-        type: "application/json"
+        type: "text/plain"
       });
       if (navigator.sendBeacon) {
         const sent = navigator.sendBeacon(url, blob);
@@ -919,7 +966,7 @@
       }
       const response = await fetch(url, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "text/plain" },
         body: JSON.stringify(payload),
         keepalive: true
       });
@@ -1244,6 +1291,31 @@
     document.addEventListener("click", this._clickHandler);
   }
 
+  // src/utils/dom.ts
+  function injectStyle(css) {
+    const style = document.createElement("style");
+    style.innerHTML = css;
+    document.head.appendChild(style);
+    return style;
+  }
+  function injectStyleOnce(id, css) {
+    const existing = document.getElementById(id);
+    if (existing instanceof HTMLStyleElement) return existing;
+    const style = injectStyle(css);
+    style.id = id;
+    return style;
+  }
+  function whenBody(fn) {
+    if (document.body) return fn();
+    document.addEventListener("DOMContentLoaded", () => fn(), { once: true });
+  }
+  function setupDismissHandlers(overlay2, closeBtn, hideCallback) {
+    closeBtn.addEventListener("click", hideCallback);
+    window.addEventListener("click", (event) => {
+      if (event.target === overlay2) hideCallback();
+    });
+  }
+
   // src/embed/preload.ts
   function preloadIframe() {
     if (this.initialized || this._preload === "false") return;
@@ -1270,7 +1342,7 @@
       }
     }
     if (this._preload === "pageLoad") {
-      this.initializeEmbed();
+      whenBody(() => this.initializeEmbed());
     }
   }
 
@@ -1279,34 +1351,23 @@
     try {
       const params = this.store.getUrlParams();
       if (params?.showSurfaceForm === "true") {
-        this.showSurfaceForm();
+        whenBody(() => this.showSurfaceForm());
       }
     } catch (error) {
       this.log.error({ message: "Failed to show Surface Form from URL parameter", error });
     }
   }
 
-  // src/utils/dom.ts
-  function injectStyle(css) {
-    const style = document.createElement("style");
-    style.innerHTML = css;
-    document.head.appendChild(style);
-    return style;
-  }
-  function setupDismissHandlers(overlay2, closeBtn, hideCallback) {
-    closeBtn.addEventListener("click", hideCallback);
-    window.addEventListener("click", (event) => {
-      if (event.target === overlay2) hideCallback();
-    });
-  }
-
   // src/embed/types/inline.ts
   function embedInline() {
-    if (this.surface_inline_reference == null) {
+    const src = this._getSrcUrl();
+    this.inline_embed_references = document.querySelectorAll(
+      this.documentReferenceSelector + this.target_element_class
+    );
+    const targetDivs = this.inline_embed_references;
+    if (targetDivs.length === 0) {
       this.log.warn({ message: "Surface Form could not find target div", response: { targetClass: this.target_element_class } });
     }
-    const src = this._getSrcUrl();
-    const targetDivs = this.inline_embed_references;
     targetDivs.forEach((clientDiv) => {
       if (clientDiv.querySelector("#surface-inline-div")) return;
       const wrapper = document.createElement("div");
@@ -1317,15 +1378,19 @@
       iframe.frameBorder = "0";
       iframe.allowFullscreen = true;
       if (!this.iframe) this.iframe = iframe;
+      this._cachedOptionsKey = JSON.stringify({});
       if (this.iframeInlineStyle && typeof this.iframeInlineStyle === "object") {
         Object.assign(iframe.style, this.iframeInlineStyle);
       }
       clientDiv.appendChild(wrapper);
       wrapper.appendChild(iframe);
-      injectStyle(`
+      injectStyleOnce(
+        "surface-inline-style",
+        `
       #surface-inline-div { width: 100%; height: 100%; }
       #surface-inline-div iframe { width: 100%; height: 100%; }
-    `);
+    `
+      );
       this.updateIframeWithOptions({}, wrapper);
     });
   }
@@ -1495,8 +1560,8 @@
 
     @media (min-width: 481px) {
       .surface-popup-content {
-        width: ${dimensions.width};
-        height: ${dimensions.height};
+        width: var(--surface-embed-width, ${dimensions.width});
+        height: var(--surface-embed-height, ${dimensions.height});
         margin: 20px;
       }
     }
@@ -1542,6 +1607,7 @@
   }
 
   // src/embed/types/popup.ts
+  var isShown = (el) => !!el.style.display && el.style.display !== "none";
   var POPUP_HTML = (src) => `
   <div class="surface-popup-content">
     <div style="display:flex;justify-content:center;align-items:center;height:100%;position:absolute;top:0;left:0;width:100%;pointer-events:none;">
@@ -1565,9 +1631,9 @@
       popup.innerHTML = POPUP_HTML(src);
       document.body.appendChild(popup);
       const dimensions = getPopupDimensions(this._popupSize);
-      if (!this.styles.popup) {
-        this.styles.popup = injectStyle(getPopupStyles(dimensions));
-      }
+      popup.style.setProperty("--surface-embed-width", dimensions.width);
+      popup.style.setProperty("--surface-embed-height", dimensions.height);
+      this.styles.popup = injectStyleOnce("surface-popup-style", getPopupStyles(dimensions));
       const iframe = popup.querySelector("#surface-iframe");
       const spinner = popup.querySelector(".surface-loading-spinner");
       const closeBtn = popup.querySelector(".close-btn-container");
@@ -1590,8 +1656,15 @@
       this.log.warn({ message: "Invalid showSurfaceForm: embed type is not popup" });
       return;
     }
+    if (!this.surface_popup_reference.isConnected) {
+      this.log.warn({ message: "Popup container is no longer in the document" });
+      return;
+    }
     this._previouslyFocusedElement = document.activeElement;
     this.updateIframeWithOptions(options, this.surface_popup_reference);
+    if (!isShown(this.surface_popup_reference)) {
+      this._prevBodyOverflow = document.body.style.overflow;
+    }
     this.surface_popup_reference.style.display = "flex";
     document.body.style.overflow = "hidden";
     setTimeout(() => {
@@ -1604,8 +1677,9 @@
       this.log.warn({ message: "Invalid hideSurfaceForm: embed type is not popup" });
       return;
     }
+    if (!isShown(this.surface_popup_reference)) return;
     this.surface_popup_reference.classList.remove("active");
-    document.body.style.overflow = "auto";
+    document.body.style.overflow = this._prevBodyOverflow;
     if (this._previouslyFocusedElement) {
       this._previouslyFocusedElement.focus();
       this._previouslyFocusedElement = null;
@@ -1666,6 +1740,7 @@
   }
 
   // src/embed/types/slideover.ts
+  var isShown2 = (el) => !!el.style.display && el.style.display !== "none";
   var SLIDEOVER_HTML = (src) => `
   <div class="surface-popup-content">
     <div style="display:flex;justify-content:center;align-items:center;height:100%;position:absolute;top:0;left:0;width:100%;pointer-events:none;">
@@ -1687,7 +1762,7 @@
     slideover.id = "surface-popup";
     slideover.innerHTML = SLIDEOVER_HTML(src);
     document.body.appendChild(slideover);
-    injectStyle(getSlideoverStyles());
+    this.styles.popup = injectStyleOnce("surface-slideover-style", getSlideoverStyles());
     const iframe = slideover.querySelector("#surface-iframe");
     const spinner = slideover.querySelector(".surface-loading-spinner");
     const closeBtn = slideover.querySelector(".close-btn-container");
@@ -1709,8 +1784,15 @@
       this.log.warn({ message: "Invalid showSurfaceForm: embed type is not slideover" });
       return;
     }
+    if (!this.surface_popup_reference.isConnected) {
+      this.log.warn({ message: "Slideover container is no longer in the document" });
+      return;
+    }
     this._previouslyFocusedElement = document.activeElement;
     this.updateIframeWithOptions(options, this.surface_popup_reference);
+    if (!isShown2(this.surface_popup_reference)) {
+      this._prevBodyOverflow = document.body.style.overflow;
+    }
     this.surface_popup_reference.style.display = "block";
     document.body.style.overflow = "hidden";
     setTimeout(() => {
@@ -1723,8 +1805,9 @@
       this.log.warn({ message: "Invalid hideSurfaceForm: embed type is not slideover" });
       return;
     }
+    if (!isShown2(this.surface_popup_reference)) return;
     this.surface_popup_reference.classList.remove("active");
-    document.body.style.overflow = "auto";
+    document.body.style.overflow = this._prevBodyOverflow;
     if (this._previouslyFocusedElement) {
       this._previouslyFocusedElement.focus();
       this._previouslyFocusedElement = null;
@@ -1771,13 +1854,16 @@
 `;
   function addWidgetButton() {
     const button = document.createElement("div");
+    this._widgetButton = button;
     button.id = "surface-widget-button";
     button.innerHTML = `<div class="widget-button-inner">${WIDGET_SVG}</div>`;
-    document.body.appendChild(button);
-    injectStyle(getWidgetStyles(this.widgetStyle));
     button.addEventListener("click", () => {
       if (!this.initialized) this.initializeEmbed();
       this.showSurfaceForm();
+    });
+    whenBody(() => {
+      document.body.appendChild(button);
+      injectStyle(getWidgetStyles(this.widgetStyle));
     });
   }
 
@@ -1919,6 +2005,7 @@
   function createSubmitHandler(embed, form, questionId) {
     return (e) => {
       e.preventDefault();
+      if (embed._inputTriggerFallback && !ownsUnlabelledForms(embed)) return;
       const formFields = collectFormFields(form, questionId);
       const options = {};
       let hasError = false;
@@ -1969,6 +2056,12 @@
       }
     };
   }
+  function ownsUnlabelledForms(embed) {
+    const claimants = embed.constructor._instances.filter(
+      (instance) => instance._inputTriggerFallback
+    );
+    return claimants[claimants.length - 1] === embed;
+  }
   function createKeyDownHandler(form) {
     return (e) => {
       const ke = e;
@@ -1999,12 +2092,14 @@
     let forms = Array.from(allForms).filter(
       (form) => form.getAttribute("data-question-id") === questionId
     );
+    this._inputTriggerFallback = false;
     if (forms.length === 0) {
       const formsWithQuestionId = Array.from(allForms).filter(
         (f) => f.hasAttribute("data-question-id")
       );
       if (!formsWithQuestionId.length) {
         forms = Array.from(allForms);
+        this._inputTriggerFallback = true;
       }
     }
     forms.forEach((form) => {
@@ -2015,6 +2110,53 @@
       this._formHandlers.push({ form, submitHandler, keydownHandler });
     });
   }
+
+  // src/embed/lifecycle.ts
+  function embedKey(src, embedType, target, options, questionId) {
+    const { prefillData: _prefill, ...identity } = options;
+    return JSON.stringify([src, embedType, target, identity, questionId]);
+  }
+  function readopt(options) {
+    if (options.prefillData) this.applyPrefillData(options.prefillData);
+    for (const style of Object.values(this.styles)) {
+      if (style && !style.isConnected) document.head.appendChild(style);
+    }
+    if (this._widgetButton && !this._widgetButton.isConnected) {
+      const button = this._widgetButton;
+      whenBody(() => document.body.appendChild(button));
+    }
+    if (this.initialized && this.surface_popup_reference && !this.surface_popup_reference.isConnected) {
+      const container = this.surface_popup_reference;
+      this._iframePreloaded = false;
+      whenBody(() => document.body.appendChild(container));
+    }
+    if (this.embed_type === "inline" && this.initialized) this.embedInline();
+    if (!this.embed_type || !this.target_element_class) return;
+    this.setupClickHandlers();
+    this.formInputTriggerInitialize();
+  }
+  function destroy() {
+    if (this._clickHandler) document.removeEventListener("click", this._clickHandler);
+    if (this._escHandler) document.removeEventListener("keydown", this._escHandler);
+    this._formHandlers?.forEach(({ form, submitHandler, keydownHandler }) => {
+      form.removeEventListener("submit", submitHandler);
+      form.removeEventListener("keydown", keydownHandler);
+    });
+    this._formHandlers = null;
+    this._observer?.disconnect();
+    clearTimeout(this._reinitTimeout);
+    if (this._routeHandler) offRouteChange(this._routeHandler);
+    this.hideSurfaceForm();
+    this.surface_popup_reference?.remove();
+    this._widgetButton?.remove();
+    this.inline_embed_references?.forEach((target) => target.querySelector("#surface-inline-div")?.remove());
+    const registry = SurfaceEmbedRegistry(this);
+    const index = registry.indexOf(this);
+    if (index !== -1) registry.splice(index, 1);
+    this.initialized = false;
+    this.destroyed = true;
+  }
+  var SurfaceEmbedRegistry = (embed) => embed.constructor._instances;
 
   // src/embed/embed.ts
   var DEFAULT_WIDGET_STYLES = {
@@ -2028,10 +2170,46 @@
   };
   var _SurfaceEmbed = class _SurfaceEmbed {
     constructor(src, surface_embed_type, target_element_class, options = {}) {
+      this.initialized = false;
+      this.iframe = null;
+      this.surface_popup_reference = null;
+      this.surface_inline_reference = null;
+      this.inline_embed_references = null;
+      this.iframeInlineStyle = null;
+      this.styles = { popup: null, widget: null };
+      this._cachedSrcUrl = null;
+      this._cachedOptionsKey = null;
+      this._iframePreloaded = false;
+      this._previouslyFocusedElement = null;
+      // The host page's body overflow at show time, restored on hide.
+      this._prevBodyOverflow = "";
+      this._clickHandler = null;
+      this._formHandlers = null;
+      this._escHandler = null;
+      this._observer = null;
+      this._routeHandler = null;
+      this._widgetButton = null;
+      // Set when this embed bound unlabelled input-trigger forms by fallback.
+      this._inputTriggerFallback = false;
+      this.destroyed = false;
+      this.shouldShowSurfaceForm = () => {
+      };
+      this.embedSurfaceForm = () => {
+      };
+      this.hideSurfaceForm = () => {
+      };
+      const questionId = options.questionId || document.currentScript?.getAttribute("data-question-id") || null;
+      const key = embedKey(src, surface_embed_type, target_element_class, options, questionId);
+      const existing = _SurfaceEmbed._instances.find((instance) => instance._key === key);
+      if (existing) {
+        existing.readopt(options);
+        return existing;
+      }
       this.src = new URL(src);
       this.log = createLogger("Surface Embed");
       this.store = window.SurfaceTagStore;
-      this.currentQuestionId = options.questionId || document.currentScript?.getAttribute("data-question-id") || null;
+      this.currentQuestionId = questionId;
+      this._key = key;
       _SurfaceEmbed._instances.push(this);
       if (this._isFormPreviewMode()) {
         this.log.info({ message: "Form is in preview mode" });
@@ -2043,35 +2221,11 @@
       const preloadOptions = ["true", "false", "pageLoad"];
       this._preload = preloadOptions.includes(options.preload) ? options.preload : "true";
       this.log.info({ message: "preload set", response: { preload: this._preload } });
-      this.styles = { popup: null, widget: null };
-      this.initialized = false;
-      this.iframe = null;
-      this.surface_popup_reference = null;
-      this.surface_inline_reference = null;
-      this.inline_embed_references = null;
-      this.iframeInlineStyle = null;
-      this._cachedSrcUrl = null;
-      this._cachedOptionsKey = null;
-      this._iframePreloaded = false;
-      this._previouslyFocusedElement = null;
-      this._clickHandler = null;
-      this._formHandlers = null;
       this.target_element_class = target_element_class;
-      this.options = options;
-      this.options.popupSize = this._popupSize;
+      this.options = { ...options, popupSize: this._popupSize };
       this.widgetStyle = { ...DEFAULT_WIDGET_STYLES, ...options.widgetStyles || {} };
-      if (options.prefillData) {
-        this.store.partialFilledData = Object.entries(options.prefillData).map(
-          ([key, value]) => ({ [key]: value })
-        );
-      }
+      if (options.prefillData) this.applyPrefillData(options.prefillData);
       this.embed_type = resolveEmbedType(surface_embed_type, this.log);
-      this.shouldShowSurfaceForm = () => {
-      };
-      this.embedSurfaceForm = () => {
-      };
-      this.hideSurfaceForm = () => {
-      };
       if (!this.embed_type || !VALID_EMBED_TYPES.includes(this.embed_type)) {
         this.log.error({ message: "Invalid embed type: must be string or object" });
         return;
@@ -2136,14 +2290,18 @@
         this._popupSize = size;
       }
     }
+    applyPrefillData(prefillData) {
+      this.store.partialFilledData = Object.entries(prefillData).map(([key, value]) => ({ [key]: value }));
+    }
     _isFormPreviewMode() {
       const params = this.store?.getUrlParams?.() ?? {};
       return params.surfaceDebug === "true";
     }
     hideFormOnEsc() {
-      document.addEventListener("keydown", (event) => {
+      this._escHandler = (event) => {
         if (event.key === "Escape") this.hideSurfaceForm();
-      });
+      };
+      document.addEventListener("keydown", this._escHandler);
     }
     setupEmbedRouteDetection() {
       let currentUrl2 = window.location.href;
@@ -2156,6 +2314,7 @@
         this.formInputTriggerInitialize();
         this.log.info({ message: "Route changed, re-initialized handlers", response: { url: newUrl } });
       };
+      this._routeHandler = handleChange;
       onRouteChange(handleChange);
       if (typeof MutationObserver !== "undefined") {
         const observer = new MutationObserver((mutations) => {
@@ -2179,6 +2338,7 @@
             }, 100);
           }
         });
+        this._observer = observer;
         if (document.body) {
           observer.observe(document.body, { childList: true, subtree: true });
         } else {
@@ -2208,7 +2368,9 @@
     showSurfaceSlideover,
     hideSurfaceSlideover,
     addWidgetButton,
-    formInputTriggerInitialize
+    formInputTriggerInitialize,
+    readopt,
+    destroy
   });
 
   // src/open-triggers/open-trigger-overlay.ts
@@ -2226,6 +2388,12 @@
       show(overlayEl, mode);
       return;
     }
+    let src;
+    try {
+      src = new URL(formSrc).href;
+    } catch {
+      return;
+    }
     injectStyles(mode);
     const overlay2 = document.createElement("div");
     overlay2.id = ID;
@@ -2235,7 +2403,7 @@
       <div style="display:flex;justify-content:center;align-items:center;height:100%;position:absolute;top:0;left:0;width:100%;pointer-events:none;">
         <div class="${SPINNER}"></div>
       </div>
-      <iframe id="${IFRAME}" src="${formSrc}" frameborder="0" allowfullscreen style="opacity:0;"></iframe>
+      <iframe id="${IFRAME}" src="${src}" frameborder="0" allowfullscreen style="opacity:0;"></iframe>
       <div class="${CLOSEBOX}" style="display:none;"><span class="${CLOSE}">&times;</span></div>
     </div>
   `;
@@ -2293,6 +2461,12 @@
 
   // src/open-triggers/resolve.ts
   var OPENABLE_MODES = ["popup", "slideover"];
+  function hasTrueParam(search) {
+    for (const [, value] of new URLSearchParams(search)) {
+      if (value === "true") return true;
+    }
+    return false;
+  }
   function pickOpenTrigger(search, map) {
     if (!map) return null;
     const params = new URLSearchParams(search);
@@ -2311,21 +2485,21 @@
   var CACHE_TTL_MS = 5 * 60 * 1e3;
   var REUSE_POLL_INTERVAL_MS = 150;
   var REUSE_POLL_MAX_TRIES = 12;
-  async function resolveOpenTriggersOnLoad(environmentId3, config = getSurfaceRuntimeConfig()) {
+  async function resolveOpenTriggersOnLoad(environmentId2, config = getSurfaceRuntimeConfig()) {
     try {
-      if (!environmentId3) return;
-      if (!window.location.search) return;
-      const map = await fetchOpenTriggersMap(environmentId3, config);
+      if (!environmentId2) return;
+      if (!hasTrueParam(window.location.search)) return;
+      const map = await fetchOpenTriggersMap(environmentId2, config);
       const entry = pickOpenTrigger(window.location.search, map);
       if (!entry) return;
       openTriggerForm(entry);
     } catch {
     }
   }
-  async function fetchOpenTriggersMap(environmentId3, config) {
+  async function fetchOpenTriggersMap(environmentId2, config) {
     const w3 = window;
     if (w3.__SURFACE_OPEN_TRIGGERS_MAP) return w3.__SURFACE_OPEN_TRIGGERS_MAP;
-    const sessionKey = `${SESSION_PREFIX}${config.apiBaseUrl}:${environmentId3}`;
+    const sessionKey = `${SESSION_PREFIX}${config.apiBaseUrl}:${environmentId2}`;
     try {
       const cached2 = sessionStorage.getItem(sessionKey);
       if (cached2) {
@@ -2337,7 +2511,10 @@
     } catch {
     }
     const base = w3.__SURFACE_OPEN_TRIGGERS_BASE || config.apiBaseUrl;
-    const response = await fetch(`${base}/environments/${encodeURIComponent(environmentId3)}/open-triggers`);
+    const response = await fetch(
+      `${base}/environments/${encodeURIComponent(environmentId2)}/open-triggers`,
+      { priority: "low" }
+    );
     if (!response.ok) return null;
     const json = await response.json();
     const map = json?.data ?? {};
@@ -2625,26 +2802,32 @@
   }
 
   // src/index.ts
-  var scriptTag = document.currentScript;
-  var runtimeConfig2 = initializeSurfaceRuntimeConfig(scriptTag);
-  var environmentId2 = getSiteIdFromScript(scriptTag);
-  setEnvironmentId(environmentId2);
-  var SurfaceTagStore = new SurfaceStore(environmentId2, runtimeConfig2);
   var w2 = window;
-  w2.SurfaceEmbed = SurfaceEmbed;
-  w2.SurfaceExternalForm = SurfaceExternalForm;
-  w2.SurfaceTagStore = SurfaceTagStore;
-  w2.SurfaceIdentifyLead = identifyLead;
-  w2.SurfaceSetLeadDataWithTTL = setLeadDataWithTTL;
-  w2.SurfaceGetLeadDataWithTTL = getLeadDataWithTTL;
-  w2.SurfaceGetSiteIdFromScript = getSiteIdFromScript;
-  w2.SurfaceSetConsent = setSurfaceConsent;
-  onSurfaceConsentChange(() => {
-    SurfaceTagStore.sendConsentToIframes();
-    SurfaceTagStore.applyConsent();
-    SurfaceTagStore.sendPayloadToIframes("STORE_UPDATE");
-  });
-  void resolveOpenTriggersOnLoad(environmentId2, runtimeConfig2);
-  initReview();
-  drainStubQueue();
+  if (!w2.__surfaceTagLoaded) {
+    w2.__surfaceTagLoaded = true;
+    boot();
+  }
+  function boot() {
+    const scriptTag = document.currentScript;
+    const runtimeConfig2 = initializeSurfaceRuntimeConfig(scriptTag);
+    const environmentId2 = getSiteIdFromScript(scriptTag);
+    setEnvironmentId(environmentId2);
+    const SurfaceTagStore = new SurfaceStore(environmentId2, runtimeConfig2);
+    w2.SurfaceEmbed = SurfaceEmbed;
+    w2.SurfaceExternalForm = SurfaceExternalForm;
+    w2.SurfaceTagStore = SurfaceTagStore;
+    w2.SurfaceIdentifyLead = identifyLead;
+    w2.SurfaceSetLeadDataWithTTL = setLeadDataWithTTL;
+    w2.SurfaceGetLeadDataWithTTL = getLeadDataWithTTL;
+    w2.SurfaceGetSiteIdFromScript = getSiteIdFromScript;
+    w2.SurfaceSetConsent = setSurfaceConsent;
+    onSurfaceConsentChange(() => {
+      SurfaceTagStore.sendConsentToIframes();
+      SurfaceTagStore.applyConsent();
+      SurfaceTagStore.sendPayloadToIframes("STORE_UPDATE");
+    });
+    void resolveOpenTriggersOnLoad(environmentId2, runtimeConfig2);
+    initReview();
+    drainStubQueue();
+  }
 })();
