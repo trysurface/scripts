@@ -523,6 +523,383 @@
     ack();
   };
 
+  // src/embed/popup-dimensions.ts
+  var DEFAULT_DIMENSIONS = {
+    width: "calc(100% - 80px)",
+    height: "calc(100% - 80px)"
+  };
+  var SIZE_PRESETS = {
+    small: { width: "500px", height: "80%" },
+    medium: { width: "70%", height: "80%" },
+    large: DEFAULT_DIMENSIONS
+  };
+  function getPopupDimensions(size) {
+    if (typeof size === "string" && SIZE_PRESETS[size]) {
+      return { ...SIZE_PRESETS[size] };
+    }
+    if (typeof size === "object" && size !== null && ("width" in size || "height" in size)) {
+      return {
+        width: size.width || DEFAULT_DIMENSIONS.width,
+        height: size.height || DEFAULT_DIMENSIONS.height
+      };
+    }
+    return { ...DEFAULT_DIMENSIONS };
+  }
+
+  // src/embed/inline-layout.ts
+  var INLINE_EMBED_PARAM = "surfaceEmbed";
+  var INLINE_CAPS_PARAM = "surfaceTagCaps";
+  var INLINE_LAYOUT_CAP = "inline-layout";
+  var INLINE_LAYOUT_MESSAGE_TYPE = "SURFACE_INLINE_LAYOUT";
+  var INLINE_OVERLAY_DISMISSED_MESSAGE_TYPE = "SURFACE_INLINE_OVERLAY_DISMISSED";
+  var MAX_STRIP_HEIGHT = 4e3;
+  var MOBILE_MAX_WIDTH = 480;
+  var supportsTopLayer = (el) => typeof el.showPopover === "function";
+  var entries = /* @__PURE__ */ new Map();
+  function registerInlineIframe(embed, wrapper, iframe) {
+    const trap = supportsTopLayer(wrapper) ? null : detectFixedTrap(wrapper);
+    if (trap) warnTrap(embed, trap);
+    entries.set(iframe, {
+      embed,
+      wrapper,
+      iframe,
+      trap,
+      layout: null,
+      overlayKind: null,
+      overlaySession: 0,
+      lastStripHeight: null,
+      placeholder: null,
+      closeBox: null,
+      savedWrapperCss: "",
+      savedIframeCss: "",
+      prevBodyOverflow: "",
+      prevFocus: null,
+      cleanup: []
+    });
+  }
+  function findInlineEntryForSource(source) {
+    releaseDetachedInlineOverlays();
+    for (const entry of entries.values()) {
+      if (entry.iframe.contentWindow === source) return entry;
+    }
+    return null;
+  }
+  function handleInlineLayoutMessage(event) {
+    const data = event.data;
+    if (!data || data.type !== INLINE_LAYOUT_MESSAGE_TYPE || data.sender !== "surface_form") return;
+    const entry = findInlineEntryForSource(event.source);
+    if (!entry) return;
+    if (data.layout === "overlay") {
+      enterOverlay(entry);
+      return;
+    }
+    if (data.layout === "strip") {
+      const height = Number(data.height);
+      if (!Number.isFinite(height) || height < 1) {
+        entry.embed.log.warn({ message: "Ignoring inline strip layout with invalid height", response: { height: data.height } });
+        return;
+      }
+      applyStrip(entry, Math.min(MAX_STRIP_HEIGHT, Math.round(height)));
+    }
+  }
+  function releaseDetachedInlineOverlays() {
+    for (const entry of entries.values()) {
+      if (entry.iframe.isConnected) continue;
+      if (entry.layout === "overlay") exitOverlay(entry);
+      entries.delete(entry.iframe);
+    }
+  }
+  function releaseWhenDetached(entry) {
+    if (typeof MutationObserver === "undefined") return;
+    const observer = new MutationObserver(() => {
+      if (entry.iframe.isConnected) return;
+      exitOverlay(entry);
+      entries.delete(entry.iframe);
+    });
+    observer.observe(document.documentElement, { childList: true, subtree: true });
+    entry.cleanup.push(() => observer.disconnect());
+  }
+  function keepFocusInside(entry) {
+    const onFocusIn = (event) => {
+      if (entry.wrapper.contains(event.target)) return;
+      entry.iframe.focus();
+    };
+    document.addEventListener("focusin", onFocusIn);
+    entry.cleanup.push(() => document.removeEventListener("focusin", onFocusIn));
+  }
+  function warnTrap(embed, trap) {
+    embed.log.warn({
+      message: "Inline embed ancestor creates a containing block for position:fixed; the compact pop-out will use the Fullscreen API on this page",
+      response: trap
+    });
+  }
+  var TRANSFORM_PROPERTIES = ["transform", "translate", "rotate", "scale", "filter", "backdropFilter", "perspective"];
+  var TRAPPING_WILL_CHANGE = ["transform", "perspective", "filter", "backdrop-filter"];
+  var TRAPPING_CONTAIN = ["paint", "layout", "strict", "content"];
+  function detectFixedTrap(start) {
+    for (let el = start; el && el !== document.documentElement; el = el.parentElement) {
+      const style = getComputedStyle(el);
+      for (const property of TRANSFORM_PROPERTIES) {
+        const value = style[property];
+        if (value && value !== "none") return { element: describe(el), property, value };
+      }
+      const willChange = (style.willChange ?? "").split(",").map((token) => token.trim());
+      if (willChange.some((token) => TRAPPING_WILL_CHANGE.includes(token))) {
+        return { element: describe(el), property: "willChange", value: style.willChange };
+      }
+      const contain = (style.contain ?? "").split(/\s+/);
+      if (contain.some((token) => TRAPPING_CONTAIN.includes(token))) {
+        return { element: describe(el), property: "contain", value: style.contain };
+      }
+      if (style.position !== "static" && style.zIndex !== "auto" && style.zIndex !== "") {
+        return { element: describe(el), property: "zIndex", value: style.zIndex };
+      }
+      if (style.opacity !== "" && Number(style.opacity) < 1) {
+        return { element: describe(el), property: "opacity", value: style.opacity };
+      }
+      if (style.isolation === "isolate") return { element: describe(el), property: "isolation", value: "isolate" };
+      if (style.mixBlendMode && style.mixBlendMode !== "normal") {
+        return { element: describe(el), property: "mixBlendMode", value: style.mixBlendMode };
+      }
+    }
+    return null;
+  }
+  function describe(el) {
+    const id = el.id ? `#${el.id}` : "";
+    const classes = el.classList.length ? `.${Array.from(el.classList).join(".")}` : "";
+    return `${el.tagName.toLowerCase()}${id}${classes}`;
+  }
+  function applyStrip(entry, height) {
+    if (entry.layout === "overlay") exitOverlay(entry);
+    entry.lastStripHeight = height;
+    entry.iframe.style.height = `${height}px`;
+    entry.layout = "strip";
+  }
+  function enterOverlay(entry) {
+    if (entry.layout === "overlay") return;
+    const { wrapper, iframe } = entry;
+    entry.layout = "overlay";
+    entry.savedWrapperCss = wrapper.style.cssText;
+    entry.savedIframeCss = iframe.style.cssText;
+    entry.prevFocus = document.activeElement;
+    entry.overlaySession += 1;
+    releaseWhenDetached(entry);
+    keepFocusInside(entry);
+    if (supportsTopLayer(wrapper)) {
+      enterTopLayer(entry);
+      return;
+    }
+    const trap = detectFixedTrap(wrapper);
+    if (trap && !entry.trap) warnTrap(entry.embed, trap);
+    entry.trap = trap;
+    if (entry.trap) {
+      enterFullscreen(entry);
+      return;
+    }
+    entry.overlayKind = "fixed";
+    keepStripSpace(entry);
+    entry.prevBodyOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    applyOverlayGeometry(entry);
+    wrapper.style.position = "fixed";
+    addDismissHandlers(entry, { backdrop: true, escape: true });
+    reveal(entry);
+  }
+  function enterTopLayer(entry) {
+    const { wrapper } = entry;
+    entry.overlayKind = "topLayer";
+    keepStripSpace(entry);
+    entry.prevBodyOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    wrapper.setAttribute("popover", "manual");
+    applyOverlayGeometry(entry);
+    Object.assign(wrapper.style, { position: "fixed", inset: "0", border: "0", overflow: "visible", color: "inherit" });
+    wrapper.showPopover();
+    addDismissHandlers(entry, { backdrop: true, escape: true });
+    reveal(entry);
+  }
+  function enterFullscreen(entry) {
+    const { wrapper } = entry;
+    if (typeof wrapper.requestFullscreen !== "function") {
+      enterExpanded(entry);
+      return;
+    }
+    entry.overlayKind = "fullscreen";
+    keepStripSpace(entry);
+    const onFullscreenChange = () => {
+      if (document.fullscreenElement !== wrapper) dismissOverlay(entry);
+    };
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    entry.cleanup.push(() => document.removeEventListener("fullscreenchange", onFullscreenChange));
+    const session = entry.overlaySession;
+    const stale = () => entry.layout !== "overlay" || entry.overlaySession !== session;
+    wrapper.requestFullscreen().then(
+      () => {
+        if (stale()) {
+          if (document.fullscreenElement === wrapper) document.exitFullscreen().catch(() => {
+          });
+          return;
+        }
+        applyOverlayGeometry(entry);
+        addDismissHandlers(entry, { backdrop: true, escape: false });
+        reveal(entry);
+      },
+      (error) => {
+        if (stale()) return;
+        entry.embed.log.warn({ message: "Fullscreen request rejected; expanding the inline embed in place", response: { error: String(error) } });
+        runCleanup(entry);
+        entry.placeholder?.remove();
+        entry.placeholder = null;
+        enterExpanded(entry);
+      }
+    );
+  }
+  function enterExpanded(entry) {
+    entry.overlayKind = "expanded";
+    entry.wrapper.style.position = "relative";
+    entry.iframe.style.height = `${Math.round(window.innerHeight * 0.85)}px`;
+    entry.iframe.scrollIntoView({ block: "nearest" });
+    addDismissHandlers(entry, { backdrop: false, escape: true });
+  }
+  function keepStripSpace(entry) {
+    const height = entry.wrapper.getBoundingClientRect().height;
+    if (height <= 0) return;
+    const placeholder = document.createElement("div");
+    placeholder.style.height = `${height}px`;
+    entry.wrapper.insertAdjacentElement("afterend", placeholder);
+    entry.placeholder = placeholder;
+  }
+  function applyOverlayGeometry(entry) {
+    const { wrapper, iframe } = entry;
+    wrapper.setAttribute("role", "dialog");
+    wrapper.setAttribute("aria-modal", "true");
+    Object.assign(wrapper.style, {
+      top: "0",
+      left: "0",
+      width: "100%",
+      height: "100%",
+      margin: "0",
+      padding: "0",
+      zIndex: "99999",
+      boxSizing: "border-box",
+      background: "rgba(0,0,0,0.5)",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      opacity: "0",
+      transition: "opacity 0.15s ease"
+    });
+    const mobile = window.innerWidth <= MOBILE_MAX_WIDTH;
+    const dimensions = mobile ? { width: "100%", height: "100%" } : getPopupDimensions("large");
+    Object.assign(iframe.style, {
+      width: dimensions.width,
+      height: dimensions.height,
+      maxWidth: "100%",
+      maxHeight: "100%",
+      border: "0",
+      borderRadius: mobile ? "0" : "15px",
+      background: "#fff"
+    });
+  }
+  function reveal(entry) {
+    const timer = setTimeout(() => {
+      entry.wrapper.style.opacity = "1";
+      entry.iframe.focus();
+    }, 50);
+    entry.cleanup.push(() => clearTimeout(timer));
+  }
+  function addDismissHandlers(entry, handlers) {
+    const { wrapper } = entry;
+    const closeBox = document.createElement("button");
+    closeBox.type = "button";
+    closeBox.setAttribute("aria-label", "Close");
+    closeBox.textContent = "\xD7";
+    Object.assign(closeBox.style, {
+      appearance: "none",
+      border: "0",
+      padding: "0",
+      margin: "0",
+      font: "inherit",
+      position: "absolute",
+      top: "12px",
+      right: "16px",
+      zIndex: "100000",
+      width: "32px",
+      height: "32px",
+      borderRadius: "50%",
+      background: "#fff",
+      color: "#000",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      fontSize: "22px",
+      lineHeight: "1",
+      cursor: "pointer",
+      opacity: "0.9",
+      userSelect: "none"
+    });
+    const dismiss = () => dismissOverlay(entry);
+    closeBox.addEventListener("click", dismiss);
+    wrapper.appendChild(closeBox);
+    entry.closeBox = closeBox;
+    if (handlers.backdrop) {
+      const onBackdropClick = (event) => {
+        if (event.target === wrapper) dismiss();
+      };
+      wrapper.addEventListener("click", onBackdropClick);
+      entry.cleanup.push(() => wrapper.removeEventListener("click", onBackdropClick));
+    }
+    if (handlers.escape) {
+      const onKeydown = (event) => {
+        if (event.key === "Escape" && entry.layout === "overlay") dismiss();
+      };
+      document.addEventListener("keydown", onKeydown);
+      entry.cleanup.push(() => document.removeEventListener("keydown", onKeydown));
+    }
+  }
+  function runCleanup(entry) {
+    entry.cleanup.forEach((fn) => fn());
+    entry.cleanup = [];
+  }
+  function exitOverlay(entry) {
+    const { wrapper, iframe } = entry;
+    const kind = entry.overlayKind;
+    runCleanup(entry);
+    if (kind === "fullscreen" && document.fullscreenElement === wrapper) {
+      document.exitFullscreen().catch(() => {
+      });
+    }
+    if (kind === "topLayer") {
+      try {
+        wrapper.hidePopover();
+      } catch {
+      }
+      wrapper.removeAttribute("popover");
+    }
+    entry.closeBox?.remove();
+    entry.closeBox = null;
+    entry.placeholder?.remove();
+    entry.placeholder = null;
+    wrapper.style.cssText = entry.savedWrapperCss;
+    iframe.style.cssText = entry.savedIframeCss;
+    wrapper.removeAttribute("role");
+    wrapper.removeAttribute("aria-modal");
+    if (kind === "fixed" || kind === "topLayer") document.body.style.overflow = entry.prevBodyOverflow;
+    entry.prevFocus?.focus?.();
+    entry.prevFocus = null;
+    if (entry.lastStripHeight !== null) iframe.style.height = `${entry.lastStripHeight}px`;
+    entry.layout = entry.lastStripHeight === null ? null : "strip";
+    entry.overlayKind = null;
+  }
+  function dismissOverlay(entry) {
+    if (entry.layout !== "overlay") return;
+    exitOverlay(entry);
+    entry.embed.store.postToSurfaceIframe(entry.iframe, {
+      type: INLINE_OVERLAY_DISMISSED_MESSAGE_TYPE,
+      sender: "surface_tag"
+    });
+  }
+
   // src/store/message-listener.ts
   function initializeMessageListener(store) {
     const handleMessage = (event) => {
@@ -532,6 +909,10 @@
       }
       if (event.data?.type === "surface:conversion") {
         handleConversionMessage(event, store.log);
+        return;
+      }
+      if (event.data?.type === INLINE_LAYOUT_MESSAGE_TYPE) {
+        handleInlineLayoutMessage(event);
         return;
       }
       if (event.data.type === "SEND_DATA") {
@@ -1322,6 +1703,7 @@
       }
       clientDiv.appendChild(wrapper);
       wrapper.appendChild(iframe);
+      registerInlineIframe(this, wrapper, iframe);
       injectStyle(`
       #surface-inline-div { width: 100%; height: 100%; }
       #surface-inline-div iframe { width: 100%; height: 100%; }
@@ -1516,29 +1898,6 @@
 
     ${getCloseButtonStyles("popup")}
   `;
-  }
-
-  // src/embed/popup-dimensions.ts
-  var DEFAULT_DIMENSIONS = {
-    width: "calc(100% - 80px)",
-    height: "calc(100% - 80px)"
-  };
-  var SIZE_PRESETS = {
-    small: { width: "500px", height: "80%" },
-    medium: { width: "70%", height: "80%" },
-    large: DEFAULT_DIMENSIONS
-  };
-  function getPopupDimensions(size) {
-    if (typeof size === "string" && SIZE_PRESETS[size]) {
-      return { ...SIZE_PRESETS[size] };
-    }
-    if (typeof size === "object" && size !== null && ("width" in size || "height" in size)) {
-      return {
-        width: size.width || DEFAULT_DIMENSIONS.width,
-        height: size.height || DEFAULT_DIMENSIONS.height
-      };
-    }
-    return { ...DEFAULT_DIMENSIONS };
   }
 
   // src/embed/types/popup.ts
@@ -2077,6 +2436,10 @@
         return;
       }
       if (!target_element_class) return;
+      if (this.embed_type === "inline") {
+        this.src.searchParams.set(INLINE_EMBED_PARAM, "inline");
+        this.src.searchParams.set(INLINE_CAPS_PARAM, INLINE_LAYOUT_CAP);
+      }
       this.wireEmbedType();
       this.surface_popup_reference ?? (this.surface_popup_reference = document.createElement("div"));
       this.setupClickHandlers();
@@ -2152,6 +2515,7 @@
         if (newUrl === currentUrl2) return;
         currentUrl2 = newUrl;
         this.store.windowUrl = new URL(newUrl).toString();
+        releaseDetachedInlineOverlays();
         this.setupClickHandlers();
         this.formInputTriggerInitialize();
         this.log.info({ message: "Route changed, re-initialized handlers", response: { url: newUrl } });
@@ -2588,9 +2952,9 @@
   function drainStubQueue() {
     const w3 = window;
     if (!Array.isArray(w3.SurfaceTagQueue)) return;
-    const entries = w3.SurfaceTagQueue;
+    const entries2 = w3.SurfaceTagQueue;
     w3.SurfaceTagQueue = { push: processEntry };
-    entries.forEach(processEntry);
+    entries2.forEach(processEntry);
   }
   function processEntry(entry) {
     try {
