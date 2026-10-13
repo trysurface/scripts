@@ -74,13 +74,21 @@
   // src/runtime-config.ts
   var CUSTOM_DOMAIN_ATTRIBUTE = "data-custom-domain";
   var CONSENT_MODE_ATTRIBUTE = "data-consent-mode";
+  var LANGUAGE_ATTRIBUTE = "data-lang";
+  var LANGUAGE_PARAM = "surface-form-language";
+  var LANGUAGE_TAG = /^[A-Za-z]{2,8}([-_][A-Za-z0-9]{1,8})*$/;
+  function normalizeLanguageTag(value) {
+    const trimmed = (value ?? "").trim();
+    return LANGUAGE_TAG.test(trimmed) ? trimmed : null;
+  }
   var DEFAULT_SURFACE_RUNTIME_CONFIG = {
     apiBaseUrl: EXTERNAL_FORM_API,
     leadIdentifyApi: LEAD_IDENTIFY_API,
     userJourneyTrackingApi: USER_JOURNEY_TRACKING_API,
     surfaceDomains: SURFACE_DOMAINS,
     customOrigin: null,
-    waitForCookieConsent: false
+    waitForCookieConsent: false,
+    language: null
   };
   var runtimeConfig = DEFAULT_SURFACE_RUNTIME_CONFIG;
   function normalizeCustomOrigin(value) {
@@ -98,10 +106,11 @@
   }
   function resolveSurfaceRuntimeConfig(scriptElement) {
     const waitForCookieConsent = scriptElement?.hasAttribute(CONSENT_MODE_ATTRIBUTE) ?? false;
+    const language = normalizeLanguageTag(scriptElement?.getAttribute(LANGUAGE_ATTRIBUTE));
     const customOrigin = normalizeCustomOrigin(
       scriptElement?.getAttribute(CUSTOM_DOMAIN_ATTRIBUTE) ?? ""
     );
-    if (!customOrigin) return { ...DEFAULT_SURFACE_RUNTIME_CONFIG, waitForCookieConsent };
+    if (!customOrigin) return { ...DEFAULT_SURFACE_RUNTIME_CONFIG, waitForCookieConsent, language };
     const apiBaseUrl = `${customOrigin}/api/v1`;
     return {
       apiBaseUrl,
@@ -109,7 +118,8 @@
       userJourneyTrackingApi: `${apiBaseUrl}/lead/track`,
       surfaceDomains: Array.from(/* @__PURE__ */ new Set([...SURFACE_DOMAINS, customOrigin])),
       customOrigin,
-      waitForCookieConsent
+      waitForCookieConsent,
+      language
     };
   }
   function initializeSurfaceRuntimeConfig(scriptElement) {
@@ -1098,6 +1108,8 @@
   var SurfaceStore = class {
     constructor(environmentId3 = null, config = getSurfaceRuntimeConfig()) {
       this.journeyStarted = false;
+      // Embeds with a language of their own; their iframes get it instead of the page's.
+      this.embeds = [];
       this.windowUrl = new URL(window.location.href).toString();
       this.origin = new URL(window.location.href).origin.toString();
       this.referrer = document.referrer || "";
@@ -1112,6 +1124,7 @@
       this.userJourneyId = null;
       this.userJourney = [];
       this.environmentId = environmentId3;
+      this.language = config.language;
       this.log = createLogger("Surface Store");
       this.cachedIdentifyData = this.cookieTrackingAllowed() ? getLeadDataWithTTL() : null;
       initializeMessageListener(this);
@@ -1226,6 +1239,21 @@
         this.log.info({ message: "Route changed, updated journey", response: { url: newUrl } });
       });
     }
+    /**
+     * The page's language for every Surface form on it that has no language of its own;
+     * forms re-render in place when it changes. Null clears it.
+     */
+    setLanguage(language) {
+      this.language = normalizeLanguageTag(language);
+      this.sendPayloadToIframes("STORE_UPDATE");
+    }
+    /** Lets an embed's own language reach its iframe in every payload the store sends. */
+    registerEmbed(embed) {
+      if (!this.embeds.includes(embed)) this.embeds.push(embed);
+    }
+    languageFor(iframe) {
+      return this.embeds.find((embed) => embed.iframe === iframe)?.language ?? this.language;
+    }
     sendPayloadToIframes(type) {
       const iframes = document.querySelectorAll("iframe");
       if (iframes.length === 0) return;
@@ -1239,7 +1267,7 @@
       if (!target) return;
       this.postToSurfaceIframe(target, {
         type,
-        payload: this.getPayload(),
+        payload: { ...this.getPayload(), language: this.languageFor(target) },
         sender: "surface_tag"
       });
     }
@@ -1278,7 +1306,8 @@
         questionIds: this.partialFilledData,
         urlParams: this.urlParams,
         surfaceLeadData: allowed ? getLeadDataWithTTL() : null,
-        userJourneyId: allowed ? this.userJourneyId : null
+        userJourneyId: allowed ? this.userJourneyId : null,
+        language: this.language
       };
     }
     clearUserJourney() {
@@ -2405,6 +2434,7 @@
       this.styles = { popup: null, widget: null };
       this.initialized = false;
       this.iframe = null;
+      this.language = null;
       this.surface_popup_reference = null;
       this.surface_inline_reference = null;
       this.inline_embed_references = null;
@@ -2440,6 +2470,10 @@
         this.src.searchParams.set(INLINE_EMBED_PARAM, "inline");
         this.src.searchParams.set(INLINE_CAPS_PARAM, INLINE_LAYOUT_CAP);
       }
+      this.language = normalizeLanguageTag(options.language) ?? normalizeLanguageTag(this.src.searchParams.get(LANGUAGE_PARAM));
+      if (this.language) this.store?.registerEmbed?.(this);
+      const firstPaintLanguage = this.language ?? normalizeLanguageTag(this.store?.language);
+      if (firstPaintLanguage) this.src.searchParams.set(LANGUAGE_PARAM, firstPaintLanguage);
       this.wireEmbedType();
       this.surface_popup_reference ?? (this.surface_popup_reference = document.createElement("div"));
       this.setupClickHandlers();
@@ -3003,6 +3037,7 @@
   w2.SurfaceGetLeadDataWithTTL = getLeadDataWithTTL;
   w2.SurfaceGetSiteIdFromScript = getSiteIdFromScript;
   w2.SurfaceSetConsent = setSurfaceConsent;
+  w2.SurfaceSetLanguage = (language) => SurfaceTagStore.setLanguage(language);
   onSurfaceConsentChange(() => {
     SurfaceTagStore.sendConsentToIframes();
     SurfaceTagStore.applyConsent();
