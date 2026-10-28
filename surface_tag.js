@@ -533,6 +533,13 @@
     ack();
   };
 
+  // src/embed/form-ready.ts
+  var FORM_READY_MESSAGE_TYPE = "SURFACE_FORM_READY";
+  function revealReadyIframe(event) {
+    const iframe = Array.from(document.querySelectorAll("iframe")).find((el) => el.contentWindow === event.source);
+    iframe?.onload?.call(iframe, new Event("load"));
+  }
+
   // src/embed/popup-dimensions.ts
   var DEFAULT_DIMENSIONS = {
     width: "calc(100% - 80px)",
@@ -923,6 +930,10 @@
       }
       if (event.data?.type === INLINE_LAYOUT_MESSAGE_TYPE) {
         handleInlineLayoutMessage(event);
+        return;
+      }
+      if (event.data?.type === FORM_READY_MESSAGE_TYPE) {
+        revealReadyIframe(event);
         return;
       }
       if (event.data.type === "SEND_DATA") {
