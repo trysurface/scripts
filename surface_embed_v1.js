@@ -917,6 +917,151 @@
     });
   }
 
+  // src/qualified/qualified.ts
+  var QUALIFIED_MESSAGE_TYPE = "surface:qualified";
+  var GLOBAL_POLL_INTERVAL_MS = 250;
+  var GLOBAL_POLL_ATTEMPTS = 12;
+  var isShowRequest = (data) => {
+    const message = data;
+    return !!message && message.type === QUALIFIED_MESSAGE_TYPE && message.sender === "surface_form" && message.action === "show" && (message.trigger === "hubspot" ? typeof message.hubspotFormId === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(message.hubspotFormId) : (message.trigger === void 0 || message.trigger === "experience") && typeof message.experienceId === "string") && !!message.fields && typeof message.fields === "object";
+  };
+  var getQualifiedGlobal = () => {
+    const candidate = window.qualified;
+    return typeof candidate === "function" ? candidate : null;
+  };
+  var waitForQualifiedGlobal = () => new Promise((resolve) => {
+    let attempts = 0;
+    const check = () => {
+      const qualified = getQualifiedGlobal();
+      if (qualified || attempts >= GLOBAL_POLL_ATTEMPTS) return resolve(qualified);
+      attempts += 1;
+      window.setTimeout(check, GLOBAL_POLL_INTERVAL_MS);
+    };
+    check();
+  });
+  var postToRequester = (requester, message, store) => {
+    try {
+      requester.source.postMessage({ type: QUALIFIED_MESSAGE_TYPE, sender: "surface_tag", ...message }, requester.origin);
+    } catch (error) {
+      store.log.warn({ message: "Could not reach the form that asked for Qualified", error });
+    }
+  };
+  var OPEN_TIMEOUT_MS = 15e3;
+  var REDIRECT_GRACE_MS = 5e3;
+  var getFrame = () => document.querySelector("iframe#q-messenger-frame");
+  var startQualifiedPopup = (retireRequester) => {
+    const navigation = window.navigation;
+    let opened = false;
+    let finished = false;
+    let timer;
+    const preventRedirect = (event) => {
+      if (event.cancelable && !event.destination.sameDocument && event.navigationType !== "traverse" && event.userInitiated === false) {
+        event.preventDefault();
+      }
+    };
+    const dispose = () => {
+      retireRequester();
+      window.clearTimeout(timer);
+      observer.disconnect();
+      navigation?.removeEventListener("navigate", preventRedirect);
+    };
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      retireRequester();
+      observer.disconnect();
+      window.clearTimeout(timer);
+      timer = window.setTimeout(dispose, REDIRECT_GRACE_MS);
+    };
+    const observePopup = () => {
+      if (getFrame()?.classList.contains("qlfd-full-screen")) {
+        opened = true;
+        window.clearTimeout(timer);
+      } else if (opened) {
+        finish();
+      }
+    };
+    const observer = new MutationObserver(observePopup);
+    navigation?.addEventListener("navigate", preventRedirect);
+    observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ["class"] });
+    timer = window.setTimeout(dispose, OPEN_TIMEOUT_MS);
+    observePopup();
+    return {
+      dispose,
+      complete: () => {
+        finish();
+        getFrame()?.contentWindow?.postMessage(
+          { postmate: "call", type: "application/x-postmate-v1+json", property: "closeLightbox" },
+          "https://app.qualified.com"
+        );
+      }
+    };
+  };
+  var bookingHandlerRegistered = false;
+  var activeRequest = null;
+  var registerBookingHandler = (qualified, store) => {
+    if (bookingHandlerRegistered) return;
+    qualified("handleEvents", (name, data) => {
+      const request = activeRequest;
+      if (name !== "Meeting Booked" || !request?.requester) return;
+      store.log.info({ message: "Qualified meeting booked" });
+      const event = data ?? {};
+      const booking = {
+        bot_conversation_id: event.bot_conversation_id,
+        rep_conversation_id: event.rep_conversation_id,
+        field_values: event.field_values
+      };
+      const requester = request.requester;
+      request.requester = null;
+      postToRequester(requester, { event: "meetingBooked", data: booking }, store);
+      request.popup?.complete();
+    });
+    bookingHandlerRegistered = true;
+  };
+  var handleQualifiedMessage = (event, store) => {
+    const data = event.data;
+    if (!isShowRequest(data) || !event.source) return;
+    const requester = { source: event.source, origin: event.origin };
+    activeRequest?.popup?.dispose();
+    const request = { requester, popup: null };
+    activeRequest = request;
+    void waitForQualifiedGlobal().then((qualified) => {
+      if (activeRequest !== request) return;
+      if (!qualified) {
+        activeRequest = null;
+        store.log.warn({ message: "Qualified requested but window.qualified is missing" });
+        postToRequester(requester, { event: "unavailable" }, store);
+        return;
+      }
+      try {
+        registerBookingHandler(qualified, store);
+        request.popup = startQualifiedPopup(() => {
+          request.requester = null;
+        });
+        if (data.trigger === "hubspot") {
+          qualified("showExperienceForForm", "hubspot", {
+            formId: data.hubspotFormId,
+            formEmail: data.fields.email,
+            raw: data.fields
+          });
+        } else {
+          qualified("saveFormData", data.fields);
+          qualified("showFormExperience", data.experienceId);
+        }
+        store.log.info({
+          message: "Qualified experience shown",
+          response: { trigger: data.trigger ?? "experience", experienceId: data.experienceId, hubspotFormId: data.hubspotFormId }
+        });
+        postToRequester(requester, { event: "opened" }, store);
+      } catch (error) {
+        request.popup?.dispose();
+        if (activeRequest === request) activeRequest = null;
+        store.log.error({ message: "Qualified call failed", error });
+        postToRequester(requester, { event: "unavailable" }, store);
+      }
+    });
+  };
+
   // src/store/message-listener.ts
   function initializeMessageListener(store) {
     const handleMessage = (event) => {
@@ -934,6 +1079,10 @@
       }
       if (event.data?.type === FORM_READY_MESSAGE_TYPE) {
         revealReadyIframe(event);
+        return;
+      }
+      if (event.data?.type === QUALIFIED_MESSAGE_TYPE) {
+        handleQualifiedMessage(event, store);
         return;
       }
       if (event.data.type === "SEND_DATA") {
