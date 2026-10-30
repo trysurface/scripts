@@ -569,15 +569,20 @@
   var INLINE_LAYOUT_CAP = "inline-layout";
   var INLINE_LAYOUT_MESSAGE_TYPE = "SURFACE_INLINE_LAYOUT";
   var INLINE_OVERLAY_DISMISSED_MESSAGE_TYPE = "SURFACE_INLINE_OVERLAY_DISMISSED";
+  var INLINE_WRAPPER_ATTRIBUTE = "data-surface-inline";
+  var driven = () => window.__SURFACE_INLINE_STRIPS__ ?? (window.__SURFACE_INLINE_STRIPS__ = { iframes: /* @__PURE__ */ new WeakSet(), wrapperIframes: /* @__PURE__ */ new WeakMap() });
+  var refusedIframes = /* @__PURE__ */ new WeakSet();
   var MAX_STRIP_HEIGHT = 4e3;
   var MOBILE_MAX_WIDTH = 480;
   var supportsTopLayer = (el) => typeof el.showPopover === "function";
   var entries = /* @__PURE__ */ new Map();
-  function registerInlineIframe(embed, wrapper, iframe) {
+  function registerInlineIframe(store, wrapper, iframe) {
     const trap = supportsTopLayer(wrapper) ? null : detectFixedTrap(wrapper);
-    if (trap) warnTrap(embed, trap);
-    entries.set(iframe, {
-      embed,
+    if (trap) warnTrap(store.log, trap);
+    driven().iframes.add(iframe);
+    driven().wrapperIframes.set(wrapper, iframe);
+    const entry = {
+      store,
       wrapper,
       iframe,
       trap,
@@ -592,7 +597,9 @@
       prevBodyOverflow: "",
       prevFocus: null,
       cleanup: []
-    });
+    };
+    entries.set(iframe, entry);
+    return entry;
   }
   function findInlineEntryForSource(source) {
     releaseDetachedInlineOverlays();
@@ -601,10 +608,28 @@
     }
     return null;
   }
-  function handleInlineLayoutMessage(event) {
+  function adoptHandWrittenIframe(source, store) {
+    const iframe = Array.from(document.querySelectorAll("iframe")).find((el) => el.contentWindow === source);
+    if (!iframe || driven().iframes.has(iframe)) return null;
+    const wrapper = iframe.parentElement;
+    const holder = wrapper && driven().wrapperIframes.get(wrapper);
+    if (wrapper?.hasAttribute(INLINE_WRAPPER_ATTRIBUTE) && !holder?.isConnected) return registerInlineIframe(store, wrapper, iframe);
+    if (wrapper?.id === "surface-inline-div" || refusedIframes.has(iframe)) return null;
+    refusedIframes.add(iframe);
+    store.log.warn({
+      message: `A compact strip iframe can only pop out as the direct child of an element of its own with ${INLINE_WRAPPER_ATTRIBUTE}`
+    });
+    return null;
+  }
+  function forget(entry) {
+    entries.delete(entry.iframe);
+    driven().iframes.delete(entry.iframe);
+    if (driven().wrapperIframes.get(entry.wrapper) === entry.iframe) driven().wrapperIframes.delete(entry.wrapper);
+  }
+  function handleInlineLayoutMessage(event, store) {
     const data = event.data;
     if (!data || data.type !== INLINE_LAYOUT_MESSAGE_TYPE || data.sender !== "surface_form") return;
-    const entry = findInlineEntryForSource(event.source);
+    const entry = findInlineEntryForSource(event.source) ?? adoptHandWrittenIframe(event.source, store);
     if (!entry) return;
     if (data.layout === "overlay") {
       enterOverlay(entry);
@@ -613,25 +638,26 @@
     if (data.layout === "strip") {
       const height = Number(data.height);
       if (!Number.isFinite(height) || height < 1) {
-        entry.embed.log.warn({ message: "Ignoring inline strip layout with invalid height", response: { height: data.height } });
+        entry.store.log.warn({ message: "Ignoring inline strip layout with invalid height", response: { height: data.height } });
         return;
       }
       applyStrip(entry, Math.min(MAX_STRIP_HEIGHT, Math.round(height)));
     }
   }
+  var inPlace = (entry) => entry.iframe.isConnected && entry.iframe.parentElement === entry.wrapper && driven().wrapperIframes.get(entry.wrapper) === entry.iframe;
+  function release(entry) {
+    dismissOverlay(entry);
+    forget(entry);
+  }
   function releaseDetachedInlineOverlays() {
     for (const entry of entries.values()) {
-      if (entry.iframe.isConnected) continue;
-      if (entry.layout === "overlay") exitOverlay(entry);
-      entries.delete(entry.iframe);
+      if (!inPlace(entry)) release(entry);
     }
   }
   function releaseWhenDetached(entry) {
     if (typeof MutationObserver === "undefined") return;
     const observer = new MutationObserver(() => {
-      if (entry.iframe.isConnected) return;
-      exitOverlay(entry);
-      entries.delete(entry.iframe);
+      if (!inPlace(entry)) release(entry);
     });
     observer.observe(document.documentElement, { childList: true, subtree: true });
     entry.cleanup.push(() => observer.disconnect());
@@ -644,8 +670,8 @@
     document.addEventListener("focusin", onFocusIn);
     entry.cleanup.push(() => document.removeEventListener("focusin", onFocusIn));
   }
-  function warnTrap(embed, trap) {
-    embed.log.warn({
+  function warnTrap(log3, trap) {
+    log3.warn({
       message: "Inline embed ancestor creates a containing block for position:fixed; the compact pop-out will use the Fullscreen API on this page",
       response: trap
     });
@@ -707,7 +733,7 @@
       return;
     }
     const trap = detectFixedTrap(wrapper);
-    if (trap && !entry.trap) warnTrap(entry.embed, trap);
+    if (trap && !entry.trap) warnTrap(entry.store.log, trap);
     entry.trap = trap;
     if (entry.trap) {
       enterFullscreen(entry);
@@ -763,7 +789,7 @@
       },
       (error) => {
         if (stale()) return;
-        entry.embed.log.warn({ message: "Fullscreen request rejected; expanding the inline embed in place", response: { error: String(error) } });
+        entry.store.log.warn({ message: "Fullscreen request rejected; expanding the inline embed in place", response: { error: String(error) } });
         runCleanup(entry);
         entry.placeholder?.remove();
         entry.placeholder = null;
@@ -774,6 +800,7 @@
   function enterExpanded(entry) {
     entry.overlayKind = "expanded";
     entry.wrapper.style.position = "relative";
+    entry.iframe.style.maxHeight = "none";
     entry.iframe.style.height = `${Math.round(window.innerHeight * 0.85)}px`;
     entry.iframe.scrollIntoView({ block: "nearest" });
     addDismissHandlers(entry, { backdrop: false, escape: true });
@@ -795,6 +822,16 @@
       left: "0",
       width: "100%",
       height: "100%",
+      // A hand-written wrapper is the page's own element and may size, move or animate the strip.
+      maxWidth: "none",
+      maxHeight: "none",
+      minWidth: "0",
+      minHeight: "0",
+      transform: "none",
+      translate: "none",
+      rotate: "none",
+      scale: "none",
+      animation: "none",
       margin: "0",
       padding: "0",
       zIndex: "99999",
@@ -911,7 +948,7 @@
   function dismissOverlay(entry) {
     if (entry.layout !== "overlay") return;
     exitOverlay(entry);
-    entry.embed.store.postToSurfaceIframe(entry.iframe, {
+    entry.store.postToSurfaceIframe(entry.iframe, {
       type: INLINE_OVERLAY_DISMISSED_MESSAGE_TYPE,
       sender: "surface_tag"
     });
@@ -1074,7 +1111,7 @@
         return;
       }
       if (event.data?.type === INLINE_LAYOUT_MESSAGE_TYPE) {
-        handleInlineLayoutMessage(event);
+        handleInlineLayoutMessage(event, store);
         return;
       }
       if (event.data?.type === FORM_READY_MESSAGE_TYPE) {
@@ -1881,6 +1918,7 @@
       if (clientDiv.querySelector("#surface-inline-div")) return;
       const wrapper = document.createElement("div");
       wrapper.id = "surface-inline-div";
+      wrapper.setAttribute(INLINE_WRAPPER_ATTRIBUTE, "");
       const iframe = document.createElement("iframe");
       iframe.id = "surface-iframe";
       iframe.src = src;
@@ -1892,7 +1930,7 @@
       }
       clientDiv.appendChild(wrapper);
       wrapper.appendChild(iframe);
-      registerInlineIframe(this, wrapper, iframe);
+      registerInlineIframe(this.store, wrapper, iframe);
       injectStyle(`
       #surface-inline-div { width: 100%; height: 100%; }
       #surface-inline-div iframe { width: 100%; height: 100%; }
