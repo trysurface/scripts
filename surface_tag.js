@@ -374,6 +374,51 @@
     };
   }
 
+  // src/gtm/form-events.ts
+  var GTM_EVENT_MESSAGE_TYPE = "surface:gtm-event";
+  var hostGtmDataLayer = () => {
+    const runtime = window.google_tag_manager ?? {};
+    for (const [id, container] of Object.entries(runtime)) {
+      if (!id.startsWith("GTM-")) continue;
+      const name = container?.dataLayer?.name;
+      return typeof name === "string" && name ? name : "dataLayer";
+    }
+    for (const script of Array.from(document.scripts)) {
+      if (!script.src) continue;
+      try {
+        const src = new URL(script.src);
+        if (src.pathname.endsWith("/gtm.js") && src.searchParams.get("id")?.startsWith("GTM-")) {
+          return src.searchParams.get("l") || "dataLayer";
+        }
+      } catch {
+      }
+    }
+    return null;
+  };
+  var watchForHostGtm = (onAppear) => {
+    if (typeof MutationObserver === "undefined" || hostGtmDataLayer() !== null) return;
+    const observer = new MutationObserver((records) => {
+      const addedScript = records.some(
+        (record) => Array.from(record.addedNodes).some((node) => node.nodeName === "SCRIPT")
+      );
+      if (!addedScript || hostGtmDataLayer() === null) return;
+      observer.disconnect();
+      onAppear();
+    });
+    observer.observe(document.documentElement, { childList: true, subtree: true });
+  };
+  var isFrameOnPage = (source) => !!source && Array.from(document.querySelectorAll("iframe")).some((iframe) => iframe.contentWindow === source);
+  var pushFormEventToDataLayer = (event) => {
+    const entry = event.data?.dataLayer;
+    if (typeof entry !== "object" || entry === null || typeof entry.event !== "string" || !entry.event.startsWith("SurfaceForm") || !isFrameOnPage(event.source)) {
+      return;
+    }
+    const w3 = window;
+    const name = hostGtmDataLayer() ?? "dataLayer";
+    const layer = Array.isArray(w3[name]) ? w3[name] : w3[name] = [];
+    layer.push({ ...entry });
+  };
+
   // src/conversions/providers.ts
   var w = () => window;
   var ensureTwq = (pixelId) => {
@@ -1122,6 +1167,10 @@
         handleQualifiedMessage(event, store);
         return;
       }
+      if (event.data?.type === GTM_EVENT_MESSAGE_TYPE) {
+        pushFormEventToDataLayer(event);
+        return;
+      }
       if (event.data.type === "SEND_DATA") {
         store.sendPayloadToIframes("STORE_UPDATE");
         store.sendConsentToIframes();
@@ -1504,7 +1553,8 @@
         urlParams: this.urlParams,
         surfaceLeadData: allowed ? getLeadDataWithTTL() : null,
         userJourneyId: allowed ? this.userJourneyId : null,
-        language: this.language
+        language: this.language,
+        hostGtm: hostGtmDataLayer() !== null
       };
     }
     clearUserJourney() {
@@ -3241,6 +3291,7 @@
     SurfaceTagStore.applyConsent();
     SurfaceTagStore.sendPayloadToIframes("STORE_UPDATE");
   });
+  watchForHostGtm(() => SurfaceTagStore.sendPayloadToIframes("STORE_UPDATE"));
   void resolveOpenTriggersOnLoad(environmentId2, runtimeConfig2);
   initReview();
   drainStubQueue();
