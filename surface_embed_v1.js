@@ -999,13 +999,70 @@
     });
   }
 
+  // src/qualified/observe-decline.ts
+  var DETECTION_TIMEOUT_MS = 45e3;
+  var isRecord = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+  var observeQualifiedDecline = (experienceId, onDeclined, onError) => {
+    const originalFetch = window.fetch;
+    let active = true;
+    let journeyId = null;
+    let botApiName = experienceId;
+    let noOffer = false;
+    const stop = () => {
+      active = false;
+      window.clearTimeout(timer);
+      if (window.fetch === observedFetch) window.fetch = originalFetch;
+    };
+    const observeEvent = (event) => {
+      if (!active || !isRecord(event) || !isRecord(event.extra)) return;
+      const extra = event.extra;
+      if (event.event === "client_experience_journey_started" && extra.journey_kind === "smart_form") {
+        if (journeyId !== null || typeof extra.journey_id !== "string" || !extra.journey_id) {
+          stop();
+          return;
+        }
+        journeyId = extra.journey_id;
+      }
+      if (event.event === "booker_intent" && extra.pathway_origin === "form") {
+        if (journeyId === null || typeof extra.bot_api_name !== "string" || !extra.bot_api_name || botApiName !== void 0 && botApiName !== extra.bot_api_name) {
+          stop();
+          return;
+        }
+        botApiName = extra.bot_api_name;
+        noOffer = extra.outcome === "no_offer" && extra.result_type === "redirect";
+      }
+      if (event.event !== "client_experience_journey_terminal" || extra.journey_kind !== "smart_form") return;
+      const declined = journeyId !== null && extra.journey_id === journeyId && noOffer && extra.outcome === "redirect_initiated" && extra.correlation_quality === "exact";
+      stop();
+      if (declined) onDeclined();
+    };
+    const observedFetch = function(...args) {
+      const result = originalFetch.apply(this, args);
+      const [input, init] = args;
+      if (!active || typeof init?.body !== "string") return result;
+      try {
+        const url = new URL(typeof input === "string" || input instanceof URL ? input : input.url, location.href);
+        if (url.origin !== "https://app.qualified.com" || !/^\/w\/1\/[^/]+\/visitor_events$/.test(url.pathname)) return result;
+        const payload = JSON.parse(init.body);
+        for (const event of Array.isArray(payload) ? payload : [payload]) observeEvent(event);
+      } catch {
+        stop();
+        onError();
+      }
+      return result;
+    };
+    const timer = window.setTimeout(stop, DETECTION_TIMEOUT_MS);
+    window.fetch = observedFetch;
+    return stop;
+  };
+
   // src/qualified/qualified.ts
   var QUALIFIED_MESSAGE_TYPE = "surface:qualified";
   var GLOBAL_POLL_INTERVAL_MS = 250;
   var GLOBAL_POLL_ATTEMPTS = 12;
   var isShowRequest = (data) => {
     const message = data;
-    return !!message && message.type === QUALIFIED_MESSAGE_TYPE && message.sender === "surface_form" && message.action === "show" && (message.trigger === "hubspot" ? typeof message.hubspotFormId === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(message.hubspotFormId) : (message.trigger === void 0 || message.trigger === "experience") && typeof message.experienceId === "string") && !!message.fields && typeof message.fields === "object";
+    return !!message && message.type === QUALIFIED_MESSAGE_TYPE && message.sender === "surface_form" && message.action === "show" && (message.requestId === void 0 || typeof message.requestId === "string" && message.requestId.length > 0) && (message.advanceOnDecline === void 0 || typeof message.advanceOnDecline === "boolean") && (message.trigger === "hubspot" ? typeof message.hubspotFormId === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(message.hubspotFormId) : (message.trigger === void 0 || message.trigger === "experience") && typeof message.experienceId === "string") && !!message.fields && typeof message.fields === "object";
   };
   var getQualifiedGlobal = () => {
     const candidate = window.qualified;
@@ -1023,7 +1080,12 @@
   });
   var postToRequester = (requester, message, store) => {
     try {
-      requester.source.postMessage({ type: QUALIFIED_MESSAGE_TYPE, sender: "surface_tag", ...message }, requester.origin);
+      requester.source.postMessage({
+        type: QUALIFIED_MESSAGE_TYPE,
+        sender: "surface_tag",
+        ...requester.requestId ? { requestId: requester.requestId } : {},
+        ...message
+      }, requester.origin);
     } catch (error) {
       store.log.warn({ message: "Could not reach the form that asked for Qualified", error });
     }
@@ -1070,6 +1132,8 @@
     observePopup();
     return {
       dispose,
+      // Cancellation can immediately precede a new show; an async close would dismiss its popup.
+      cancel: finish,
       complete: () => {
         finish();
         getFrame()?.contentWindow?.postMessage(
@@ -1095,6 +1159,7 @@
       };
       const requester = request.requester;
       request.requester = null;
+      request.stopDecline?.();
       postToRequester(requester, { event: "meetingBooked", data: booking }, store);
       request.popup?.complete();
     });
@@ -1102,13 +1167,22 @@
   };
   var handleQualifiedMessage = (event, store) => {
     const data = event.data;
+    if (data?.type === QUALIFIED_MESSAGE_TYPE && data.sender === "surface_form" && data.action === "cancel") {
+      const request2 = activeRequest;
+      if (typeof data.requestId !== "string" || !request2?.requester || request2.requester.requestId !== data.requestId || request2.requester.source !== event.source || request2.requester.origin !== event.origin) return;
+      request2.stopDecline?.();
+      request2.requester = null;
+      request2.popup?.cancel();
+      return;
+    }
     if (!isShowRequest(data) || !event.source) return;
-    const requester = { source: event.source, origin: event.origin };
+    const requester = { source: event.source, origin: event.origin, requestId: data.requestId };
+    activeRequest?.stopDecline?.();
     activeRequest?.popup?.dispose();
     const request = { requester, popup: null };
     activeRequest = request;
     void waitForQualifiedGlobal().then((qualified) => {
-      if (activeRequest !== request) return;
+      if (activeRequest !== request || !request.requester) return;
       if (!qualified) {
         activeRequest = null;
         store.log.warn({ message: "Qualified requested but window.qualified is missing" });
@@ -1119,7 +1193,22 @@
         registerBookingHandler(qualified, store);
         request.popup = startQualifiedPopup(() => {
           request.requester = null;
+          request.stopDecline?.();
         });
+        if (data.advanceOnDecline === true && data.requestId) {
+          request.stopDecline = observeQualifiedDecline(
+            data.trigger === "hubspot" ? void 0 : data.experienceId,
+            () => {
+              if (activeRequest !== request || !request.requester) return;
+              const recipient = request.requester;
+              request.requester = null;
+              postToRequester(recipient, { event: "meetingDeclined" }, store);
+              request.popup?.complete();
+              store.log.info({ message: "Qualified offered no meeting" });
+            },
+            () => store.log.warn({ message: "Qualified decline telemetry could not be read; leaving manual navigation available" })
+          );
+        }
         if (data.trigger === "hubspot") {
           qualified("showExperienceForForm", "hubspot", {
             formId: data.hubspotFormId,
