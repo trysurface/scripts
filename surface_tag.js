@@ -1002,12 +1002,12 @@
   // src/qualified/observe-decline.ts
   var DETECTION_TIMEOUT_MS = 45e3;
   var isRecord = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
-  var observeQualifiedDecline = (experienceId, onDeclined, onError) => {
+  var observeQualifiedDecline = (experienceId, onDeclined, onError, onObserved) => {
     const originalFetch = window.fetch;
     let active = true;
     let journeyId = null;
     let botApiName = experienceId;
-    let noOffer = false;
+    let noOfferRedirect = false;
     const stop = () => {
       active = false;
       window.clearTimeout(timer);
@@ -1029,10 +1029,28 @@
           return;
         }
         botApiName = extra.bot_api_name;
-        noOffer = extra.outcome === "no_offer" && extra.result_type === "redirect";
+        onObserved?.({
+          outcome: typeof extra.outcome === "string" ? extra.outcome : void 0,
+          result_type: typeof extra.result_type === "string" ? extra.result_type : void 0,
+          timing: typeof extra.timing === "number" ? extra.timing : void 0,
+          bot_api_name: botApiName
+        });
+        if (extra.outcome === "no_offer" && extra.result_type === "close_lightbox") {
+          stop();
+          onDeclined();
+          return;
+        }
+        noOfferRedirect = extra.outcome === "no_offer" && extra.result_type === "redirect";
       }
       if (event.event !== "client_experience_journey_terminal" || extra.journey_kind !== "smart_form") return;
-      const declined = journeyId !== null && extra.journey_id === journeyId && noOffer && extra.outcome === "redirect_initiated" && extra.correlation_quality === "exact";
+      if (journeyId !== null && extra.journey_id === journeyId) {
+        onObserved?.({
+          terminal_outcome: typeof extra.outcome === "string" ? extra.outcome : void 0,
+          end_reason: typeof extra.feedback_observation_end_reason === "string" ? extra.feedback_observation_end_reason : void 0,
+          duration_ms: typeof extra.duration_ms === "number" ? extra.duration_ms : void 0
+        });
+      }
+      const declined = journeyId !== null && extra.journey_id === journeyId && noOfferRedirect && extra.outcome === "redirect_initiated" && extra.correlation_quality === "exact";
       stop();
       if (declined) onDeclined();
     };
@@ -1195,20 +1213,19 @@
           request.requester = null;
           request.stopDecline?.();
         });
-        if (data.advanceOnDecline === true && data.requestId) {
-          request.stopDecline = observeQualifiedDecline(
-            data.trigger === "hubspot" ? void 0 : data.experienceId,
-            () => {
-              if (activeRequest !== request || !request.requester) return;
-              const recipient = request.requester;
-              request.requester = null;
-              postToRequester(recipient, { event: "meetingDeclined" }, store);
-              request.popup?.complete();
-              store.log.info({ message: "Qualified offered no meeting" });
-            },
-            () => store.log.warn({ message: "Qualified decline telemetry could not be read; leaving manual navigation available" })
-          );
-        }
+        request.stopDecline = observeQualifiedDecline(
+          data.trigger === "hubspot" ? void 0 : data.experienceId,
+          () => {
+            if (data.advanceOnDecline !== true || !data.requestId || activeRequest !== request || !request.requester) return;
+            const recipient = request.requester;
+            request.requester = null;
+            postToRequester(recipient, { event: "meetingDeclined" }, store);
+            request.popup?.complete();
+            store.log.info({ message: "Qualified offered no meeting" });
+          },
+          () => store.log.warn({ message: "Qualified decline telemetry could not be read; leaving manual navigation available" }),
+          (info) => postToRequester(requester, { event: "qualifiedTelemetry", data: info }, store)
+        );
         if (data.trigger === "hubspot") {
           qualified("showExperienceForForm", "hubspot", {
             formId: data.hubspotFormId,
