@@ -1001,6 +1001,7 @@
 
   // src/qualified/observe-decline.ts
   var DETECTION_TIMEOUT_MS = 45e3;
+  var MAX_SUPERSEDED = 3;
   var isRecord = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
   var observeQualifiedDecline = (experienceId, onDeclined, onError, onObserved) => {
     const originalFetch = window.fetch;
@@ -1008,6 +1009,7 @@
     let journeyId = null;
     let botApiName = experienceId;
     let noOfferRedirect = false;
+    let supersededCount = 0;
     const stop = () => {
       active = false;
       window.clearTimeout(timer);
@@ -1022,6 +1024,7 @@
           return;
         }
         journeyId = extra.journey_id;
+        onObserved?.({ journey_event: "started" });
       }
       if (event.event === "booker_intent" && extra.pathway_origin === "form") {
         if (journeyId === null || typeof extra.bot_api_name !== "string" || !extra.bot_api_name || botApiName !== void 0 && botApiName !== extra.bot_api_name) {
@@ -1043,14 +1046,20 @@
         noOfferRedirect = extra.outcome === "no_offer" && extra.result_type === "redirect";
       }
       if (event.event !== "client_experience_journey_terminal" || extra.journey_kind !== "smart_form") return;
-      if (journeyId !== null && extra.journey_id === journeyId) {
-        onObserved?.({
-          terminal_outcome: typeof extra.outcome === "string" ? extra.outcome : void 0,
-          end_reason: typeof extra.feedback_observation_end_reason === "string" ? extra.feedback_observation_end_reason : void 0,
-          duration_ms: typeof extra.duration_ms === "number" ? extra.duration_ms : void 0
-        });
+      if (journeyId === null || extra.journey_id !== journeyId) return;
+      onObserved?.({
+        terminal_outcome: typeof extra.outcome === "string" ? extra.outcome : void 0,
+        end_reason: typeof extra.feedback_observation_end_reason === "string" ? extra.feedback_observation_end_reason : void 0,
+        duration_ms: typeof extra.duration_ms === "number" ? extra.duration_ms : void 0
+      });
+      if (extra.outcome === "superseded") {
+        journeyId = null;
+        noOfferRedirect = false;
+        supersededCount += 1;
+        if (supersededCount > MAX_SUPERSEDED) stop();
+        return;
       }
-      const declined = journeyId !== null && extra.journey_id === journeyId && noOfferRedirect && extra.outcome === "redirect_initiated" && extra.correlation_quality === "exact";
+      const declined = noOfferRedirect && extra.outcome === "redirect_initiated" && extra.correlation_quality === "exact";
       stop();
       if (declined) onDeclined();
     };
