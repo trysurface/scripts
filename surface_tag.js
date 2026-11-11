@@ -1008,7 +1008,6 @@
     let active = true;
     let journeyId = null;
     let botApiName = experienceId;
-    let noOfferRedirect = false;
     let supersededCount = 0;
     const stop = () => {
       active = false;
@@ -1038,12 +1037,11 @@
           timing: typeof extra.timing === "number" ? extra.timing : void 0,
           bot_api_name: botApiName
         });
-        if (extra.outcome === "no_offer" && extra.result_type === "close_lightbox") {
+        if (extra.outcome === "no_offer" && (extra.result_type === "close_lightbox" || extra.result_type === "redirect")) {
           stop();
           onDeclined();
           return;
         }
-        noOfferRedirect = extra.outcome === "no_offer" && extra.result_type === "redirect";
       }
       if (event.event !== "client_experience_journey_terminal" || extra.journey_kind !== "smart_form") return;
       if (journeyId === null || extra.journey_id !== journeyId) return;
@@ -1054,14 +1052,11 @@
       });
       if (extra.outcome === "superseded") {
         journeyId = null;
-        noOfferRedirect = false;
         supersededCount += 1;
         if (supersededCount > MAX_SUPERSEDED) stop();
         return;
       }
-      const declined = noOfferRedirect && extra.outcome === "redirect_initiated" && extra.correlation_quality === "exact";
       stop();
-      if (declined) onDeclined();
     };
     const observedFetch = function(...args) {
       const result = originalFetch.apply(this, args);
