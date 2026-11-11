@@ -95,7 +95,9 @@ jobs:
         with:
           persist-credentials: false
 
+      # The checks below decide the outcome; a file this purge missed is purged again.
       - name: Purge jsDelivr cache
+        continue-on-error: true
         run: .github/scripts/purge-jsdelivr.sh ${FILES}
 
       - name: Check @latest serves v${{ needs.release.outputs.version }}
