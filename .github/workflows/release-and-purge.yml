@@ -27,15 +27,21 @@ concurrency:
   group: release-surface-tag
   cancel-in-progress: false
 
+env:
+  FILES: surface_tag.js surface_tag.min.js surface_embed_v1.js surface_embed_v1.min.js
+
 jobs:
   release-and-purge:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+
       # jsDelivr @latest resolves to the highest SEMVER release, and this repo already uses v1.1.x — so
       # bump the PATCH of the latest release (v1.1.8 -> v1.1.9). Date-based tags would break @latest:
       # leading zeros (2026.09.02) are not valid semver, so jsDelivr would ignore them. target = the exact
       # pushed commit, so @latest serves precisely these bytes.
       - name: Cut a release for the pushed commit
+        id: release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -74,25 +80,40 @@ jobs:
             -f name="${RELEASE_TAG}" \
             -f body="Surface Tag synced from surface-forms (packages/surface-scripts)."
           echo "Released ${RELEASE_TAG}; jsDelivr @latest now resolves to this commit."
+          echo "version=${RELEASE_TAG#v}" >> "${GITHUB_OUTPUT}"
 
-      # jsDelivr caches aggressively; purge so @latest / @main serve the new bytes immediately instead of
-      # up to 7 days later. A swallowed purge failure would show a green release while customers keep stale
-      # bytes, so fail loudly.
+      # An edge that refills between the purge and jsDelivr picking up the new release caches the
+      # previous version for 12 hours. Purge, re-purge until every @latest file reports the new
+      # version, then purge once more.
       - name: Purge jsDelivr cache
+        run: .github/scripts/purge-jsdelivr.sh ${FILES}
+
+      - name: Wait for @latest to serve v${{ steps.release.outputs.version }}
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
         run: |
           set -euo pipefail
-          purge_failed=0
-          for f in surface_tag.js surface_tag.min.js surface_embed_v1.js surface_embed_v1.min.js; do
-            for ref in latest main; do
-              url="https://purge.jsdelivr.net/gh/${GITHUB_REPOSITORY}@${ref}/${f}"
-              echo "Purging ${url}"
-              if ! curl -sfS "${url}"; then
-                echo "::warning::purge failed for ${url}"
-                purge_failed=1
-              fi
+          served_version() {
+            curl -sfS -D - -o /dev/null "https://cdn.jsdelivr.net/gh/${GITHUB_REPOSITORY}@latest/$1" \
+              | tr -d '\r' | awk -F': ' 'tolower($1) == "x-jsd-version" { print $2 }'
+          }
+          for i in $(seq 1 30); do
+            sleep 10
+            stale=""
+            for f in ${FILES}; do
+              v=$(served_version "${f}" || true)
+              [ "${v}" = "${VERSION}" ] || stale="${stale} ${f}"
+              echo "${f}: ${v:-unavailable}"
             done
+            if [ -z "${stale}" ]; then
+              echo "@latest serves ${VERSION} for every file." | tee -a "${GITHUB_STEP_SUMMARY}"
+              exit 0
+            fi
+            echo "Stale (${i}/30):${stale}"
+            .github/scripts/purge-jsdelivr.sh ${stale}
           done
-          if [ "${purge_failed}" -ne 0 ]; then
-            echo "::error::One or more jsDelivr purges failed; @latest/@main may serve stale bytes. Re-run the purge."
-            exit 1
-          fi
+          echo "::error::@latest still serves an older version after 5 minutes:${stale}"
+          exit 1
+
+      - name: Purge jsDelivr cache again
+        run: .github/scripts/purge-jsdelivr.sh ${FILES}
