@@ -95,30 +95,36 @@ jobs:
         with:
           persist-credentials: false
 
-      # The checks below decide the outcome; a file this purge missed is purged again.
       - name: Purge jsDelivr cache
-        continue-on-error: true
-        run: .github/scripts/purge-jsdelivr.sh ${FILES}
+        id: purge
+        run: |
+          failed=$(.github/scripts/purge-jsdelivr.sh ${FILES} | xargs) || true
+          echo "failed=${failed}" >> "${GITHUB_OUTPUT}"
+          echo "- Purge failed for: ${failed:-none}" | tee -a "${GITHUB_STEP_SUMMARY}"
 
+      # A file whose purge failed is retried even when this runner's CDN server already serves it fresh.
       - name: Check @latest serves v${{ needs.release.outputs.version }}
         id: check
+        env:
+          FAILED: ${{ steps.purge.outputs.failed }}
         run: |
           stale=$(.github/scripts/stale-jsdelivr-files.sh "${VERSION}" ${FILES} | xargs)
-          echo "stale=${stale}" >> "${GITHUB_OUTPUT}"
+          retry=$(printf '%s\n' ${stale} ${FAILED} | sort -u | xargs)
+          echo "retry=${retry}" >> "${GITHUB_OUTPUT}"
           echo "- Stale after the first purge: ${stale:-none}" | tee -a "${GITHUB_STEP_SUMMARY}"
 
       # jsDelivr caches a repo's version list for up to 10 minutes and a purge doesn't refresh it, so a
       # purge before then refills with the previous release (jsdelivr/jsdelivr#18376).
-      - name: Wait 10 minutes, then purge the stale files again
-        if: ${{ steps.check.outputs.stale != '' }}
+      - name: Wait 10 minutes, then purge those files again
+        if: ${{ steps.check.outputs.retry != '' }}
         env:
-          STALE: ${{ steps.check.outputs.stale }}
+          RETRY: ${{ steps.check.outputs.retry }}
         run: |
           sleep 600
-          .github/scripts/purge-jsdelivr.sh ${STALE}
+          .github/scripts/purge-jsdelivr.sh ${RETRY} > /dev/null
 
       - name: Check @latest serves v${{ needs.release.outputs.version }} again
-        if: ${{ steps.check.outputs.stale != '' }}
+        if: ${{ steps.check.outputs.retry != '' }}
         run: |
           stale=$(.github/scripts/stale-jsdelivr-files.sh "${VERSION}" ${FILES} | xargs)
           if [ -n "${stale}" ]; then
