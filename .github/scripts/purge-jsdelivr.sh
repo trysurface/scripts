@@ -1,10 +1,15 @@
 #!/usr/bin/env bash
-# Purges @latest and @main for each file given.
-set -euo pipefail
+# Purges @latest for each file given. A throttled purge still answers HTTP 200, so the body decides.
+set -uo pipefail
+failed=0
 for f in "$@"; do
-  for ref in latest main; do
-    url="https://purge.jsdelivr.net/gh/${GITHUB_REPOSITORY}@${ref}/${f}"
-    echo "Purging ${url}"
-    curl -sfS --retry 3 "${url}" > /dev/null || { echo "::error::Purge failed for ${url}"; exit 1; }
-  done
+  url="https://purge.jsdelivr.net/gh/${GITHUB_REPOSITORY}@latest/${f}"
+  body=$(curl -sfS --max-time 30 --retry 3 --retry-max-time 60 "${url}") || body=""
+  if jq -e '[.paths[] | .throttled == false and ([.providers[]] | all)] | all' <<< "${body}" > /dev/null 2>&1; then
+    echo "Purged ${url}"
+  else
+    echo "::error::Purge failed or was throttled for ${url}: ${body:-no response}"
+    failed=1
+  fi
 done
+exit "${failed}"

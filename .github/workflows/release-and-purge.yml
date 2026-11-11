@@ -31,11 +31,12 @@ env:
   FILES: surface_tag.js surface_tag.min.js surface_embed_v1.js surface_embed_v1.min.js
 
 jobs:
-  release-and-purge:
+  release:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.release.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
-
       # jsDelivr @latest resolves to the highest SEMVER release, and this repo already uses v1.1.x — so
       # bump the PATCH of the latest release (v1.1.8 -> v1.1.9). Date-based tags would break @latest:
       # leading zeros (2026.09.02) are not valid semver, so jsDelivr would ignore them. target = the exact
@@ -79,41 +80,47 @@ jobs:
             -f target_commitish="${GITHUB_SHA}" \
             -f name="${RELEASE_TAG}" \
             -f body="Surface Tag synced from surface-forms (packages/surface-scripts)."
-          echo "Released ${RELEASE_TAG}; jsDelivr @latest now resolves to this commit."
+          echo "Released ${RELEASE_TAG} at ${GITHUB_SHA}." | tee -a "${GITHUB_STEP_SUMMARY}"
           echo "version=${RELEASE_TAG#v}" >> "${GITHUB_OUTPUT}"
 
-      # An edge that refills between the purge and jsDelivr picking up the new release caches the
-      # previous version for 12 hours. Purge, re-purge until every @latest file reports the new
-      # version, then purge once more.
+  # A separate job, so "Re-run failed jobs" repeats the purge without cutting another release.
+  purge:
+    needs: release
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      VERSION: ${{ needs.release.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
       - name: Purge jsDelivr cache
         run: .github/scripts/purge-jsdelivr.sh ${FILES}
 
-      - name: Wait for @latest to serve v${{ steps.release.outputs.version }}
-        env:
-          VERSION: ${{ steps.release.outputs.version }}
+      - name: Check @latest serves v${{ needs.release.outputs.version }}
+        id: check
         run: |
-          set -euo pipefail
-          served_version() {
-            curl -sfS -D - -o /dev/null "https://cdn.jsdelivr.net/gh/${GITHUB_REPOSITORY}@latest/$1" \
-              | tr -d '\r' | awk -F': ' 'tolower($1) == "x-jsd-version" { print $2 }'
-          }
-          for i in $(seq 1 30); do
-            sleep 10
-            stale=""
-            for f in ${FILES}; do
-              v=$(served_version "${f}" || true)
-              [ "${v}" = "${VERSION}" ] || stale="${stale} ${f}"
-              echo "${f}: ${v:-unavailable}"
-            done
-            if [ -z "${stale}" ]; then
-              echo "@latest serves ${VERSION} for every file." | tee -a "${GITHUB_STEP_SUMMARY}"
-              exit 0
-            fi
-            echo "Stale (${i}/30):${stale}"
-            .github/scripts/purge-jsdelivr.sh ${stale}
-          done
-          echo "::error::@latest still serves an older version after 5 minutes:${stale}"
-          exit 1
+          stale=$(.github/scripts/stale-jsdelivr-files.sh "${VERSION}" ${FILES} | xargs)
+          echo "stale=${stale}" >> "${GITHUB_OUTPUT}"
+          echo "- Stale after the first purge: ${stale:-none}" | tee -a "${GITHUB_STEP_SUMMARY}"
 
-      - name: Purge jsDelivr cache again
-        run: .github/scripts/purge-jsdelivr.sh ${FILES}
+      # jsDelivr caches a repo's version list for up to 10 minutes and a purge doesn't refresh it, so a
+      # purge before then refills with the previous release (jsdelivr/jsdelivr#18376).
+      - name: Wait 10 minutes, then purge the stale files again
+        if: ${{ steps.check.outputs.stale != '' }}
+        env:
+          STALE: ${{ steps.check.outputs.stale }}
+        run: |
+          sleep 600
+          .github/scripts/purge-jsdelivr.sh ${STALE}
+
+      - name: Check @latest serves v${{ needs.release.outputs.version }} again
+        if: ${{ steps.check.outputs.stale != '' }}
+        run: |
+          stale=$(.github/scripts/stale-jsdelivr-files.sh "${VERSION}" ${FILES} | xargs)
+          if [ -n "${stale}" ]; then
+            echo "::error::@latest still serves an older version of: ${stale}. Customer sites load these files. Purging again within the hour is throttled; re-run failed jobs after an hour."
+            exit 1
+          fi
+          echo "- Every @latest file serves ${VERSION}." | tee -a "${GITHUB_STEP_SUMMARY}"
